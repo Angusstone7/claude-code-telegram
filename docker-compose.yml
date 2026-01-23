@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  claude-bot:
+    build: .
+    container_name: claude_agent
+    restart: always
+    env_file: .env
+    volumes:
+      # Пробрасываем приватный ключ внутрь контейнера (только для чтения)
+      - ./bot_key:/app/bot_key:ro
+    # Этот хак позволяет контейнеру видеть хост по адресу host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

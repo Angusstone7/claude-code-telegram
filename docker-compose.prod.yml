@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  claude-bot:
+    image: ${BOT_IMAGE_NAME:-ubuntu-claude-bot:latest}
+    container_name: ${BOT_CONTAINER_NAME:-claude_agent}
+    restart: always
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ALLOWED_USER_ID=${ALLOWED_USER_ID}
+      - HOST_USER=${HOST_USER:-root}
+    volumes:
+      # Пробрасываем приватный ключ внутрь контейнера (только для чтения)
+      - ./bot_key:/app/bot_key:ro
+    # Этот хак позволяет контейнеру видеть хост по адресу host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
