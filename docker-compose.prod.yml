@@ -8,11 +8,20 @@ services:
     environment:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
       - ALLOWED_USER_ID=${ALLOWED_USER_ID}
       - HOST_USER=${HOST_USER:-root}
+      - SSH_HOST=${SSH_HOST:-host.docker.internal}
+      - SSH_PORT=${SSH_PORT:-22}
+      - SSH_KEY_PATH=${SSH_KEY_PATH:-/app/bot_key}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/bot.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
     volumes:
-      # Пробрасываем приватный ключ внутрь контейнера (только для чтения)
+      # SSH key for host access (read-only)
       - ./bot_key:/app/bot_key:ro
-    # Этот хак позволяет контейнеру видеть хост по адресу host.docker.internal
+      # Persistent data
+      - ./data:/app/data
+      - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"

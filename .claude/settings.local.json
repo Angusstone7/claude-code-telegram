@@ -3,7 +3,12 @@
     "allow": [
       "Bash(curl:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git remote add origin:*)",
+      "Bash(git push:*)",
+      "Bash(ssh-keyscan:*)",
+      "WebSearch",
+      "Bash(find:*)"
     ]
   }
 }
