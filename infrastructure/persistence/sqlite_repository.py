@@ -29,11 +29,8 @@ class SQLiteUserRepository(UserRepository):
             exist_ok=True,
         )
 
-    async def _get_connection(self) -> aiosqlite.Connection:
-        return await aiosqlite.connect(self.db_path)
-
     async def find_by_id(self, user_id: UserId) -> Optional[User]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM users WHERE user_id = ?", (int(user_id),)
@@ -44,14 +41,14 @@ class SQLiteUserRepository(UserRepository):
         return None
 
     async def find_all(self) -> List[User]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM users") as cursor:
                 rows = await cursor.fetchall()
                 return [self._row_to_user(row) for row in rows]
 
     async def save(self, user: User) -> None:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
                 INSERT OR REPLACE INTO users
@@ -72,12 +69,12 @@ class SQLiteUserRepository(UserRepository):
             await db.commit()
 
     async def delete(self, user_id: UserId) -> None:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM users WHERE user_id = ?", (int(user_id),))
             await db.commit()
 
     async def find_active(self) -> List[User]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM users WHERE is_active = 1") as cursor:
                 rows = await cursor.fetchall()
@@ -128,7 +125,7 @@ class SQLiteSessionRepository(SessionRepository):
         return await aiosqlite.connect(self.db_path)
 
     async def find_by_id(self, session_id: str) -> Optional[Session]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
@@ -139,7 +136,7 @@ class SQLiteSessionRepository(SessionRepository):
         return None
 
     async def find_by_user(self, user_id: UserId) -> List[Session]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC",
@@ -152,7 +149,7 @@ class SQLiteSessionRepository(SessionRepository):
                 return sessions
 
     async def find_active_by_user(self, user_id: UserId) -> Optional[Session]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions WHERE user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1",
@@ -164,7 +161,7 @@ class SQLiteSessionRepository(SessionRepository):
         return None
 
     async def save(self, session: Session) -> None:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
                 INSERT OR REPLACE INTO sessions
@@ -204,7 +201,7 @@ class SQLiteSessionRepository(SessionRepository):
             await db.commit()
 
     async def delete(self, session_id: str) -> None:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "DELETE FROM session_messages WHERE session_id = ?", (session_id,)
             )
@@ -213,7 +210,7 @@ class SQLiteSessionRepository(SessionRepository):
 
     async def delete_old_sessions(self, days: int = 7) -> int:
         cutoff = datetime.utcnow() - timedelta(days=days)
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 "DELETE FROM sessions WHERE updated_at < ?", (cutoff.isoformat(),)
             )
@@ -276,7 +273,7 @@ class SQLiteCommandRepository(CommandRepository):
         return await aiosqlite.connect(self.db_path)
 
     async def find_by_id(self, command_id: str) -> Optional[Command]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM commands WHERE command_id = ?", (command_id,)
@@ -287,7 +284,7 @@ class SQLiteCommandRepository(CommandRepository):
         return None
 
     async def find_by_user(self, user_id: int, limit: int = 100) -> List[Command]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM commands WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -297,7 +294,7 @@ class SQLiteCommandRepository(CommandRepository):
                 return [self._row_to_command(row) for row in rows]
 
     async def find_pending(self) -> List[Command]:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM commands WHERE status IN ('pending', 'approved') ORDER BY created_at"
@@ -306,7 +303,7 @@ class SQLiteCommandRepository(CommandRepository):
                 return [self._row_to_command(row) for row in rows]
 
     async def save(self, command: Command) -> None:
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
                 INSERT OR REPLACE INTO commands
@@ -332,7 +329,7 @@ class SQLiteCommandRepository(CommandRepository):
 
     async def delete_old_commands(self, days: int = 30) -> int:
         cutoff = datetime.utcnow() - timedelta(days=days)
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 "DELETE FROM commands WHERE created_at < ?", (cutoff.isoformat(),)
             )
@@ -347,7 +344,7 @@ class SQLiteCommandRepository(CommandRepository):
             params.append(user_id)
         query += " GROUP BY status"
 
-        async with await self._get_connection() as db:
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
