@@ -149,11 +149,11 @@ class ClaudeCodeProxyService:
         work_dir = working_dir or self.default_working_dir
 
         # Build command
+        # Note: working directory is set via subprocess cwd parameter, not CLI flag
         cmd = [
             self.claude_path,
             "-p", prompt,
             "--output-format", "stream-json",
-            "--cwd", work_dir,
             "--max-turns", str(self.max_turns),
             "--verbose",
         ]
