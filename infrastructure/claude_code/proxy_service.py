@@ -148,12 +148,12 @@ class ClaudeCodeProxyService:
 
         work_dir = working_dir or self.default_working_dir
 
-        # Build command - minimal flags first
+        # Build command - try with -p flag (standard prompt flag)
         # Note: working directory is set via subprocess cwd parameter, not CLI flag
         cmd = [
             self.claude_path,
-            "--print",  # Non-interactive, just print result
-            prompt,
+            "-p", prompt,
+            "--output-format", "text",  # Simple text output
         ]
 
         if session_id:
@@ -169,6 +169,8 @@ class ClaudeCodeProxyService:
             # Start process with inherited environment
             # ANTHROPIC_API_KEY should be set in container environment
             env = os.environ.copy()
+            env["CI"] = "true"  # Non-interactive mode
+            env["TERM"] = "dumb"  # Simple terminal
             logger.info(f"Starting with API key present: {'ANTHROPIC_API_KEY' in env}")
 
             process = await asyncio.create_subprocess_exec(
