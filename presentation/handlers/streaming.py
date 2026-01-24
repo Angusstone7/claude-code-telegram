@@ -47,7 +47,7 @@ class StreamingHandler:
         if initial_message:
             self.messages.append(initial_message)
 
-    async def start(self, initial_text: str = "🤖 Starting...") -> Message:
+    async def start(self, initial_text: str = "🤖 Запускаю...") -> Message:
         """Start streaming with an initial message"""
         if not self.current_message:
             self.current_message = await self.bot.send_message(
@@ -128,7 +128,7 @@ class StreamingHandler:
             truncated = truncated[:1500] + "\n... (truncated)"
 
         status = "✅" if success else "❌"
-        result_text = f"{status} **Output:**\n```\n{truncated}\n```\n"
+        result_text = f"{status} **Вывод:**\n```\n{truncated}\n```\n"
         await self.append(result_text)
 
     async def _schedule_update(self):
@@ -259,16 +259,16 @@ class StreamingHandler:
 
     async def send_error(self, error: str):
         """Send an error message"""
-        error_text = f"❌ **Error**\n```\n{error[:1000]}\n```"
+        error_text = f"❌ **Ошибка**\n```\n{error[:1000]}\n```"
         await self.append(f"\n\n{error_text}")
         await self.finalize()
 
     async def send_completion(self, success: bool = True):
         """Send a completion indicator"""
         if success:
-            await self.append("\n\n✅ **Done**")
+            await self.append("\n\n✅ **Готово**")
         else:
-            await self.append("\n\n⚠️ **Completed with issues**")
+            await self.append("\n\n⚠️ **Завершено с проблемами**")
         await self.finalize()
 
     async def move_to_bottom(self, header: str = ""):
@@ -287,7 +287,7 @@ class StreamingHandler:
 
         # Reset state for new message
         self.current_message = None
-        self.buffer = header or "🤖 **Continuing...**\n\n"
+        self.buffer = header or "🤖 **Продолжаю...**\n\n"
         self.is_finalized = False
 
         # Send new message at bottom

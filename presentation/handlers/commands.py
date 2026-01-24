@@ -52,13 +52,13 @@ class CommandHandlers:
 
         await message.answer(
             f"🤖 **Claude Code Telegram Proxy**\n\n"
-            f"Welcome, {user.first_name}!\n"
-            f"Your role: **{user.role.name}**\n\n"
+            f"Привет, {user.first_name}!\n"
+            f"Ваша роль: **{user.role.name}**\n\n"
             f"**Claude Code:** {status}\n"
-            f"**Working dir:** `{working_dir}`\n\n"
-            f"Just send me a task and Claude Code will handle it!\n"
-            f"I'll forward all outputs, permissions, and questions to you.\n\n"
-            f"Use /help to see available commands.",
+            f"**Рабочая папка:** `{working_dir}`\n\n"
+            f"Просто отправьте задачу — Claude Code её выполнит!\n"
+            f"Я буду показывать вывод, запрашивать разрешения и передавать вопросы.\n\n"
+            f"Используйте /help для списка команд.",
             parse_mode="Markdown",
             reply_markup=Keyboards.main_menu()
         )
@@ -66,88 +66,88 @@ class CommandHandlers:
     async def help(self, message: Message) -> None:
         """Handle /help command"""
         help_text = """
-🤖 **Claude Code Telegram Proxy - Help**
+🤖 **Claude Code Telegram Proxy - Справка**
 
-**Navigation & Projects:**
-/cd - Browse and navigate folders
-/change - Switch between projects
-/fresh - Clear context, start fresh
+**Навигация и проекты:**
+/cd - Навигация по папкам
+/change - Сменить проект
+/fresh - Очистить контекст
 
-**Context Management:**
-/context new - Create new context
-/context list - List all contexts
-/context clear - Clear current context
+**Управление контекстом:**
+/context new - Создать новый контекст
+/context list - Список контекстов
+/context clear - Очистить текущий контекст
 
 **Claude Code:**
-/yolo - Toggle YOLO mode (auto-approve)
-/plugins - Show enabled plugins
-/cancel - Cancel running task
-/status - Show Claude Code status
+/yolo - YOLO режим (авто-подтверждение)
+/plugins - Показать плагины
+/cancel - Отменить задачу
+/status - Статус Claude Code
 
-**Basic Commands:**
-/start - Start the bot
-/help - Show this help
-/stats - Show your statistics
-/clear - Clear chat history
+**Основные команды:**
+/start - Запустить бота
+/help - Показать справку
+/stats - Ваша статистика
+/clear - Очистить историю чата
 
-**How it works:**
-1. Send any task as a message
-2. Claude Code will work on it
-3. You'll see real-time output
-4. Approve/reject tool executions
-5. Answer questions when asked
+**Как это работает:**
+1. Отправьте задачу сообщением
+2. Claude Code начнёт работу
+3. Вы увидите вывод в реальном времени
+4. Подтверждайте/отклоняйте операции
+5. Отвечайте на вопросы Claude
 
 **HITL (Human-in-the-Loop):**
-🔐 **Permissions** - Approve dangerous operations
-❓ **Questions** - Answer Claude's questions
-🛑 **Cancel** - Stop running tasks anytime
+🔐 **Разрешения** - Подтверждение опасных операций
+❓ **Вопросы** - Ответы на вопросы Claude
+🛑 **Отмена** - Остановить задачу в любой момент
 
-**Examples:**
-• "Create a Python script that prints hello"
-• "Read the README.md file"
-• "Run npm install in the project"
-• "Fix the bug in main.py"
+**Примеры:**
+• "Создай Python скрипт, который выводит hello"
+• "Прочитай файл README.md"
+• "Запусти npm install в проекте"
+• "Исправь баг в main.py"
 
-Just describe what you want!
+Просто опишите что нужно сделать!
         """
         await message.answer(help_text, parse_mode="Markdown")
 
     async def clear(self, message: Message) -> None:
         """Handle /clear command"""
         await self.bot_service.clear_session(message.from_user.id)
-        await message.answer("🧹 Chat history cleared!")
+        await message.answer("🧹 История чата очищена!")
 
     async def stats(self, message: Message) -> None:
         """Handle /stats command"""
         stats = await self.bot_service.get_user_stats(message.from_user.id)
 
         text = f"""
-📊 **Your Statistics**
+📊 **Ваша статистика**
 
-**User:** {stats.get('user', {}).get('username', 'Unknown')}
-**Role:** {stats.get('user', {}).get('role', 'user')}
-**Status:** {'✅ Active' if stats.get('user', {}).get('is_active') else '❌ Inactive'}
+**Пользователь:** {stats.get('user', {}).get('username', 'Неизвестно')}
+**Роль:** {stats.get('user', {}).get('role', 'user')}
+**Статус:** {'✅ Активен' if stats.get('user', {}).get('is_active') else '❌ Неактивен'}
 
-**Commands:**
-• Total: {stats.get('commands', {}).get('total', 0)}
+**Команды:**
+• Всего: {stats.get('commands', {}).get('total', 0)}
 {chr(10).join(f"  • {k}: {v}" for k, v in stats.get('commands', {}).get('by_status', {}).items() if k != 'total')}
 
-**Sessions:**
-• Total: {stats.get('sessions', {}).get('total', 0)}
-• Active: {stats.get('sessions', {}).get('active', 0)}
+**Сессии:**
+• Всего: {stats.get('sessions', {}).get('total', 0)}
+• Активных: {stats.get('sessions', {}).get('active', 0)}
         """
         await message.answer(text, parse_mode="Markdown")
 
     async def menu_chat(self, message: Message) -> None:
         """Handle chat menu button"""
         await message.answer(
-            "💬 **Chat Mode**\n\n"
-            "Just describe what you want to do!\n\n"
-            "Examples:\n"
-            "• 'Check disk usage'\n"
-            "• 'Restart nginx container'\n"
-            "• 'Show running processes'\n"
-            "• 'Install htop package'",
+            "💬 **Режим чата**\n\n"
+            "Просто опишите что нужно сделать!\n\n"
+            "Примеры:\n"
+            "• 'Проверь использование диска'\n"
+            "• 'Перезапусти контейнер nginx'\n"
+            "• 'Покажи запущенные процессы'\n"
+            "• 'Установи пакет htop'",
             parse_mode="Markdown"
         )
 
@@ -157,19 +157,19 @@ Just describe what you want!
 
         metrics = info["metrics"]
         lines = [
-            "📊 **System Metrics**",
+            "📊 **Метрики системы**",
             "",
             f"💻 **CPU:** {metrics['cpu_percent']:.1f}%",
-            f"🧠 **Memory:** {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)",
-            f"💾 **Disk:** {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)",
+            f"🧠 **Память:** {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)",
+            f"💾 **Диск:** {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)",
         ]
 
         if metrics.get('load_average', [0])[0] > 0:
-            lines.append(f"📈 **Load:** {metrics['load_average'][0]:.2f}")
+            lines.append(f"📈 **Нагрузка:** {metrics['load_average'][0]:.2f}")
 
         # Show alerts
         if info.get("alerts"):
-            lines.append("\n⚠️ **Alerts:**")
+            lines.append("\n⚠️ **Предупреждения:**")
             lines.extend(info["alerts"])
 
         await message.answer("\n".join(lines), parse_mode="Markdown", reply_markup=Keyboards.system_metrics())
@@ -183,9 +183,9 @@ Just describe what you want!
 
             if not containers:
                 await message.answer(
-                    "🐳 **Docker Containers**\n\n"
-                    "No containers found.\n\n"
-                    "Use Claude Code to manage Docker:\n"
+                    "🐳 **Docker контейнеры**\n\n"
+                    "Контейнеры не найдены.\n\n"
+                    "Используйте Claude Code для управления Docker:\n"
                     "• 'docker ps -a'\n"
                     "• 'docker run ...'",
                     parse_mode="Markdown"
@@ -193,12 +193,12 @@ Just describe what you want!
                 return
 
             # Build container list with action buttons
-            lines = ["🐳 **Docker Containers:**\n"]
+            lines = ["🐳 **Docker контейнеры:**\n"]
             for c in containers:
                 status_emoji = "🟢" if c["status"] == "running" else "🔴"
                 lines.append(f"\n{status_emoji} **{c['name']}**")
-                lines.append(f"   Status: {c['status']}")
-                lines.append(f"   Image: `{c['image'][:30]}`")
+                lines.append(f"   Статус: {c['status']}")
+                lines.append(f"   Образ: `{c['image'][:30]}`")
 
             text = "\n".join(lines)
             await message.answer(
@@ -210,21 +210,21 @@ Just describe what you want!
         except Exception as e:
             logger.error(f"Error getting docker containers: {e}")
             await message.answer(
-                f"🐳 **Docker**\n\n❌ Error: {e}",
+                f"🐳 **Docker**\n\n❌ Ошибка: {e}",
                 parse_mode="Markdown"
             )
 
     async def menu_commands(self, message: Message) -> None:
         """Handle commands menu button"""
         await message.answer(
-            "📝 **Commands**\n\n"
-            "Just type any task in natural language!\n\n"
-            "**Examples:**\n"
-            "• 'List files in current directory'\n"
-            "• 'Show system memory usage'\n"
-            "• 'Create a Python script'\n"
-            "• 'Read the README.md file'\n\n"
-            "Claude Code will handle it!",
+            "📝 **Команды**\n\n"
+            "Просто напишите задачу на естественном языке!\n\n"
+            "**Примеры:**\n"
+            "• 'Покажи файлы в текущей папке'\n"
+            "• 'Покажи использование памяти'\n"
+            "• 'Создай Python скрипт'\n"
+            "• 'Прочитай файл README.md'\n\n"
+            "Claude Code всё сделает!",
             parse_mode="Markdown"
         )
 
@@ -243,12 +243,12 @@ Just describe what you want!
             if self.message_handlers:
                 self.message_handlers.set_working_dir(user_id, path)
                 await message.answer(
-                    f"📁 **Working directory set:**\n`{path}`",
+                    f"📁 **Рабочая папка установлена:**\n`{path}`",
                     parse_mode="Markdown"
                 )
             else:
                 await message.answer(
-                    "⚠️ Message handlers not initialized",
+                    "⚠️ Обработчики сообщений не инициализированы",
                     parse_mode="Markdown"
                 )
         else:
@@ -264,9 +264,9 @@ Just describe what you want!
                     projects.append({"name": os.path.basename(dir_path) or dir_path, "path": dir_path})
 
             await message.answer(
-                f"📁 **Current working directory:**\n`{current_dir}`\n\n"
-                f"Use `/project <path>` to change it.\n\n"
-                f"Example:\n`/project /home/myproject`",
+                f"📁 **Текущая рабочая папка:**\n`{current_dir}`\n\n"
+                f"Используйте `/project <путь>` для смены.\n\n"
+                f"Пример:\n`/project /home/myproject`",
                 parse_mode="Markdown",
                 reply_markup=Keyboards.project_selection(projects) if projects else None
             )
@@ -276,7 +276,7 @@ Just describe what you want!
         user_id = message.from_user.id
 
         if not self.project_service:
-            await message.answer("⚠️ Project service not initialized")
+            await message.answer("⚠️ Сервис проектов не инициализирован")
             return
 
         from domain.value_objects.user_id import UserId
@@ -286,21 +286,21 @@ Just describe what you want!
         projects = await self.project_service.list_projects(uid)
         current = await self.project_service.get_current(uid)
 
-        current_name = current.name if current else "None"
+        current_name = current.name if current else "Нет"
         current_id = current.id if current else None
 
         if projects:
             text = (
-                f"📂 **Switch Project**\n\n"
-                f"Current: **{current_name}**\n\n"
-                f"Select a project:"
+                f"📂 **Сменить проект**\n\n"
+                f"Текущий: **{current_name}**\n\n"
+                f"Выберите проект:"
             )
             keyboard = Keyboards.project_list(projects, current_id)
         else:
             text = (
-                f"📂 **No Projects**\n\n"
-                f"You don't have any projects yet.\n"
-                f"Create one or browse `/root/projects`"
+                f"📂 **Нет проектов**\n\n"
+                f"У вас пока нет проектов.\n"
+                f"Создайте новый или откройте `/root/projects`"
             )
             keyboard = Keyboards.project_list([], None, show_create=True)
 
@@ -311,7 +311,7 @@ Just describe what you want!
         user_id = message.from_user.id
 
         if not self.project_service or not self.context_service:
-            await message.answer("⚠️ Services not initialized")
+            await message.answer("⚠️ Сервисы не инициализированы")
             return
 
         from domain.value_objects.user_id import UserId
@@ -321,8 +321,8 @@ Just describe what you want!
         project = await self.project_service.get_current(uid)
         if not project:
             await message.answer(
-                "❌ **No active project**\n\n"
-                "Use `/change` to select a project first.",
+                "❌ **Нет активного проекта**\n\n"
+                "Используйте `/change` для выбора проекта.",
                 parse_mode="Markdown"
             )
             return
@@ -335,10 +335,10 @@ Just describe what you want!
                 project.id, uid, set_as_current=True
             )
             await message.answer(
-                f"✨ **New Context Created**\n\n"
-                f"Context: **{context.name}**\n"
-                f"Project: {project.name}\n\n"
-                f"Fresh start - no history!",
+                f"✨ **Новый контекст создан**\n\n"
+                f"Контекст: **{context.name}**\n"
+                f"Проект: {project.name}\n\n"
+                f"Чистый старт — без истории!",
                 parse_mode="Markdown"
             )
 
@@ -350,16 +350,16 @@ Just describe what you want!
 
             if contexts:
                 text = (
-                    f"💬 **Contexts for {project.name}**\n\n"
-                    f"Select a context:"
+                    f"💬 **Контексты проекта {project.name}**\n\n"
+                    f"Выберите контекст:"
                 )
                 keyboard = Keyboards.context_list(contexts, current_id)
             else:
-                text = "No contexts found. Creating main context..."
+                text = "Контексты не найдены. Создаю основной контекст..."
                 context = await self.context_service.create_new(
                     project.id, uid, "main", set_as_current=True
                 )
-                text = f"✨ Created context: **{context.name}**"
+                text = f"✨ Создан контекст: **{context.name}**"
                 keyboard = None
 
             await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
@@ -370,29 +370,29 @@ Just describe what you want!
             if current_ctx:
                 await self.context_service.start_fresh(current_ctx.id)
                 await message.answer(
-                    f"🗑️ **Context Cleared**\n\n"
-                    f"Context: {current_ctx.name}\n"
-                    f"Messages and session cleared.",
+                    f"🗑️ **Контекст очищен**\n\n"
+                    f"Контекст: {current_ctx.name}\n"
+                    f"Сообщения и сессия очищены.",
                     parse_mode="Markdown"
                 )
             else:
-                await message.answer("No active context to clear.")
+                await message.answer("Нет активного контекста для очистки.")
 
         else:
             # Show help
             current_ctx = await self.context_service.get_current(project.id)
-            ctx_name = current_ctx.name if current_ctx else "none"
+            ctx_name = current_ctx.name if current_ctx else "нет"
 
             await message.answer(
-                f"💬 **Context Management**\n\n"
-                f"Project: **{project.name}**\n"
-                f"Context: **{ctx_name}**\n\n"
-                f"**Commands:**\n"
-                f"`/context new` - Create fresh context\n"
-                f"`/context list` - List all contexts\n"
-                f"`/context clear` - Clear current context\n\n"
-                f"Contexts let you have multiple conversations\n"
-                f"within the same project (like Cursor IDE).",
+                f"💬 **Управление контекстами**\n\n"
+                f"Проект: **{project.name}**\n"
+                f"Контекст: **{ctx_name}**\n\n"
+                f"**Команды:**\n"
+                f"`/context new` - Создать новый контекст\n"
+                f"`/context list` - Список контекстов\n"
+                f"`/context clear` - Очистить текущий контекст\n\n"
+                f"Контексты позволяют вести несколько диалогов\n"
+                f"в рамках одного проекта (как в Cursor IDE).",
                 parse_mode="Markdown"
             )
 
@@ -423,10 +423,10 @@ Just describe what you want!
                     await self.context_service.start_fresh(context.id)
 
                     await message.answer(
-                        f"🧹 **Context Cleared!**\n\n"
-                        f"📂 Project: **{project.name}**\n"
-                        f"💬 Context: **{context.name}**\n\n"
-                        f"Session history cleared. Next message starts fresh conversation.",
+                        f"🧹 **Контекст очищен!**\n\n"
+                        f"📂 Проект: **{project.name}**\n"
+                        f"💬 Контекст: **{context.name}**\n\n"
+                        f"История сессии очищена. Следующее сообщение начнёт новый диалог.",
                         parse_mode="Markdown"
                     )
                     return
@@ -434,8 +434,8 @@ Just describe what you want!
         # No project/context - just clear bot service session
         await self.bot_service.clear_session(user_id)
         await message.answer(
-            "🧹 **Session Cleared!**\n\n"
-            "Next message starts a fresh conversation.",
+            "🧹 **Сессия очищена!**\n\n"
+            "Следующее сообщение начнёт новый диалог.",
             parse_mode="Markdown"
         )
 
@@ -449,7 +449,7 @@ Just describe what you want!
         user_id = message.from_user.id
 
         if not self.message_handlers:
-            await message.answer("⚠️ Message handlers not initialized")
+            await message.answer("⚠️ Обработчики сообщений не инициализированы")
             return
 
         current = self.message_handlers.is_yolo_mode(user_id)
@@ -482,9 +482,9 @@ Just describe what you want!
         """
         if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
             await message.answer(
-                "🔌 **Plugins**\n\n"
-                "⚠️ SDK service not available.\n"
-                "Plugins require Claude Agent SDK.",
+                "🔌 **Плагины**\n\n"
+                "⚠️ SDK сервис недоступен.\n"
+                "Плагины требуют Claude Agent SDK.",
                 parse_mode="Markdown"
             )
             return
@@ -492,8 +492,8 @@ Just describe what you want!
         sdk_service = self.message_handlers.sdk_service
         if not sdk_service:
             await message.answer(
-                "🔌 **Plugins**\n\n"
-                "⚠️ SDK service not initialized.",
+                "🔌 **Плагины**\n\n"
+                "⚠️ SDK сервис не инициализирован.",
                 parse_mode="Markdown"
             )
             return
@@ -502,27 +502,27 @@ Just describe what you want!
 
         if not plugins_info:
             await message.answer(
-                "🔌 **Plugins**\n\n"
-                "No plugins configured.\n\n"
-                "Set `CLAUDE_ENABLED_PLUGINS` env variable:\n"
+                "🔌 **Плагины**\n\n"
+                "Плагины не настроены.\n\n"
+                "Установите переменную `CLAUDE_ENABLED_PLUGINS`:\n"
                 "`code-review,commit-commands,feature-dev`",
                 parse_mode="Markdown"
             )
             return
 
-        lines = ["🔌 **Enabled Plugins:**\n"]
+        lines = ["🔌 **Включённые плагины:**\n"]
         for p in plugins_info:
             status = "✅" if p["available"] else "❌"
             lines.append(f"{status} `{p['name']}`")
             if not p["available"]:
-                lines.append(f"   _(not found at {p['path']})_")
+                lines.append(f"   _(не найден в {p['path']})_")
 
-        lines.append("\n**Available Skills:**")
-        lines.append("• `/commit` - Create git commit")
-        lines.append("• `/commit-push-pr` - Commit + push + PR")
-        lines.append("• `/code-review` - Review code/PR")
-        lines.append("• `/feature-dev` - Guided feature dev")
-        lines.append("\n_Use skills by telling Claude, e.g. 'run /commit'_")
+        lines.append("\n**Доступные навыки:**")
+        lines.append("• `/commit` - Создать git коммит")
+        lines.append("• `/commit-push-pr` - Коммит + пуш + PR")
+        lines.append("• `/code-review` - Ревью кода/PR")
+        lines.append("• `/feature-dev` - Разработка фичи")
+        lines.append("\n_Используйте навыки через Claude: 'запусти /commit'_")
 
         await message.answer("\n".join(lines), parse_mode="Markdown")
 
@@ -592,18 +592,18 @@ Just describe what you want!
             if sdk_service:
                 cancelled = await sdk_service.cancel_task(user_id)
                 if cancelled:
-                    await message.answer("🛑 **Task cancelled** (SDK)")
+                    await message.answer("🛑 **Задача отменена** (SDK)")
                     return
 
         # Try CLI fallback
         if self.claude_proxy:
             cli_cancelled = await self.claude_proxy.cancel_task(user_id)
             if cli_cancelled:
-                await message.answer("🛑 **Task cancelled** (CLI)")
+                await message.answer("🛑 **Задача отменена** (CLI)")
                 return
 
         if not cancelled:
-            await message.answer("ℹ️ No task is currently running")
+            await message.answer("ℹ️ Сейчас нет запущенных задач")
 
     async def status(self, message: Message) -> None:
         """Handle /status command - show Claude Code status"""
@@ -613,13 +613,13 @@ Just describe what you want!
         installed, version_info = await self.claude_proxy.check_claude_installed()
 
         # Check SDK availability
-        sdk_status = "❌ Not available"
+        sdk_status = "❌ Недоступен"
         sdk_running = False
         if self.message_handlers and hasattr(self.message_handlers, 'sdk_service'):
             sdk_service = self.message_handlers.sdk_service
             if sdk_service:
                 sdk_ok, sdk_msg = await sdk_service.check_sdk_available()
-                sdk_status = "🟢 Available (HITL enabled)" if sdk_ok else f"🔴 {sdk_msg}"
+                sdk_status = "🟢 Доступен (HITL включён)" if sdk_ok else f"🔴 {sdk_msg}"
                 sdk_running = sdk_service.is_task_running(user_id)
 
         # Check if task is running (either backend)
@@ -632,30 +632,30 @@ Just describe what you want!
             working_dir = self.message_handlers.get_working_dir(user_id)
 
         cli_emoji = "🟢" if installed else "🔴"
-        task_status = "🔄 Running" if is_running else "⏸️ Idle"
+        task_status = "🔄 Работает" if is_running else "⏸️ Ожидание"
 
         # Determine backend in use
-        backend = "SDK" if sdk_running else ("CLI" if cli_running else "Idle")
+        backend = "SDK" if sdk_running else ("CLI" if cli_running else "Ожидание")
 
         text = f"""
-📊 **Claude Code Status**
+📊 **Статус Claude Code**
 
 **CLI:** {cli_emoji} {version_info}
 **SDK:** {sdk_status}
-**Task:** {task_status} ({backend})
-**Working dir:** `{working_dir}`
+**Задача:** {task_status} ({backend})
+**Рабочая папка:** `{working_dir}`
 """
 
         if is_running:
-            text += "\n\nUse /cancel to stop the current task."
+            text += "\n\nИспользуйте /cancel чтобы остановить текущую задачу."
 
-        text += "\n\nUse /diagnose to run full diagnostics."
+        text += "\n\nИспользуйте /diagnose для полной диагностики."
 
         await message.answer(text, parse_mode="Markdown")
 
     async def diagnose(self, message: Message) -> None:
         """Handle /diagnose command - run full Claude Code diagnostics"""
-        await message.answer("🔍 Running diagnostics... (this may take up to 30 seconds)")
+        await message.answer("🔍 Запуск диагностики... (может занять до 30 секунд)")
 
         try:
             results = await run_diagnostics(self.claude_proxy.claude_path)
@@ -688,9 +688,9 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.cd, Command("cd"))
 
     # Menu buttons
-    router.message.register(handlers.menu_chat, F.text == "💬 Chat")
-    router.message.register(handlers.menu_metrics, F.text == "📊 Metrics")
+    router.message.register(handlers.menu_chat, F.text == "💬 Чат")
+    router.message.register(handlers.menu_metrics, F.text == "📊 Метрики")
     router.message.register(handlers.menu_docker, F.text == "🐳 Docker")
-    router.message.register(handlers.menu_commands, F.text == "📝 Commands")
-    router.message.register(handlers.clear, F.text == "🗑️ Clear")
-    router.message.register(handlers.help, F.text == "ℹ️ Help")
+    router.message.register(handlers.menu_commands, F.text == "📝 Команды")
+    router.message.register(handlers.clear, F.text == "🗑️ Очистить")
+    router.message.register(handlers.help, F.text == "ℹ️ Справка")

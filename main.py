@@ -228,18 +228,18 @@ class Application:
     async def _register_bot_commands(self):
         """Register bot commands in Telegram menu"""
         commands = [
-            BotCommand(command="start", description="Start the bot"),
-            BotCommand(command="help", description="Show help"),
-            BotCommand(command="cd", description="Navigate folders"),
-            BotCommand(command="change", description="Switch project"),
-            BotCommand(command="fresh", description="Clear context & start fresh"),
-            BotCommand(command="yolo", description="Toggle YOLO mode (auto-approve)"),
-            BotCommand(command="plugins", description="Show enabled plugins"),
-            BotCommand(command="context", description="Manage contexts"),
-            BotCommand(command="status", description="Claude Code status"),
-            BotCommand(command="cancel", description="Cancel running task"),
-            BotCommand(command="stats", description="Your statistics"),
-            BotCommand(command="clear", description="Clear chat history"),
+            BotCommand(command="start", description="Запустить бота"),
+            BotCommand(command="help", description="Показать справку"),
+            BotCommand(command="cd", description="Навигация по папкам"),
+            BotCommand(command="change", description="Сменить проект"),
+            BotCommand(command="fresh", description="Очистить контекст"),
+            BotCommand(command="yolo", description="YOLO режим (авто-подтверждение)"),
+            BotCommand(command="plugins", description="Показать плагины"),
+            BotCommand(command="context", description="Управление контекстами"),
+            BotCommand(command="status", description="Статус Claude Code"),
+            BotCommand(command="cancel", description="Отменить задачу"),
+            BotCommand(command="stats", description="Ваша статистика"),
+            BotCommand(command="clear", description="Очистить историю чата"),
         ]
 
         try:

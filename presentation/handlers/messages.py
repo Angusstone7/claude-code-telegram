@@ -206,7 +206,7 @@ class MessageHandlers:
         # Check authorization
         user = await self.bot_service.authorize_user(user_id)
         if not user:
-            await message.answer("❌ You are not authorized to use this bot.")
+            await message.answer("❌ Вы не авторизованы для использования этого бота.")
             return
 
         # Handle special input modes
@@ -227,8 +227,8 @@ class MessageHandlers:
 
         if is_running:
             await message.answer(
-                "⏳ A task is already running.\n\n"
-                "Use the cancel button or /cancel to stop it.",
+                "⏳ Задача уже выполняется.\n\n"
+                "Используйте кнопку отмены или /cancel чтобы остановить.",
                 reply_markup=Keyboards.claude_cancel(user_id)
             )
             return
@@ -290,7 +290,7 @@ class MessageHandlers:
 
         # Build header with project info and YOLO indicator
         yolo_indicator = " ⚡YOLO" if self.is_yolo_mode(user_id) else ""
-        header = f"🤖 **Working...**{yolo_indicator}\n"
+        header = f"🤖 **Работаю...**{yolo_indicator}\n"
         if self.project_service:
             try:
                 from domain.value_objects.user_id import UserId
@@ -425,7 +425,7 @@ class MessageHandlers:
             streaming = self._streaming_handlers.get(user_id)
             if streaming:
                 truncated_details = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n⚡ **Auto-approved:** `{tool_name}`\n`{truncated_details}`\n")
+                await streaming.append(f"\n⚡ **Авто-одобрено:** `{tool_name}`\n`{truncated_details}`\n")
             return True
 
         # Normal mode: show buttons and wait for approval
@@ -436,12 +436,12 @@ class MessageHandlers:
             session.set_waiting_approval(request_id, tool_name, details)
 
         # Send permission request message
-        text = f"🔐 **Permission Request**\n\n"
-        text += f"**Tool:** `{tool_name}`\n"
+        text = f"🔐 **Запрос разрешения**\n\n"
+        text += f"**Инструмент:** `{tool_name}`\n"
         if details:
             # Truncate long details
             display_details = details if len(details) < 500 else details[:500] + "..."
-            text += f"**Details:**\n```\n{display_details}\n```"
+            text += f"**Детали:**\n```\n{display_details}\n```"
 
         await message.answer(
             text,
@@ -457,7 +457,7 @@ class MessageHandlers:
                 await asyncio.wait_for(event.wait(), timeout=300)  # 5 min timeout
                 approved = self._permission_responses.get(user_id, False)
             except asyncio.TimeoutError:
-                await message.answer("⏱️ Permission request timed out. Rejecting.")
+                await message.answer("⏱️ Время ожидания истекло. Отклоняю.")
                 approved = False
 
             if session:
@@ -479,7 +479,7 @@ class MessageHandlers:
         self._pending_questions[user_id] = options
 
         # Send question message
-        text = f"❓ **Question**\n\n{question}"
+        text = f"❓ **Вопрос**\n\n{question}"
 
         if options:
             await message.answer(
@@ -491,7 +491,7 @@ class MessageHandlers:
             # No options - expect text input
             self._expecting_answer[user_id] = True
             await message.answer(
-                text + "\n\n✏️ **Type your answer:**",
+                text + "\n\n✏️ **Введите ваш ответ:**",
                 parse_mode=ParseMode.MARKDOWN
             )
 
@@ -503,7 +503,7 @@ class MessageHandlers:
                 await asyncio.wait_for(event.wait(), timeout=300)
                 answer = self._question_responses.get(user_id, "")
             except asyncio.TimeoutError:
-                await message.answer("⏱️ Question timed out.")
+                await message.answer("⏱️ Время ожидания ответа истекло.")
                 answer = ""
 
             if session:
@@ -554,7 +554,7 @@ class MessageHandlers:
             streaming = self._streaming_handlers.get(user_id)
             if streaming:
                 truncated_details = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n⚡ **Auto-approved:** `{tool_name}`\n`{truncated_details}`\n")
+                await streaming.append(f"\n⚡ **Авто-одобрено:** `{tool_name}`\n`{truncated_details}`\n")
 
             # Auto-approve via SDK
             if self.sdk_service:
@@ -569,11 +569,11 @@ class MessageHandlers:
             session.set_waiting_approval(request_id, tool_name, details)
 
         # Send permission request message with inline buttons
-        text = f"🔐 **Permission Request**\n\n"
-        text += f"**Tool:** `{tool_name}`\n"
+        text = f"🔐 **Запрос разрешения**\n\n"
+        text += f"**Инструмент:** `{tool_name}`\n"
         if details:
             display_details = details if len(details) < 500 else details[:500] + "..."
-            text += f"**Details:**\n```\n{display_details}\n```"
+            text += f"**Детали:**\n```\n{display_details}\n```"
 
         perm_msg = await message.answer(
             text,
@@ -606,7 +606,7 @@ class MessageHandlers:
         self._pending_questions[user_id] = options
 
         # Send question message with inline buttons
-        text = f"❓ **Question**\n\n{question}"
+        text = f"❓ **Вопрос**\n\n{question}"
 
         if options:
             q_msg = await message.answer(
@@ -620,7 +620,7 @@ class MessageHandlers:
             # No options - expect text input
             self._expecting_answer[user_id] = True
             q_msg = await message.answer(
-                text + "\n\n✏️ **Type your answer:**",
+                text + "\n\n✏️ **Введите ваш ответ:**",
                 parse_mode=ParseMode.MARKDOWN
             )
             self._pending_question_messages[user_id] = q_msg
@@ -635,15 +635,15 @@ class MessageHandlers:
 
         if perm_msg and streaming:
             # Edit the permission message to show result and continue streaming there
-            status = "✅ Approved" if approved else "❌ Rejected"
+            status = "✅ Одобрено" if approved else "❌ Отклонено"
             try:
                 await perm_msg.edit_text(
-                    f"{status}\n\n🤖 **Continuing...**",
+                    f"{status}\n\n🤖 **Продолжаю...**",
                     parse_mode=ParseMode.MARKDOWN
                 )
                 # Use this message for continued streaming
                 streaming.current_message = perm_msg
-                streaming.buffer = f"{status}\n\n🤖 **Continuing...**\n"
+                streaming.buffer = f"{status}\n\n🤖 **Продолжаю...**\n"
                 streaming.is_finalized = False
             except Exception as e:
                 logger.debug(f"Could not edit permission message: {e}")
@@ -661,12 +661,12 @@ class MessageHandlers:
             short_answer = answer[:50] + "..." if len(answer) > 50 else answer
             try:
                 await q_msg.edit_text(
-                    f"📝 **Answered:** {short_answer}\n\n🤖 **Continuing...**",
+                    f"📝 **Ответ:** {short_answer}\n\n🤖 **Продолжаю...**",
                     parse_mode=ParseMode.MARKDOWN
                 )
                 # Use this message for continued streaming
                 streaming.current_message = q_msg
-                streaming.buffer = f"📝 **Answered:** {short_answer}\n\n🤖 **Continuing...**\n"
+                streaming.buffer = f"📝 **Ответ:** {short_answer}\n\n🤖 **Продолжаю...**\n"
                 streaming.is_finalized = False
             except Exception as e:
                 logger.debug(f"Could not edit question message: {e}")
@@ -678,7 +678,7 @@ class MessageHandlers:
 
         if result.cancelled:
             if streaming:
-                await streaming.finalize("🛑 **Task cancelled**")
+                await streaming.finalize("🛑 **Задача отменена**")
             if session:
                 session.cancel()
             return
@@ -735,7 +735,7 @@ class MessageHandlers:
                 session.fail(result.error or "Unknown error")
 
             if result.error:
-                await message.answer(f"⚠️ **Completed with error:**\n```\n{result.error[:1000]}\n```")
+                await message.answer(f"⚠️ **Завершено с ошибкой:**\n```\n{result.error[:1000]}\n```")
 
     async def _handle_answer_input(self, message: Message):
         """Handle text input for question answer"""
@@ -743,7 +743,7 @@ class MessageHandlers:
         self._expecting_answer[user_id] = False
 
         answer = message.text
-        await message.answer(f"📝 Answer: {answer[:50]}...")
+        await message.answer(f"📝 Ответ: {answer[:50]}...")
 
         # Use the unified response handler (supports both SDK and CLI)
         await self.handle_question_response(user_id, answer)
@@ -757,7 +757,7 @@ class MessageHandlers:
         self.set_working_dir(user_id, path)
 
         await message.answer(
-            f"📁 **Working directory set:**\n`{path}`",
+            f"📁 **Рабочая папка установлена:**\n`{path}`",
             parse_mode=ParseMode.MARKDOWN
         )
 
