@@ -271,6 +271,30 @@ class StreamingHandler:
             await self.append("\n\n⚠️ **Completed with issues**")
         await self.finalize()
 
+    async def move_to_bottom(self, header: str = ""):
+        """
+        Create a new message at the bottom for continued streaming.
+
+        Call this after sending other messages (like permission requests)
+        to ensure the streaming output stays at the bottom of the chat.
+        """
+        # Finalize current message without the completion marker
+        if self.current_message and self.buffer:
+            try:
+                await self._edit_current_message(self.buffer)
+            except Exception as e:
+                logger.debug(f"Could not finalize old message: {e}")
+
+        # Reset state for new message
+        self.current_message = None
+        self.buffer = header or "🤖 **Continuing...**\n\n"
+        self.is_finalized = False
+
+        # Send new message at bottom
+        self.current_message = await self._send_new_message(self.buffer)
+        self.last_update_time = time.time()
+        return self.current_message
+
 
 class ProgressTracker:
     """Track progress of multi-step operations"""

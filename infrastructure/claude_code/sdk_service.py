@@ -260,7 +260,9 @@ class ClaudeAgentSDKService:
         on_tool_use: Optional[Callable[[str, dict], Awaitable[None]]] = None,
         on_tool_result: Optional[Callable[[str, str], Awaitable[None]]] = None,
         on_permission_request: Optional[Callable[[str, str, dict], Awaitable[None]]] = None,
+        on_permission_completed: Optional[Callable[[bool], Awaitable[None]]] = None,
         on_question: Optional[Callable[[str, list[str]], Awaitable[None]]] = None,
+        on_question_completed: Optional[Callable[[str], Awaitable[None]]] = None,
         on_thinking: Optional[Callable[[str], Awaitable[None]]] = None,
         on_error: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> SDKTaskResult:
@@ -381,6 +383,10 @@ class ClaudeAgentSDKService:
                     self._question_requests.pop(user_id, None)
                     self._task_status[user_id] = TaskStatus.RUNNING
 
+                    # Notify UI that question was answered (for moving streaming to bottom)
+                    if on_question_completed:
+                        await on_question_completed(answer)
+
                     # Modify the input to include the answer
                     updated_input = {**tool_input}
                     updated_input["answers"] = {question_text: answer}
@@ -437,6 +443,10 @@ class ClaudeAgentSDKService:
                 # Cleanup and resume
                 self._permission_requests.pop(user_id, None)
                 self._task_status[user_id] = TaskStatus.RUNNING
+
+                # Notify UI that permission was handled (for moving streaming to bottom)
+                if on_permission_completed:
+                    await on_permission_completed(approved)
 
                 if approved:
                     return PermissionResultAllow(updated_input=tool_input)

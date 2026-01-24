@@ -74,6 +74,8 @@ class MessageHandlers:
         self._expecting_answer: dict[int, bool] = {}
         self._expecting_path: dict[int, bool] = {}
         self._pending_questions: dict[int, list[str]] = {}  # user_id -> options list
+        self._pending_permission_messages: dict[int, Message] = {}  # user_id -> permission msg
+        self._pending_question_messages: dict[int, Message] = {}  # user_id -> question msg
 
         # Permission/Question response events
         self._permission_events: dict[int, asyncio.Event] = {}
@@ -326,7 +328,9 @@ class MessageHandlers:
                     on_permission_request=lambda tool, details, inp: self._on_permission_sdk(
                         user_id, tool, details, inp, message
                     ),
+                    on_permission_completed=lambda approved: self._on_permission_completed(user_id, approved),
                     on_question=lambda q, opts: self._on_question_sdk(user_id, q, opts, message),
+                    on_question_completed=lambda answer: self._on_question_completed(user_id, answer),
                     on_thinking=lambda think: self._on_thinking(user_id, think),
                     on_error=lambda err: self._on_error(user_id, err),
                 )
@@ -571,11 +575,13 @@ class MessageHandlers:
             display_details = details if len(details) < 500 else details[:500] + "..."
             text += f"**Details:**\n```\n{display_details}\n```"
 
-        await message.answer(
+        perm_msg = await message.answer(
             text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
         )
+        # Save the message so we can edit it after approval/rejection
+        self._pending_permission_messages[user_id] = perm_msg
 
     async def _on_question_sdk(
         self,
@@ -603,18 +609,67 @@ class MessageHandlers:
         text = f"❓ **Question**\n\n{question}"
 
         if options:
-            await message.answer(
+            q_msg = await message.answer(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=Keyboards.claude_question(user_id, options, request_id)
             )
+            # Save the message so we can edit it after answer
+            self._pending_question_messages[user_id] = q_msg
         else:
             # No options - expect text input
             self._expecting_answer[user_id] = True
-            await message.answer(
+            q_msg = await message.answer(
                 text + "\n\n✏️ **Type your answer:**",
                 parse_mode=ParseMode.MARKDOWN
             )
+            self._pending_question_messages[user_id] = q_msg
+
+    async def _on_permission_completed(self, user_id: int, approved: bool):
+        """
+        Handle permission completion - edit the permission message to show result
+        and use it for continued streaming.
+        """
+        perm_msg = self._pending_permission_messages.pop(user_id, None)
+        streaming = self._streaming_handlers.get(user_id)
+
+        if perm_msg and streaming:
+            # Edit the permission message to show result and continue streaming there
+            status = "✅ Approved" if approved else "❌ Rejected"
+            try:
+                await perm_msg.edit_text(
+                    f"{status}\n\n🤖 **Continuing...**",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                # Use this message for continued streaming
+                streaming.current_message = perm_msg
+                streaming.buffer = f"{status}\n\n🤖 **Continuing...**\n"
+                streaming.is_finalized = False
+            except Exception as e:
+                logger.debug(f"Could not edit permission message: {e}")
+
+    async def _on_question_completed(self, user_id: int, answer: str):
+        """
+        Handle question completion - edit the question message to show answer
+        and use it for continued streaming.
+        """
+        q_msg = self._pending_question_messages.pop(user_id, None)
+        streaming = self._streaming_handlers.get(user_id)
+
+        if q_msg and streaming:
+            # Edit the question message to show answer and continue streaming there
+            short_answer = answer[:50] + "..." if len(answer) > 50 else answer
+            try:
+                await q_msg.edit_text(
+                    f"📝 **Answered:** {short_answer}\n\n🤖 **Continuing...**",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                # Use this message for continued streaming
+                streaming.current_message = q_msg
+                streaming.buffer = f"📝 **Answered:** {short_answer}\n\n🤖 **Continuing...**\n"
+                streaming.is_finalized = False
+            except Exception as e:
+                logger.debug(f"Could not edit question message: {e}")
 
     async def _handle_result(self, user_id: int, result: TaskResult, message: Message):
         """Handle task completion"""
