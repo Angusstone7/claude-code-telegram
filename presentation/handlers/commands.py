@@ -473,18 +473,19 @@ class CommandHandlers:
 
     async def plugins(self, message: Message) -> None:
         """
-        Handle /plugins command - show enabled Claude Code plugins.
+        Handle /plugins command - show available Claude Code skills.
 
-        Plugins extend Claude Code with:
-        - Skills (slash commands like /commit, /review-pr)
-        - Specialized agents (feature-dev, code-review)
-        - Hooks (pre/post commit)
+        Skills are built-in capabilities of Claude Code:
+        - /commit - Create git commit
+        - /commit-push-pr - Commit + push + PR
+        - /code-review - Code review
+        - /feature-dev - Feature development
         """
         if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
             await message.answer(
-                "🔌 **Плагины**\n\n"
+                "🔌 **Навыки Claude Code**\n\n"
                 "⚠️ SDK сервис недоступен.\n"
-                "Плагины требуют Claude Agent SDK.",
+                "Навыки требуют Claude Agent SDK.",
                 parse_mode="Markdown"
             )
             return
@@ -492,37 +493,25 @@ class CommandHandlers:
         sdk_service = self.message_handlers.sdk_service
         if not sdk_service:
             await message.answer(
-                "🔌 **Плагины**\n\n"
+                "🔌 **Навыки Claude Code**\n\n"
                 "⚠️ SDK сервис не инициализирован.",
                 parse_mode="Markdown"
             )
             return
 
-        plugins_info = sdk_service.get_enabled_plugins_info()
+        skills_info = sdk_service.get_enabled_plugins_info()
 
-        if not plugins_info:
-            await message.answer(
-                "🔌 **Плагины**\n\n"
-                "Плагины не настроены.\n\n"
-                "Установите переменную `CLAUDE_ENABLED_PLUGINS`:\n"
-                "`code-review,commit-commands,feature-dev`",
-                parse_mode="Markdown"
-            )
-            return
+        lines = ["🔌 **Встроенные навыки Claude Code:**\n"]
+        for skill in skills_info:
+            lines.append(f"✅ `/{skill['name']}` — {skill['description']}")
 
-        lines = ["🔌 **Включённые плагины:**\n"]
-        for p in plugins_info:
-            status = "✅" if p["available"] else "❌"
-            lines.append(f"{status} `{p['name']}`")
-            if not p["available"]:
-                lines.append(f"   _(не найден в {p['path']})_")
-
-        lines.append("\n**Доступные навыки:**")
-        lines.append("• `/commit` - Создать git коммит")
-        lines.append("• `/commit-push-pr` - Коммит + пуш + PR")
-        lines.append("• `/code-review` - Ревью кода/PR")
-        lines.append("• `/feature-dev` - Разработка фичи")
-        lines.append("\n_Используйте навыки через Claude: 'запусти /commit'_")
+        lines.append("\n**Как использовать:**")
+        lines.append("Просто скажите Claude что нужно сделать:")
+        lines.append("• _'сделай коммит'_")
+        lines.append("• _'запусти /commit'_")
+        lines.append("• _'создай PR'_")
+        lines.append("• _'проведи код ревью'_")
+        lines.append("\nClaude сам определит какой навык использовать!")
 
         await message.answer("\n".join(lines), parse_mode="Markdown")
 

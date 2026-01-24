@@ -101,8 +101,8 @@ class ClaudeAgentSDKService:
         default_working_dir: str = "/root",
         max_turns: int = 50,
         permission_mode: str = "default",  # "default", "acceptEdits", "bypassPermissions"
-        plugins_dir: str = "/plugins",
-        enabled_plugins: list[str] = None,
+        plugins_dir: str = "/plugins",  # For custom plugins only
+        enabled_plugins: list[str] = None,  # For custom plugins only
     ):
         if not SDK_AVAILABLE:
             raise RuntimeError(
@@ -115,6 +115,8 @@ class ClaudeAgentSDKService:
         self.permission_mode = permission_mode
         self.plugins_dir = plugins_dir
         self.enabled_plugins = enabled_plugins or []
+        # Note: Built-in skills (commit, code-review, feature-dev) are always
+        # available and don't need configuration
 
         # Active clients by user_id
         self._clients: dict[int, ClaudeSDKClient] = {}
@@ -140,33 +142,43 @@ class ClaudeAgentSDKService:
         return True, "Claude Agent SDK is available"
 
     def _get_plugin_configs(self) -> list[dict]:
-        """Build plugin configuration list for ClaudeAgentOptions"""
+        """
+        Build plugin configuration list for ClaudeAgentOptions.
+
+        Note: This is for CUSTOM local plugins only.
+        Built-in skills (commit, code-review, feature-dev) are always available
+        in Claude Code and don't need plugin configuration.
+        """
         plugins = []
         for plugin_name in self.enabled_plugins:
             if not plugin_name:  # Skip empty strings
                 continue
+            # Skip built-in skills - they don't need local plugin dirs
+            if plugin_name in ("code-review", "commit-commands", "feature-dev"):
+                continue
             plugin_path = os.path.join(self.plugins_dir, plugin_name)
             if os.path.isdir(plugin_path):
                 plugins.append({"type": "local", "path": plugin_path})
-                logger.debug(f"Plugin enabled: {plugin_name} at {plugin_path}")
+                logger.debug(f"Custom plugin enabled: {plugin_name} at {plugin_path}")
             else:
-                logger.warning(f"Plugin not found: {plugin_name} at {plugin_path}")
+                logger.warning(f"Custom plugin not found: {plugin_name} at {plugin_path}")
         return plugins
 
     def get_enabled_plugins_info(self) -> list[dict]:
-        """Get info about enabled plugins for display"""
-        plugins_info = []
-        for plugin_name in self.enabled_plugins:
-            if not plugin_name:
-                continue
-            plugin_path = os.path.join(self.plugins_dir, plugin_name)
-            exists = os.path.isdir(plugin_path)
-            plugins_info.append({
-                "name": plugin_name,
-                "path": plugin_path,
-                "available": exists
-            })
-        return plugins_info
+        """
+        Get info about available skills for display.
+
+        Returns info about built-in skills that are always available.
+        """
+        # Built-in skills that come with Claude Code
+        builtin_skills = [
+            {"name": "commit", "description": "Создать git коммит", "builtin": True},
+            {"name": "commit-push-pr", "description": "Коммит + пуш + PR", "builtin": True},
+            {"name": "code-review", "description": "Ревью кода/PR", "builtin": True},
+            {"name": "feature-dev", "description": "Разработка фичи", "builtin": True},
+            {"name": "frontend-design", "description": "Создание UI", "builtin": True},
+        ]
+        return builtin_skills
 
     def is_task_running(self, user_id: int) -> bool:
         """Check if a task is currently running for a user"""

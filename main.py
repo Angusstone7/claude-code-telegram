@@ -121,22 +121,14 @@ class Application:
         # Initialize SDK service (preferred backend for HITL)
         if SDK_AVAILABLE:
             try:
-                # Parse enabled plugins from env
-                enabled_plugins_str = os.getenv("CLAUDE_ENABLED_PLUGINS", "code-review,commit-commands,feature-dev")
-                enabled_plugins = [p.strip() for p in enabled_plugins_str.split(",") if p.strip()]
-
                 self.claude_sdk = ClaudeAgentSDKService(
                     default_working_dir=default_working_dir,
                     max_turns=int(os.getenv("CLAUDE_MAX_TURNS", "50")),
                     permission_mode=os.getenv("CLAUDE_PERMISSION_MODE", "default"),
-                    plugins_dir=os.getenv("CLAUDE_PLUGINS_DIR", "/plugins"),
-                    enabled_plugins=enabled_plugins,
                 )
                 sdk_ok, sdk_msg = await self.claude_sdk.check_sdk_available()
                 if sdk_ok:
-                    logger.info(f"✓ SDK: {sdk_msg} (HITL enabled)")
-                    if enabled_plugins:
-                        logger.info(f"✓ Plugins: {', '.join(enabled_plugins)}")
+                    logger.info(f"✓ SDK: {sdk_msg} (HITL + встроенные навыки)")
                 else:
                     logger.warning(f"⚠ SDK: {sdk_msg}")
                     self.claude_sdk = None
