@@ -167,14 +167,17 @@ class ClaudeCodeProxyService:
 
         try:
             env = os.environ.copy()
-            env["CI"] = "true"  # Non-interactive mode
+            # Don't set CI=true - we want HITL permissions!
+            # env["CI"] = "true"  # This would auto-approve everything
             env["TERM"] = "dumb"  # Simple terminal
+            env["NO_COLOR"] = "1"  # Disable colors
             logger.info(f"[{user_id}] Starting with API key present: {'ANTHROPIC_API_KEY' in env}")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.PIPE,  # For HITL responses
                 cwd=work_dir,
                 env=env,
             )
@@ -415,12 +418,44 @@ class ClaudeCodeProxyService:
                     raw=data
                 )
 
+            # Input request (permission or question)
+            elif event_type == "input_request" or event_type == "input":
+                # This is the HITL event - permission or question
+                input_type = data.get("input_type", "")
+
+                if input_type == "permission" or "permission" in str(data).lower():
+                    return ClaudeCodeEvent(
+                        type=EventType.PERMISSION_REQUEST,
+                        tool_name=data.get("tool") or data.get("tool_name", ""),
+                        content=data.get("description") or data.get("command") or json.dumps(data),
+                        raw=data
+                    )
+                else:
+                    # Question
+                    return ClaudeCodeEvent(
+                        type=EventType.ASK_USER,
+                        question=data.get("question") or data.get("message") or data.get("prompt", ""),
+                        options=data.get("options", []),
+                        raw=data
+                    )
+
             # Skip these event types silently
             elif event_type in ["message_start", "content_block_stop", "message_delta", "ping"]:
                 return None
 
-            # Unknown event type - try to extract content
-            logger.debug(f"Unknown event type: {event_type}")
+            # Unknown event type - log it and try to extract content
+            logger.info(f"Unknown event type: {event_type}, keys: {list(data.keys())}")
+
+            # Check for permission-like events
+            if "permission" in str(data).lower() or "approve" in str(data).lower():
+                return ClaudeCodeEvent(
+                    type=EventType.PERMISSION_REQUEST,
+                    tool_name=data.get("tool") or data.get("name", "unknown"),
+                    content=json.dumps(data, ensure_ascii=False)[:500],
+                    raw=data
+                )
+
+            # Try to extract any text content
             if data.get("text") or data.get("content"):
                 content = data.get("text") or data.get("content", "")
                 if isinstance(content, str) and content:
