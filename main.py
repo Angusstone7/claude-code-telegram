@@ -76,7 +76,7 @@ class Application:
         command_repo = SQLiteCommandRepository()
 
         # Initialize services
-        ai_service = ClaudeAIService()
+        ai_service = ClaudeAIService(settings.anthropic.provider_config)
         command_executor = SSHCommandExecutor()
 
         # Initialize bot service
