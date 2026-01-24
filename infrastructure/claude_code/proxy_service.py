@@ -162,7 +162,8 @@ class ClaudeCodeProxyService:
         if session_id:
             cmd.extend(["--resume", session_id])
 
-        logger.info(f"Starting Claude Code for user {user_id}: {' '.join(cmd[:6])}...")
+        logger.info(f"[{user_id}] Full command: {' '.join(cmd)}")
+        logger.info(f"[{user_id}] Working dir: {work_dir}")
 
         output_buffer = []
         result_session_id = session_id
@@ -182,19 +183,22 @@ class ClaudeCodeProxyService:
                 env=env,
             )
             self._processes[user_id] = process
+            logger.info(f"[{user_id}] Process started with PID: {process.pid}")
 
             # Process output stream
-            async def read_stream():
+            async def read_stdout():
                 nonlocal result_session_id
+                logger.info(f"[{user_id}] Starting stdout reader")
 
                 while True:
                     # Check for cancellation
                     if self._cancel_events[user_id].is_set():
+                        logger.info(f"[{user_id}] Stdout reader cancelled")
                         return
 
                     line = await process.stdout.readline()
                     if not line:
-                        logger.info(f"Claude Code stdout ended for user {user_id}")
+                        logger.info(f"[{user_id}] Stdout EOF")
                         break
 
                     try:
@@ -202,10 +206,10 @@ class ClaudeCodeProxyService:
                         if not line_str:
                             continue
 
-                        logger.info(f"Claude Code raw output: {line_str[:200]}")
+                        logger.info(f"[{user_id}] STDOUT: {line_str[:300]}")
 
                         event = self._parse_event(line_str)
-                        logger.info(f"Parsed event: {event.type if event else 'None'}")
+                        logger.info(f"[{user_id}] Parsed: {event.type if event else 'None'}")
                         if event:
                             await self._handle_event(
                                 user_id, event,
@@ -220,15 +224,31 @@ class ClaudeCodeProxyService:
 
                     except json.JSONDecodeError:
                         # Non-JSON output, treat as text
+                        logger.info(f"[{user_id}] Non-JSON: {line_str[:100]}")
                         if on_text and line_str:
                             output_buffer.append(line_str)
                             await on_text(line_str)
                     except Exception as e:
-                        logger.error(f"Error processing line: {e}")
+                        logger.error(f"[{user_id}] Error processing line: {e}")
 
-            # Run with timeout
+            # Stderr reader - runs concurrently
+            async def read_stderr():
+                logger.info(f"[{user_id}] Starting stderr reader")
+                while True:
+                    line = await process.stderr.readline()
+                    if not line:
+                        logger.info(f"[{user_id}] Stderr EOF")
+                        break
+                    line_str = line.decode('utf-8').strip()
+                    if line_str:
+                        logger.warning(f"[{user_id}] STDERR: {line_str}")
+
+            # Run both readers concurrently with timeout
             try:
-                await asyncio.wait_for(read_stream(), timeout=self.timeout_seconds)
+                await asyncio.wait_for(
+                    asyncio.gather(read_stdout(), read_stderr()),
+                    timeout=self.timeout_seconds
+                )
             except asyncio.TimeoutError:
                 logger.warning(f"Task timeout for user {user_id}")
                 if on_error:
