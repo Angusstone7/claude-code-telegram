@@ -18,13 +18,15 @@ class CallbackHandlers:
         message_handlers,
         claude_proxy=None,
         project_service=None,
-        context_service=None
+        context_service=None,
+        file_browser_service=None
     ):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
         self.claude_proxy = claude_proxy  # ClaudeCodeProxyService instance
         self.project_service = project_service
         self.context_service = context_service
+        self.file_browser_service = file_browser_service
 
     async def handle_command_approve(self, callback: CallbackQuery) -> None:
         """Handle command approval callback"""
@@ -340,10 +342,11 @@ class CallbackHandlers:
             return
 
         try:
-            # Update message to show approved
+            # Update message to show approved (without parse_mode to avoid markdown issues)
+            original_text = callback.message.text or ""
             await callback.message.edit_text(
-                callback.message.text + "\n\n✅ **Approved**",
-                parse_mode=ParseMode.MARKDOWN
+                original_text + "\n\n✅ Approved",
+                parse_mode=None  # Don't parse - original text may have special chars
             )
 
             # Send approval to Claude Code proxy
@@ -370,10 +373,11 @@ class CallbackHandlers:
             return
 
         try:
-            # Update message to show rejected
+            # Update message to show rejected (without parse_mode to avoid markdown issues)
+            original_text = callback.message.text or ""
             await callback.message.edit_text(
-                callback.message.text + "\n\n❌ **Rejected**",
-                parse_mode=ParseMode.MARKDOWN
+                original_text + "\n\n❌ Rejected",
+                parse_mode=None
             )
 
             # Send rejection to Claude Code proxy
@@ -406,10 +410,11 @@ class CallbackHandlers:
             if hasattr(self.message_handlers, 'get_pending_question_option'):
                 answer = self.message_handlers.get_pending_question_option(user_id, option_index)
 
-            # Update message to show answer
+            # Update message to show answer (without parse_mode to avoid markdown issues)
+            original_text = callback.message.text or ""
             await callback.message.edit_text(
-                callback.message.text + f"\n\n📝 **Answer:** {answer}",
-                parse_mode=ParseMode.MARKDOWN
+                original_text + f"\n\n📝 Answer: {answer}",
+                parse_mode=None
             )
 
             # Send answer to Claude Code proxy
@@ -436,10 +441,11 @@ class CallbackHandlers:
             return
 
         try:
-            # Update message to prompt for text input
+            # Update message to prompt for text input (without parse_mode to avoid markdown issues)
+            original_text = callback.message.text or ""
             await callback.message.edit_text(
-                callback.message.text + "\n\n✏️ **Type your answer below:**",
-                parse_mode=ParseMode.MARKDOWN
+                original_text + "\n\n✏️ Type your answer below:",
+                parse_mode=None
             )
 
             # Set message handler to expect text answer
@@ -761,6 +767,137 @@ class CallbackHandlers:
             logger.error(f"Error creating context: {e}")
             await callback.answer(f"❌ Error: {e}")
 
+    # ============== File Browser Callbacks (/cd command) ==============
+
+    async def handle_cd_goto(self, callback: CallbackQuery) -> None:
+        """Handle folder navigation in /cd command"""
+        # Extract path from callback data (cd:goto:/path/to/folder)
+        path = callback.data.split(":", 2)[-1] if callback.data.count(":") >= 2 else ""
+
+        if not self.file_browser_service:
+            from application.services.file_browser_service import FileBrowserService
+            self.file_browser_service = FileBrowserService()
+
+        # Validate path is within root
+        if not self.file_browser_service.is_within_root(path):
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        # Check if directory exists
+        import os
+        if not os.path.isdir(path):
+            await callback.answer("❌ Папка не найдена")
+            return
+
+        try:
+            from presentation.keyboards.keyboards import Keyboards
+
+            # Get content and tree view
+            content = await self.file_browser_service.list_directory(path)
+            tree_view = await self.file_browser_service.get_tree_view(path)
+
+            # Update message
+            await callback.message.edit_text(
+                tree_view,
+                parse_mode=ParseMode.HTML,
+                reply_markup=Keyboards.file_browser(content)
+            )
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error navigating to {path}: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_cd_root(self, callback: CallbackQuery) -> None:
+        """Handle going to root directory"""
+        if not self.file_browser_service:
+            from application.services.file_browser_service import FileBrowserService
+            self.file_browser_service = FileBrowserService()
+
+        try:
+            from presentation.keyboards.keyboards import Keyboards
+
+            root_path = self.file_browser_service.ROOT_PATH
+
+            # Ensure root exists
+            import os
+            os.makedirs(root_path, exist_ok=True)
+
+            # Get content and tree view
+            content = await self.file_browser_service.list_directory(root_path)
+            tree_view = await self.file_browser_service.get_tree_view(root_path)
+
+            # Update message
+            await callback.message.edit_text(
+                tree_view,
+                parse_mode=ParseMode.HTML,
+                reply_markup=Keyboards.file_browser(content)
+            )
+            await callback.answer("🏠 Корень")
+
+        except Exception as e:
+            logger.error(f"Error going to root: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_cd_select(self, callback: CallbackQuery) -> None:
+        """Handle selecting folder as working directory"""
+        # Extract path from callback data (cd:select:/path/to/folder)
+        path = callback.data.split(":", 2)[-1] if callback.data.count(":") >= 2 else ""
+        user_id = callback.from_user.id
+
+        if not self.file_browser_service:
+            from application.services.file_browser_service import FileBrowserService
+            self.file_browser_service = FileBrowserService()
+
+        # Validate path
+        if not self.file_browser_service.is_within_root(path):
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        import os
+        if not os.path.isdir(path):
+            await callback.answer("❌ Папка не найдена")
+            return
+
+        try:
+            # Set working directory
+            if self.message_handlers:
+                self.message_handlers.set_working_dir(user_id, path)
+
+            # Create/switch project if project_service available
+            project_name = os.path.basename(path) or "root"
+            if self.project_service:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self.project_service.get_or_create(uid, path, project_name)
+                await self.project_service.switch_project(uid, project.id)
+                project_name = project.name
+
+            # Update message with confirmation
+            import html
+            await callback.message.edit_text(
+                f"✅ <b>Рабочая директория установлена</b>\n\n"
+                f"<b>Путь:</b> <code>{html.escape(path)}</code>\n"
+                f"<b>Проект:</b> {html.escape(project_name)}\n\n"
+                f"Теперь все команды Claude будут выполняться здесь.\n"
+                f"Отправьте сообщение, чтобы начать работу.",
+                parse_mode=ParseMode.HTML
+            )
+            await callback.answer(f"✅ {project_name}")
+
+        except Exception as e:
+            logger.error(f"Error selecting folder {path}: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_cd_close(self, callback: CallbackQuery) -> None:
+        """Handle closing the file browser"""
+        try:
+            await callback.message.delete()
+            await callback.answer("Закрыто")
+        except Exception as e:
+            logger.error(f"Error closing file browser: {e}")
+            await callback.answer("Закрыто")
+
 
 def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     """Register callback handlers"""
@@ -841,6 +978,24 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
         F.data == "context:new"
     )
 
+    # File browser handlers (/cd command)
+    router.callback_query.register(
+        handlers.handle_cd_goto,
+        F.data.startswith("cd:goto:")
+    )
+    router.callback_query.register(
+        handlers.handle_cd_root,
+        F.data == "cd:root"
+    )
+    router.callback_query.register(
+        handlers.handle_cd_select,
+        F.data.startswith("cd:select:")
+    )
+    router.callback_query.register(
+        handlers.handle_cd_close,
+        F.data == "cd:close"
+    )
+
     # Docker action handlers
     router.callback_query.register(
         handlers.handle_docker_stop,
@@ -885,7 +1040,8 @@ def get_callback_handlers(
     message_handlers,
     claude_proxy=None,
     project_service=None,
-    context_service=None
+    context_service=None,
+    file_browser_service=None
 ) -> CallbackHandlers:
     """Factory function to create callback handlers"""
     return CallbackHandlers(
@@ -893,5 +1049,6 @@ def get_callback_handlers(
         message_handlers,
         claude_proxy,
         project_service,
-        context_service
+        context_service,
+        file_browser_service
     )

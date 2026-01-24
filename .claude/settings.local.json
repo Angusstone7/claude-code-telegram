@@ -17,7 +17,8 @@
       "Read(//c/**)",
       "Bash(python -m py_compile:*)",
       "Bash(python:*)",
-      "Bash(docker-compose up:*)"
+      "Bash(docker-compose up:*)",
+      "Bash(ls -la \"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\"\" | grep -E \"^d \")"
     ]
   }
 }

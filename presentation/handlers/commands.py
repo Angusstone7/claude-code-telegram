@@ -3,6 +3,7 @@ import os
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
+from aiogram.enums import ParseMode
 from application.services.bot_service import BotService
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from infrastructure.claude_code.diagnostics import run_diagnostics, format_diagnostics_for_telegram
@@ -21,13 +22,15 @@ class CommandHandlers:
         claude_proxy: ClaudeCodeProxyService,
         message_handlers=None,  # Optional, set after initialization
         project_service=None,   # ProjectService for /change
-        context_service=None    # ContextService for /context
+        context_service=None,   # ContextService for /context
+        file_browser_service=None  # FileBrowserService for /cd
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy
         self.message_handlers = message_handlers
         self.project_service = project_service
         self.context_service = context_service
+        self.file_browser_service = file_browser_service
 
     async def start(self, message: Message) -> None:
         """Handle /start command"""
@@ -382,6 +385,61 @@ Just describe what you want!
                 parse_mode="Markdown"
             )
 
+    async def cd(self, message: Message, command: CommandObject) -> None:
+        """
+        Handle /cd command - interactive folder navigation.
+
+        Usage:
+            /cd           - Show current directory with navigation
+            /cd ..        - Go to parent directory
+            /cd <folder>  - Navigate to folder
+            /cd ~         - Go to root (/root/projects)
+        """
+        user_id = message.from_user.id
+
+        if not self.file_browser_service:
+            # Fallback: create service on demand
+            from application.services.file_browser_service import FileBrowserService
+            self.file_browser_service = FileBrowserService()
+
+        # Get current working directory
+        current_dir = "/root/projects"
+        if self.message_handlers:
+            current_dir = self.message_handlers.get_working_dir(user_id)
+
+        # Ensure current_dir is within root
+        if not self.file_browser_service.is_within_root(current_dir):
+            current_dir = self.file_browser_service.ROOT_PATH
+
+        # Resolve target path
+        if command.args:
+            target = command.args.strip()
+            target_path = self.file_browser_service.resolve_path(current_dir, target)
+        else:
+            target_path = current_dir
+
+        # Ensure directory exists
+        if not os.path.isdir(target_path):
+            # Try creating if it's a subdir of root
+            if self.file_browser_service.is_within_root(target_path):
+                try:
+                    os.makedirs(target_path, exist_ok=True)
+                except OSError:
+                    target_path = self.file_browser_service.ROOT_PATH
+            else:
+                target_path = self.file_browser_service.ROOT_PATH
+
+        # Get directory content and tree view
+        content = await self.file_browser_service.list_directory(target_path)
+        tree_view = await self.file_browser_service.get_tree_view(target_path)
+
+        # Send with HTML formatting
+        await message.answer(
+            tree_view,
+            parse_mode=ParseMode.HTML,
+            reply_markup=Keyboards.file_browser(content)
+        )
+
     async def cancel(self, message: Message) -> None:
         """Handle /cancel command - cancel running Claude Code task"""
         user_id = message.from_user.id
@@ -485,6 +543,7 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     # Project/Context management commands
     router.message.register(handlers.change, Command("change"))
     router.message.register(handlers.context, Command("context"))
+    router.message.register(handlers.cd, Command("cd"))
 
     # Menu buttons
     router.message.register(handlers.menu_chat, F.text == "💬 Chat")

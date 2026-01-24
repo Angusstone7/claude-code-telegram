@@ -11,6 +11,8 @@ Supports two backends:
 
 import asyncio
 import logging
+import os
+import re
 import uuid
 from typing import Optional, Union
 from aiogram import Router, F, Bot
@@ -108,6 +110,52 @@ class MessageHandlers:
         if 0 <= index < len(options):
             return options[index]
         return str(index)
+
+    def _detect_cd_command(self, command: str, current_dir: str) -> Optional[str]:
+        """
+        Detect if a bash command changes directory and return the new path.
+
+        Handles patterns like:
+        - cd /path/to/dir
+        - cd subdir
+        - mkdir -p dir && cd dir
+        - cd ~
+        - cd ..
+        """
+        # Find cd commands in the command string
+        # Match: cd followed by path (handles && chains, ; separators)
+        cd_patterns = [
+            r'(?:^|&&|;)\s*cd\s+([^\s;&|]+)',  # cd path
+            r'(?:^|&&|;)\s*cd\s+"([^"]+)"',     # cd "path with spaces"
+            r"(?:^|&&|;)\s*cd\s+'([^']+)'",     # cd 'path with spaces'
+        ]
+
+        new_dir = None
+        for pattern in cd_patterns:
+            matches = re.findall(pattern, command)
+            if matches:
+                # Take the last cd command in the chain
+                new_dir = matches[-1]
+                break
+
+        if not new_dir:
+            return None
+
+        # Resolve the path
+        if new_dir.startswith('/'):
+            # Absolute path
+            return new_dir
+        elif new_dir == '~':
+            return '/root'
+        elif new_dir == '-':
+            # cd - goes to previous dir, we can't track this
+            return None
+        elif new_dir == '..':
+            # Go up one level
+            return os.path.dirname(current_dir)
+        else:
+            # Relative path
+            return os.path.join(current_dir, new_dir)
 
     async def handle_permission_response(self, user_id: int, approved: bool):
         """Handle permission response from callback"""
@@ -221,6 +269,9 @@ class MessageHandlers:
         if context_id:
             session.context_id = context_id  # type: ignore
 
+        # Store original working dir to detect changes
+        session._original_working_dir = working_dir  # type: ignore
+
         # Start streaming handler
         streaming = StreamingHandler(bot, message.chat.id)
         await streaming.start(f"🤖 **Working...**\n📁 `{working_dir}`\n\n")
@@ -295,6 +346,23 @@ class MessageHandlers:
     async def _on_tool_use(self, user_id: int, tool_name: str, tool_input: dict, message: Message):
         """Handle tool use notification"""
         streaming = self._streaming_handlers.get(user_id)
+
+        # Track directory changes from cd commands
+        if tool_name.lower() == "bash":
+            command = tool_input.get("command", "")
+            current_dir = self.get_working_dir(user_id)
+            new_dir = self._detect_cd_command(command, current_dir)
+
+            if new_dir:
+                # Update working directory for future operations
+                self._user_working_dirs[user_id] = new_dir
+                logger.info(f"[{user_id}] Working directory changed: {current_dir} -> {new_dir}")
+
+                # Also update in current session
+                session = self._user_sessions.get(user_id)
+                if session:
+                    session.working_dir = new_dir
+
         if streaming:
             # Format tool details
             details = ""
@@ -528,6 +596,26 @@ class MessageHandlers:
                     logger.info(f"Saved session to context {context_id}")
                 except Exception as e:
                     logger.warning(f"Error saving to context: {e}")
+
+            # Check if working directory changed and update project path
+            if session and self.project_service:
+                new_working_dir = self._user_working_dirs.get(user_id)
+                original_dir = getattr(session, '_original_working_dir', session.working_dir)
+
+                if new_working_dir and new_working_dir != original_dir:
+                    try:
+                        from domain.value_objects.user_id import UserId
+                        uid = UserId.from_int(user_id)
+
+                        # Get or create project at new path
+                        project = await self.project_service.get_or_create(
+                            uid, new_working_dir
+                        )
+                        # Switch to the new project
+                        await self.project_service.switch_project(uid, project.id)
+                        logger.info(f"[{user_id}] Switched to project at {new_working_dir}")
+                    except Exception as e:
+                        logger.warning(f"Error updating project path: {e}")
 
             # Auto-continue enabled: no need to show button, just confirm completion
             # User can simply send next message to continue

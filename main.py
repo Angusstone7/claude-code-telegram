@@ -36,6 +36,7 @@ from infrastructure.persistence.project_repository import SQLiteProjectRepositor
 from infrastructure.persistence.project_context_repository import SQLiteProjectContextRepository
 from application.services.project_service import ProjectService
 from application.services.context_service import ContextService
+from application.services.file_browser_service import FileBrowserService
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 
@@ -76,6 +77,7 @@ class Application:
         self.claude_sdk: "ClaudeAgentSDKService" = None  # SDK service (preferred)
         self.project_service: ProjectService = None
         self.context_service: ContextService = None
+        self.file_browser_service: FileBrowserService = None
         self._shutdown_event = asyncio.Event()
 
     async def setup(self):
@@ -154,6 +156,7 @@ class Application:
 
         self.project_service = ProjectService(project_repo, context_repo)
         self.context_service = ContextService(context_repo)
+        self.file_browser_service = FileBrowserService(root_path="/root/projects")
         logger.info("✓ Project management initialized")
 
         # Initialize bot
@@ -189,7 +192,8 @@ class Application:
             self.bot_service,
             self.claude_proxy,
             project_service=self.project_service,
-            context_service=self.context_service
+            context_service=self.context_service,
+            file_browser_service=self.file_browser_service
         )
         cmd_handlers.message_handlers = msg_handlers  # Link for /project, /status commands
         register_cmd_handlers(self.dp, cmd_handlers)
@@ -203,7 +207,8 @@ class Application:
             msg_handlers,
             self.claude_proxy,
             self.project_service,
-            self.context_service
+            self.context_service,
+            self.file_browser_service
         )
         register_callback_handlers(self.dp, callback_handlers)
 

@@ -384,6 +384,88 @@ class Keyboards:
             ]
         ])
 
+    # ============== File Browser Keyboard (/cd command) ==============
+
+    @staticmethod
+    def file_browser(
+        content,  # DirectoryContent
+        folders_per_row: int = 2
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard for /cd command - interactive folder navigation.
+
+        Args:
+            content: DirectoryContent object with entries
+            folders_per_row: Number of folder buttons per row
+
+        Features:
+        - Folder buttons for navigation
+        - Back, Root, Select buttons
+        - Close button
+        """
+        buttons = []
+
+        # Collect folder entries (only directories get buttons)
+        folder_buttons = []
+        for entry in content.entries:
+            if entry.is_dir:
+                # Truncate long names for button display
+                name = entry.name
+                if len(name) > 15:
+                    name = name[:12] + "..."
+
+                # Use hash-based callback to avoid path length issues
+                # Format: cd:goto:<path>
+                folder_buttons.append(
+                    InlineKeyboardButton(
+                        text=f"📁 {name}",
+                        callback_data=f"cd:goto:{entry.path[:50]}"
+                    )
+                )
+
+        # Group folders into rows
+        for i in range(0, len(folder_buttons), folders_per_row):
+            buttons.append(folder_buttons[i:i + folders_per_row])
+
+        # Navigation buttons
+        nav_row = []
+
+        # Back button (if not at root)
+        if content.parent_path:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="⬆️ Назад",
+                    callback_data=f"cd:goto:{content.parent_path}"
+                )
+            )
+
+        # Root button (if not already at root)
+        if not content.is_root:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="🏠 Корень",
+                    callback_data="cd:root"
+                )
+            )
+
+        # Select current folder
+        nav_row.append(
+            InlineKeyboardButton(
+                text="✅ Выбрать",
+                callback_data=f"cd:select:{content.path[:50]}"
+            )
+        )
+
+        if nav_row:
+            buttons.append(nav_row)
+
+        # Close button
+        buttons.append([
+            InlineKeyboardButton(text="❌ Закрыть", callback_data="cd:close")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 class CallbackData:
     """Helper for parsing callback data"""
