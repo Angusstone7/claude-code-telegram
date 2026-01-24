@@ -19,11 +19,15 @@ class CommandHandlers:
         self,
         bot_service: BotService,
         claude_proxy: ClaudeCodeProxyService,
-        message_handlers=None  # Optional, set after initialization
+        message_handlers=None,  # Optional, set after initialization
+        project_service=None,   # ProjectService for /change
+        context_service=None    # ContextService for /context
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy
         self.message_handlers = message_handlers
+        self.project_service = project_service
+        self.context_service = context_service
 
     async def start(self, message: Message) -> None:
         """Handle /start command"""
@@ -253,6 +257,131 @@ Just describe what you want!
                 reply_markup=Keyboards.project_selection(projects) if projects else None
             )
 
+    async def change(self, message: Message) -> None:
+        """Handle /change command - show project list for switching"""
+        user_id = message.from_user.id
+
+        if not self.project_service:
+            await message.answer("⚠️ Project service not initialized")
+            return
+
+        from domain.value_objects.user_id import UserId
+        uid = UserId.from_int(user_id)
+
+        # Get user's projects
+        projects = await self.project_service.list_projects(uid)
+        current = await self.project_service.get_current(uid)
+
+        current_name = current.name if current else "None"
+        current_id = current.id if current else None
+
+        if projects:
+            text = (
+                f"📂 **Switch Project**\n\n"
+                f"Current: **{current_name}**\n\n"
+                f"Select a project:"
+            )
+            keyboard = Keyboards.project_list(projects, current_id)
+        else:
+            text = (
+                f"📂 **No Projects**\n\n"
+                f"You don't have any projects yet.\n"
+                f"Create one or browse `/root/projects`"
+            )
+            keyboard = Keyboards.project_list([], None, show_create=True)
+
+        await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+    async def context(self, message: Message, command: CommandObject) -> None:
+        """Handle /context command - manage contexts within project"""
+        user_id = message.from_user.id
+
+        if not self.project_service or not self.context_service:
+            await message.answer("⚠️ Services not initialized")
+            return
+
+        from domain.value_objects.user_id import UserId
+        uid = UserId.from_int(user_id)
+
+        # Get current project
+        project = await self.project_service.get_current(uid)
+        if not project:
+            await message.answer(
+                "❌ **No active project**\n\n"
+                "Use `/change` to select a project first.",
+                parse_mode="Markdown"
+            )
+            return
+
+        subcommand = command.args.strip().lower() if command.args else ""
+
+        if subcommand == "new":
+            # Create new context
+            context = await self.context_service.create_new(
+                project.id, uid, set_as_current=True
+            )
+            await message.answer(
+                f"✨ **New Context Created**\n\n"
+                f"Context: **{context.name}**\n"
+                f"Project: {project.name}\n\n"
+                f"Fresh start - no history!",
+                parse_mode="Markdown"
+            )
+
+        elif subcommand == "list":
+            # List contexts
+            contexts = await self.context_service.list_contexts(project.id)
+            current_ctx = await self.context_service.get_current(project.id)
+            current_id = current_ctx.id if current_ctx else None
+
+            if contexts:
+                text = (
+                    f"💬 **Contexts for {project.name}**\n\n"
+                    f"Select a context:"
+                )
+                keyboard = Keyboards.context_list(contexts, current_id)
+            else:
+                text = "No contexts found. Creating main context..."
+                context = await self.context_service.create_new(
+                    project.id, uid, "main", set_as_current=True
+                )
+                text = f"✨ Created context: **{context.name}**"
+                keyboard = None
+
+            await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+        elif subcommand == "clear":
+            # Clear current context messages
+            current_ctx = await self.context_service.get_current(project.id)
+            if current_ctx:
+                await self.context_service.start_fresh(current_ctx.id)
+                await message.answer(
+                    f"🗑️ **Context Cleared**\n\n"
+                    f"Context: {current_ctx.name}\n"
+                    f"Messages and session cleared.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await message.answer("No active context to clear.")
+
+        else:
+            # Show help
+            current_ctx = await self.context_service.get_current(project.id)
+            ctx_name = current_ctx.name if current_ctx else "none"
+
+            await message.answer(
+                f"💬 **Context Management**\n\n"
+                f"Project: **{project.name}**\n"
+                f"Context: **{ctx_name}**\n\n"
+                f"**Commands:**\n"
+                f"`/context new` - Create fresh context\n"
+                f"`/context list` - List all contexts\n"
+                f"`/context clear` - Clear current context\n\n"
+                f"Contexts let you have multiple conversations\n"
+                f"within the same project (like Cursor IDE).",
+                parse_mode="Markdown"
+            )
+
     async def cancel(self, message: Message) -> None:
         """Handle /cancel command - cancel running Claude Code task"""
         user_id = message.from_user.id
@@ -352,6 +481,10 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.cancel, Command("cancel"))
     router.message.register(handlers.status, Command("status"))
     router.message.register(handlers.diagnose, Command("diagnose"))
+
+    # Project/Context management commands
+    router.message.register(handlers.change, Command("change"))
+    router.message.register(handlers.context, Command("context"))
 
     # Menu buttons
     router.message.register(handlers.menu_chat, F.text == "💬 Chat")

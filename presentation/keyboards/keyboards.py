@@ -249,6 +249,141 @@ class Keyboards:
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+    # ============== Project Management Keyboards ==============
+
+    @staticmethod
+    def project_list(
+        projects: List,
+        current_project_id: Optional[str] = None,
+        show_create: bool = True
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard with list of projects for /change command.
+
+        Args:
+            projects: List of Project entities
+            current_project_id: ID of currently active project
+            show_create: Whether to show create button
+        """
+        buttons = []
+
+        for p in projects[:10]:  # Max 10 projects
+            # Mark current project
+            is_current = current_project_id and p.id == current_project_id
+            emoji = "📂" if is_current else "📁"
+            mark = " ✓" if is_current else ""
+
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{emoji} {p.name}{mark}",
+                    callback_data=f"project:switch:{p.id}"
+                )
+            ])
+
+        # Action buttons
+        action_row = []
+        if show_create:
+            action_row.append(
+                InlineKeyboardButton(text="➕ Create", callback_data="project:create")
+            )
+        action_row.append(
+            InlineKeyboardButton(text="📂 Browse", callback_data="project:browse")
+        )
+        buttons.append(action_row)
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def context_list(
+        contexts: List,
+        current_context_id: Optional[str] = None
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard with list of contexts for a project.
+
+        Args:
+            contexts: List of ProjectContext entities
+            current_context_id: ID of currently active context
+        """
+        buttons = []
+
+        for ctx in contexts[:10]:  # Max 10 contexts
+            # Mark current context
+            is_current = current_context_id and ctx.id == current_context_id
+            emoji = "💬" if is_current else "📝"
+            mark = " ✓" if is_current else ""
+
+            # Show message count
+            msg_count = f"({ctx.message_count})" if ctx.message_count > 0 else ""
+
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{emoji} {ctx.name} {msg_count}{mark}",
+                    callback_data=f"context:switch:{ctx.id}"
+                )
+            ])
+
+        # New context button
+        buttons.append([
+            InlineKeyboardButton(text="✨ New Context", callback_data="context:new")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def folder_browser(
+        folders: List[str],
+        current_path: str = "/root/projects"
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard for browsing folders in /root/projects.
+
+        Args:
+            folders: List of folder paths
+            current_path: Current browsing path
+        """
+        import os
+        buttons = []
+
+        for folder in folders[:10]:
+            name = os.path.basename(folder)
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"📁 {name}",
+                    callback_data=f"project:folder:{folder[:50]}"
+                )
+            ])
+
+        # Back button if not at root
+        if current_path != "/root/projects":
+            parent = os.path.dirname(current_path)
+            buttons.append([
+                InlineKeyboardButton(text="⬆️ Parent", callback_data=f"project:browse:{parent}")
+            ])
+
+        # Refresh
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Refresh", callback_data="project:browse")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def project_confirm_create(path: str, name: str) -> InlineKeyboardMarkup:
+        """Confirm project creation"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Create",
+                    callback_data=f"project:confirm:{path[:40]}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Cancel",
+                    callback_data="project:browse"
+                )
+            ]
+        ])
+
 
 class CallbackData:
     """Helper for parsing callback data"""

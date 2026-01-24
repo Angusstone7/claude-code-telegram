@@ -12,10 +12,19 @@ router = Router()
 class CallbackHandlers:
     """Bot callback query handlers"""
 
-    def __init__(self, bot_service, message_handlers, claude_proxy=None):
+    def __init__(
+        self,
+        bot_service,
+        message_handlers,
+        claude_proxy=None,
+        project_service=None,
+        context_service=None
+    ):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
         self.claude_proxy = claude_proxy  # ClaudeCodeProxyService instance
+        self.project_service = project_service
+        self.context_service = context_service
 
     async def handle_command_approve(self, callback: CallbackQuery) -> None:
         """Handle command approval callback"""
@@ -532,6 +541,226 @@ class CallbackHandlers:
             logger.error(f"Error handling project select: {e}")
             await callback.answer(f"❌ Error: {e}")
 
+    # ============== Project Management Callbacks ==============
+
+    async def handle_project_switch(self, callback: CallbackQuery) -> None:
+        """Handle project switch (from /change command)"""
+        project_id = callback.data.split(":")[-1]
+        user_id = callback.from_user.id
+
+        if not self.project_service:
+            await callback.answer("⚠️ Project service not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+            from presentation.keyboards.keyboards import Keyboards
+
+            uid = UserId.from_int(user_id)
+            project = await self.project_service.switch_project(uid, project_id)
+
+            if project:
+                # Also update working directory in message handlers
+                if hasattr(self.message_handlers, 'set_working_dir'):
+                    self.message_handlers.set_working_dir(user_id, project.working_dir)
+
+                await callback.message.edit_text(
+                    f"✅ **Switched to project:**\n\n"
+                    f"**{project.name}**\n"
+                    f"Path: `{project.working_dir}`\n\n"
+                    f"Use `/context list` to see conversation contexts.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await callback.answer(f"Switched to {project.name}")
+            else:
+                await callback.answer("❌ Project not found")
+
+        except Exception as e:
+            logger.error(f"Error switching project: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_project_create(self, callback: CallbackQuery) -> None:
+        """Handle project create - show folder browser"""
+        await self.handle_project_browse(callback)
+
+    async def handle_project_browse(self, callback: CallbackQuery) -> None:
+        """Handle project browse - show folders in /root/projects"""
+        import os
+        from presentation.keyboards.keyboards import Keyboards
+
+        try:
+            root_path = "/root/projects"
+
+            # Check if path specified in callback
+            if ":" in callback.data and callback.data.count(":") > 1:
+                path = ":".join(callback.data.split(":")[2:])
+                if path and os.path.isdir(path):
+                    root_path = path
+
+            # Ensure directory exists
+            if not os.path.exists(root_path):
+                os.makedirs(root_path, exist_ok=True)
+
+            # Get folders
+            folders = []
+            try:
+                for entry in os.scandir(root_path):
+                    if entry.is_dir() and not entry.name.startswith('.'):
+                        folders.append(entry.path)
+            except OSError:
+                pass
+
+            folders.sort()
+
+            if folders:
+                text = (
+                    f"📂 **Browse Projects**\n\n"
+                    f"Path: `{root_path}`\n\n"
+                    f"Select a folder to create project:"
+                )
+            else:
+                text = (
+                    f"📂 **No folders found**\n\n"
+                    f"Path: `{root_path}`\n\n"
+                    f"Create a folder first with Claude Code."
+                )
+
+            await callback.message.edit_text(
+                text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=Keyboards.folder_browser(folders, root_path)
+            )
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error browsing projects: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_project_folder(self, callback: CallbackQuery) -> None:
+        """Handle folder selection - create project from folder"""
+        import os
+        from presentation.keyboards.keyboards import Keyboards
+
+        folder_path = ":".join(callback.data.split(":")[2:])
+        user_id = callback.from_user.id
+
+        if not folder_path or not os.path.isdir(folder_path):
+            await callback.answer("❌ Invalid folder")
+            return
+
+        if not self.project_service:
+            await callback.answer("⚠️ Project service not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+
+            uid = UserId.from_int(user_id)
+            name = os.path.basename(folder_path)
+
+            # Create or get project
+            project = await self.project_service.get_or_create(uid, folder_path, name)
+
+            # Switch to it
+            await self.project_service.switch_project(uid, project.id)
+
+            # Update working directory
+            if hasattr(self.message_handlers, 'set_working_dir'):
+                self.message_handlers.set_working_dir(user_id, folder_path)
+
+            await callback.message.edit_text(
+                f"✅ **Project created:**\n\n"
+                f"**{project.name}**\n"
+                f"Path: `{project.working_dir}`\n\n"
+                f"Ready to work! Send your first message.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await callback.answer(f"Created {project.name}")
+
+        except Exception as e:
+            logger.error(f"Error creating project from folder: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    # ============== Context Management Callbacks ==============
+
+    async def handle_context_switch(self, callback: CallbackQuery) -> None:
+        """Handle context switch"""
+        context_id = callback.data.split(":")[-1]
+        user_id = callback.from_user.id
+
+        if not self.project_service or not self.context_service:
+            await callback.answer("⚠️ Services not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+
+            uid = UserId.from_int(user_id)
+
+            # Get current project
+            project = await self.project_service.get_current(uid)
+            if not project:
+                await callback.answer("❌ No active project")
+                return
+
+            # Switch context
+            context = await self.context_service.switch_context(project.id, context_id)
+
+            if context:
+                await callback.message.edit_text(
+                    f"💬 **Switched to context:**\n\n"
+                    f"**{context.name}**\n"
+                    f"Messages: {context.message_count}\n"
+                    f"Project: {project.name}\n\n"
+                    f"{'📜 Continuing previous conversation...' if context.has_session else '✨ Fresh context'}",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await callback.answer(f"Context: {context.name}")
+            else:
+                await callback.answer("❌ Context not found")
+
+        except Exception as e:
+            logger.error(f"Error switching context: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_context_new(self, callback: CallbackQuery) -> None:
+        """Handle new context creation"""
+        user_id = callback.from_user.id
+
+        if not self.project_service or not self.context_service:
+            await callback.answer("⚠️ Services not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+
+            uid = UserId.from_int(user_id)
+
+            # Get current project
+            project = await self.project_service.get_current(uid)
+            if not project:
+                await callback.answer("❌ No active project")
+                return
+
+            # Create new context
+            context = await self.context_service.create_new(
+                project.id, uid, set_as_current=True
+            )
+
+            await callback.message.edit_text(
+                f"✨ **New Context Created**\n\n"
+                f"**{context.name}**\n"
+                f"Project: {project.name}\n\n"
+                f"Fresh start - no history!\n"
+                f"Send your first message.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await callback.answer(f"Created {context.name}")
+
+        except Exception as e:
+            logger.error(f"Error creating context: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
 
 def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     """Register callback handlers"""
@@ -579,10 +808,37 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
         F.data.startswith("claude:continue:")
     )
 
-    # Project selection handlers
+    # Project management handlers (specific first, then generic)
+    router.callback_query.register(
+        handlers.handle_project_switch,
+        F.data.startswith("project:switch:")
+    )
+    router.callback_query.register(
+        handlers.handle_project_create,
+        F.data == "project:create"
+    )
+    router.callback_query.register(
+        handlers.handle_project_browse,
+        F.data.startswith("project:browse")
+    )
+    router.callback_query.register(
+        handlers.handle_project_folder,
+        F.data.startswith("project:folder:")
+    )
+    # Legacy project selection (fallback)
     router.callback_query.register(
         handlers.handle_project_select,
         F.data.startswith("project:")
+    )
+
+    # Context management handlers
+    router.callback_query.register(
+        handlers.handle_context_switch,
+        F.data.startswith("context:switch:")
+    )
+    router.callback_query.register(
+        handlers.handle_context_new,
+        F.data == "context:new"
     )
 
     # Docker action handlers
@@ -624,6 +880,18 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     )
 
 
-def get_callback_handlers(bot_service, message_handlers, claude_proxy=None) -> CallbackHandlers:
+def get_callback_handlers(
+    bot_service,
+    message_handlers,
+    claude_proxy=None,
+    project_service=None,
+    context_service=None
+) -> CallbackHandlers:
     """Factory function to create callback handlers"""
-    return CallbackHandlers(bot_service, message_handlers, claude_proxy)
+    return CallbackHandlers(
+        bot_service,
+        message_handlers,
+        claude_proxy,
+        project_service,
+        context_service
+    )

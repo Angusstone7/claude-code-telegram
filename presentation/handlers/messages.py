@@ -48,12 +48,16 @@ class MessageHandlers:
         bot_service,
         claude_proxy: ClaudeCodeProxyService,
         sdk_service: Optional["ClaudeAgentSDKService"] = None,
-        default_working_dir: str = "/root"
+        default_working_dir: str = "/root",
+        project_service=None,
+        context_service=None
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy  # CLI fallback
         self.sdk_service = sdk_service    # Preferred SDK backend
         self.default_working_dir = default_working_dir
+        self.project_service = project_service
+        self.context_service = context_service
 
         # Determine which backend to use
         self.use_sdk = sdk_service is not None and SDK_AVAILABLE
@@ -168,9 +172,41 @@ class MessageHandlers:
             )
             return
 
-        # Get working directory and session
+        # Get working directory and session from project/context (auto-continue)
         working_dir = self.get_working_dir(user_id)
         session_id = self._continue_sessions.pop(user_id, None)
+        context_id = None
+
+        # Use project/context services if available (for auto-continue)
+        if self.project_service and self.context_service:
+            try:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+
+                # Get current project
+                project = await self.project_service.get_current(uid)
+                if project:
+                    working_dir = project.working_dir
+
+                    # Get or create context
+                    context = await self.context_service.get_current(project.id)
+                    if not context:
+                        context = await self.context_service.create_new(
+                            project.id, uid, "main", set_as_current=True
+                        )
+
+                    context_id = context.id
+
+                    # Auto-continue: use context's claude_session_id
+                    if not session_id and context.claude_session_id:
+                        session_id = context.claude_session_id
+                        logger.info(f"Auto-continuing session {session_id} for context {context.name}")
+
+                    # Update local working dir cache
+                    self._user_working_dirs[user_id] = working_dir
+
+            except Exception as e:
+                logger.warning(f"Error getting project/context: {e}")
 
         # Create session state
         session = ClaudeCodeSession(
@@ -180,6 +216,10 @@ class MessageHandlers:
         )
         session.start_task(message.text)
         self._user_sessions[user_id] = session
+
+        # Store context_id for saving messages later
+        if context_id:
+            session.context_id = context_id  # type: ignore
 
         # Start streaming handler
         streaming = StreamingHandler(bot, message.chat.id)
@@ -472,12 +512,25 @@ class MessageHandlers:
             if session:
                 session.complete(result.session_id)
 
-            # Offer to continue if we have a session
-            if result.session_id:
-                await message.answer(
-                    "✅ **Task completed**\n\nYou can continue this conversation or start fresh.",
-                    reply_markup=Keyboards.claude_continue(user_id, result.session_id)
-                )
+            # Save to context if available (for auto-continue)
+            context_id = getattr(session, 'context_id', None) if session else None
+            if context_id and self.context_service and result.session_id:
+                try:
+                    # Save claude_session_id for next auto-continue
+                    await self.context_service.set_claude_session_id(context_id, result.session_id)
+
+                    # Save messages to context
+                    if session and session.current_prompt:
+                        await self.context_service.save_message(context_id, "user", session.current_prompt)
+                    if result.output:
+                        await self.context_service.save_message(context_id, "assistant", result.output[:5000])
+
+                    logger.info(f"Saved session to context {context_id}")
+                except Exception as e:
+                    logger.warning(f"Error saving to context: {e}")
+
+            # Auto-continue enabled: no need to show button, just confirm completion
+            # User can simply send next message to continue
         else:
             if streaming:
                 await streaming.send_completion(success=False)

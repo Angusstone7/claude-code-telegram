@@ -32,6 +32,10 @@ from infrastructure.persistence.sqlite_repository import (
     SQLiteSessionRepository,
     SQLiteCommandRepository
 )
+from infrastructure.persistence.project_repository import SQLiteProjectRepository
+from infrastructure.persistence.project_context_repository import SQLiteProjectContextRepository
+from application.services.project_service import ProjectService
+from application.services.context_service import ContextService
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 
@@ -70,6 +74,8 @@ class Application:
         self.bot_service: BotService = None
         self.claude_proxy: ClaudeCodeProxyService = None
         self.claude_sdk: "ClaudeAgentSDKService" = None  # SDK service (preferred)
+        self.project_service: ProjectService = None
+        self.context_service: ContextService = None
         self._shutdown_event = asyncio.Event()
 
     async def setup(self):
@@ -137,6 +143,19 @@ class Application:
             command_repository=command_repo,
         )
 
+        # Initialize project/context repositories and services
+        logger.info("Initializing project management...")
+        project_repo = SQLiteProjectRepository()
+        context_repo = SQLiteProjectContextRepository()
+
+        # Initialize database tables for projects
+        await project_repo.initialize()
+        await context_repo.initialize()
+
+        self.project_service = ProjectService(project_repo, context_repo)
+        self.context_service = ContextService(context_repo)
+        logger.info("✓ Project management initialized")
+
         # Initialize bot
         self.bot = Bot(
             token=settings.telegram.token,
@@ -160,19 +179,32 @@ class Application:
         msg_handlers = MessageHandlers(
             self.bot_service,
             self.claude_proxy,
-            sdk_service=self.claude_sdk  # Pass SDK service for proper HITL
+            sdk_service=self.claude_sdk,  # Pass SDK service for proper HITL
+            project_service=self.project_service,
+            context_service=self.context_service
         )
 
-        # Command handlers (with claude_proxy for new commands)
-        cmd_handlers = CommandHandlers(self.bot_service, self.claude_proxy)
+        # Command handlers (with claude_proxy and project/context services)
+        cmd_handlers = CommandHandlers(
+            self.bot_service,
+            self.claude_proxy,
+            project_service=self.project_service,
+            context_service=self.context_service
+        )
         cmd_handlers.message_handlers = msg_handlers  # Link for /project, /status commands
         register_cmd_handlers(self.dp, cmd_handlers)
 
         # Register message handlers after commands (commands take priority)
         register_msg_handlers(self.dp, msg_handlers)
 
-        # Callback handlers (with claude_proxy for HITL)
-        callback_handlers = CallbackHandlers(self.bot_service, msg_handlers, self.claude_proxy)
+        # Callback handlers (with claude_proxy and project/context services for HITL)
+        callback_handlers = CallbackHandlers(
+            self.bot_service,
+            msg_handlers,
+            self.claude_proxy,
+            self.project_service,
+            self.context_service
+        )
         register_callback_handlers(self.dp, callback_handlers)
 
     async def start(self):
