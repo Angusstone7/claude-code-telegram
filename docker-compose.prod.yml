@@ -28,5 +28,7 @@ services:
       # Persistent data
       - ./data:/app/data
       - ./logs:/app/logs
+      # Projects directory - persists across container rebuilds
+      - ./projects:/root/projects
     extra_hosts:
       - "host.docker.internal:host-gateway"

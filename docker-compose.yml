@@ -10,6 +10,11 @@ services:
     volumes:
       # Пробрасываем приватный ключ внутрь контейнера (только для чтения)
       - ./bot_key:/app/bot_key:ro
+      # Persistent storage for database and logs
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Projects directory - persists across container rebuilds
+      - ./projects:/root/projects
     # Этот хак позволяет контейнеру видеть хост по адресу host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
