@@ -150,12 +150,13 @@ class ClaudeCodeProxyService:
 
         # Build command
         # Note: working directory is set via subprocess cwd parameter, not CLI flag
+        # --dangerously-skip-permissions allows non-interactive operation
         cmd = [
             self.claude_path,
             "-p", prompt,
             "--output-format", "stream-json",
             "--max-turns", str(self.max_turns),
-            "--verbose",
+            "--dangerously-skip-permissions",
         ]
 
         if session_id:

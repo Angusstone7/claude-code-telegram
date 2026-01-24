@@ -13,7 +13,10 @@
       "Bash(python -m pytest:*)",
       "Bash(pip install:*)",
       "Bash(black:*)",
-      "Bash(mypy:*)"
+      "Bash(mypy:*)",
+      "Read(//c/**)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)"
     ]
   }
 }

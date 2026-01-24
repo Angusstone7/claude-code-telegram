@@ -164,6 +164,20 @@ Just describe what you want!
             reply_markup=Keyboards.system_metrics()
         )
 
+    async def menu_commands(self, message: Message) -> None:
+        """Handle commands menu button"""
+        await message.answer(
+            "📝 **Commands**\n\n"
+            "Just type any task in natural language!\n\n"
+            "**Examples:**\n"
+            "• 'List files in current directory'\n"
+            "• 'Show system memory usage'\n"
+            "• 'Create a Python script'\n"
+            "• 'Read the README.md file'\n\n"
+            "Claude Code will handle it!",
+            parse_mode="Markdown"
+        )
+
     async def project(self, message: Message, command: CommandObject) -> None:
         """Handle /project command - set working directory"""
         user_id = message.from_user.id
@@ -269,5 +283,6 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.menu_chat, F.text == "💬 Chat")
     router.message.register(handlers.menu_metrics, F.text == "📊 Metrics")
     router.message.register(handlers.menu_docker, F.text == "🐳 Docker")
+    router.message.register(handlers.menu_commands, F.text == "📝 Commands")
     router.message.register(handlers.clear, F.text == "🗑️ Clear")
     router.message.register(handlers.help, F.text == "ℹ️ Help")
