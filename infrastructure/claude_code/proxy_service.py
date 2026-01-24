@@ -148,12 +148,12 @@ class ClaudeCodeProxyService:
 
         work_dir = working_dir or self.default_working_dir
 
-        # Build command - try with -p flag (standard prompt flag)
-        # Note: working directory is set via subprocess cwd parameter, not CLI flag
+        # Build command with stream-json for real-time events
         cmd = [
             self.claude_path,
             "-p", prompt,
-            "--output-format", "text",  # Simple text output
+            "--output-format", "stream-json",  # JSON events for streaming
+            "--verbose",  # More detailed output
         ]
 
         if session_id:
@@ -166,8 +166,6 @@ class ClaudeCodeProxyService:
         result_session_id = session_id
 
         try:
-            # Start process with inherited environment
-            # ANTHROPIC_API_KEY should be set in container environment
             env = os.environ.copy()
             env["CI"] = "true"  # Non-interactive mode
             env["TERM"] = "dumb"  # Simple terminal
@@ -183,11 +181,74 @@ class ClaudeCodeProxyService:
             self._processes[user_id] = process
             logger.info(f"[{user_id}] Process started with PID: {process.pid}")
 
-            # Use communicate() like the working diagnostics
-            # This waits for full output (no streaming) but actually works
+            # Read stream-json output line by line (each event is a JSON line)
+            async def read_stream():
+                nonlocal result_session_id
+                text_buffer = ""  # Accumulate text for streaming
+
+                while True:
+                    if self._cancel_events[user_id].is_set():
+                        logger.info(f"[{user_id}] Stream cancelled")
+                        return
+
+                    try:
+                        line = await asyncio.wait_for(
+                            process.stdout.readline(),
+                            timeout=60  # 60 sec timeout per line
+                        )
+                    except asyncio.TimeoutError:
+                        # No output for 60 seconds - check if process still running
+                        if process.returncode is not None:
+                            break
+                        continue
+
+                    if not line:
+                        logger.info(f"[{user_id}] Stream EOF")
+                        break
+
+                    line_str = line.decode('utf-8').strip()
+                    if not line_str:
+                        continue
+
+                    logger.debug(f"[{user_id}] RAW: {line_str[:200]}")
+
+                    # Try to parse as JSON event
+                    event = self._parse_event(line_str)
+                    if event:
+                        logger.info(f"[{user_id}] Event: {event.type.value}")
+
+                        # Handle the event
+                        await self._handle_event(
+                            user_id, event,
+                            on_text, on_tool_use, on_tool_result,
+                            on_permission, on_question, on_error,
+                            output_buffer
+                        )
+
+                        # Extract session_id from result
+                        if event.type == EventType.RESULT and event.session_id:
+                            result_session_id = event.session_id
+                    else:
+                        # Non-JSON line - might be plain text output
+                        logger.info(f"[{user_id}] Non-JSON: {line_str[:100]}")
+                        if on_text and line_str:
+                            output_buffer.append(line_str)
+                            await on_text(line_str + "\n")
+
+            # Read stderr in background
+            async def read_stderr():
+                while True:
+                    line = await process.stderr.readline()
+                    if not line:
+                        break
+                    line_str = line.decode('utf-8').strip()
+                    if line_str:
+                        logger.warning(f"[{user_id}] STDERR: {line_str}")
+
+            # Run both readers with timeout
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
+                await asyncio.wait_for(
+                    asyncio.gather(read_stream(), read_stderr()),
                     timeout=self.timeout_seconds
                 )
             except asyncio.TimeoutError:
@@ -203,6 +264,9 @@ class ClaudeCodeProxyService:
                     error="Task timed out"
                 )
 
+            await process.wait()
+            logger.info(f"[{user_id}] Process finished, returncode={process.returncode}")
+
             # Check if cancelled
             if self._cancel_events[user_id].is_set():
                 return TaskResult(
@@ -212,32 +276,11 @@ class ClaudeCodeProxyService:
                     cancelled=True
                 )
 
-            stdout_str = stdout.decode('utf-8') if stdout else ""
-            stderr_str = stderr.decode('utf-8') if stderr else ""
-
-            logger.info(f"[{user_id}] Process finished, returncode={process.returncode}")
-            logger.info(f"[{user_id}] STDOUT length: {len(stdout_str)}")
-            if stdout_str:
-                logger.info(f"[{user_id}] STDOUT: {stdout_str[:1000]}")
-            if stderr_str:
-                logger.warning(f"[{user_id}] STDERR: {stderr_str[:500]}")
-
-            # Process the output
-            if stdout_str:
-                output_buffer.append(stdout_str)
-                if on_text:
-                    await on_text(stdout_str)
-
-            # Handle errors
-            if stderr_str and process.returncode != 0:
-                if on_error:
-                    await on_error(stderr_str)
-
             return TaskResult(
                 success=process.returncode == 0,
                 output="\n".join(output_buffer),
                 session_id=result_session_id,
-                error=stderr_str if stderr_str and process.returncode != 0 else None
+                error=None if process.returncode == 0 else "Process failed"
             )
 
         except Exception as e:
@@ -263,21 +306,50 @@ class ClaudeCodeProxyService:
 
             # Determine event type
             event_type = data.get("type", "")
+            logger.debug(f"Parsing event type: {event_type}, data keys: {list(data.keys())}")
 
+            # Assistant message - can contain text and tool_use blocks
             if event_type == "assistant":
-                # Assistant message with content blocks
-                content = ""
-                for block in data.get("message", {}).get("content", []):
-                    if block.get("type") == "text":
-                        content += block.get("text", "")
-                return ClaudeCodeEvent(
-                    type=EventType.ASSISTANT_MESSAGE,
-                    content=content,
-                    raw=data
-                )
+                message = data.get("message", {})
+                content_blocks = message.get("content", [])
 
+                text_content = ""
+                for block in content_blocks:
+                    block_type = block.get("type", "")
+                    if block_type == "text":
+                        text_content += block.get("text", "")
+                    elif block_type == "tool_use":
+                        # Also emit tool_use event
+                        return ClaudeCodeEvent(
+                            type=EventType.TOOL_USE,
+                            tool_name=block.get("name"),
+                            tool_input=block.get("input", {}),
+                            tool_id=block.get("id"),
+                            raw=data
+                        )
+
+                if text_content:
+                    return ClaudeCodeEvent(
+                        type=EventType.ASSISTANT_MESSAGE,
+                        content=text_content,
+                        session_id=data.get("session_id"),
+                        raw=data
+                    )
+
+            # Content block start - tool use
+            elif event_type == "content_block_start":
+                content_block = data.get("content_block", {})
+                if content_block.get("type") == "tool_use":
+                    return ClaudeCodeEvent(
+                        type=EventType.TOOL_USE,
+                        tool_name=content_block.get("name"),
+                        tool_input=content_block.get("input", {}),
+                        tool_id=content_block.get("id"),
+                        raw=data
+                    )
+
+            # Streaming text delta
             elif event_type == "content_block_delta":
-                # Streaming text delta
                 delta = data.get("delta", {})
                 if delta.get("type") == "text_delta":
                     return ClaudeCodeEvent(
@@ -285,7 +357,11 @@ class ClaudeCodeProxyService:
                         content=delta.get("text", ""),
                         raw=data
                     )
+                elif delta.get("type") == "input_json_delta":
+                    # Tool input streaming - skip for now
+                    pass
 
+            # Tool use event
             elif event_type == "tool_use":
                 return ClaudeCodeEvent(
                     type=EventType.TOOL_USE,
@@ -295,64 +371,69 @@ class ClaudeCodeProxyService:
                     raw=data
                 )
 
-            elif event_type == "tool_result":
+            # Tool result
+            elif event_type == "tool_result" or event_type == "user":
+                # user type with tool_result content
+                content = data.get("content", "")
+                if isinstance(content, list):
+                    # Extract text from content blocks
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            text_parts.append(str(block.get("content", "")))
+                    content = "\n".join(text_parts)
+
                 return ClaudeCodeEvent(
                     type=EventType.TOOL_RESULT,
-                    tool_id=data.get("tool_use_id"),
-                    content=data.get("content", ""),
+                    tool_id=data.get("tool_use_id") or data.get("id"),
+                    content=str(content)[:500],  # Truncate long results
                     raw=data
                 )
 
-            elif event_type == "permission_request" or "permission" in str(data).lower():
-                # Permission request for tool execution
-                return ClaudeCodeEvent(
-                    type=EventType.PERMISSION_REQUEST,
-                    tool_name=data.get("tool") or data.get("name"),
-                    content=data.get("command") or data.get("details") or json.dumps(data.get("input", {})),
-                    raw=data
-                )
-
-            elif event_type == "ask_user" or event_type == "user_question":
-                return ClaudeCodeEvent(
-                    type=EventType.ASK_USER,
-                    question=data.get("question") or data.get("message"),
-                    options=data.get("options", []),
-                    raw=data
-                )
-
+            # Result/completion
             elif event_type == "result" or event_type == "message_stop":
                 return ClaudeCodeEvent(
                     type=EventType.RESULT,
-                    content=data.get("content", ""),
+                    content=data.get("content", "") or data.get("result", ""),
                     session_id=data.get("session_id"),
                     raw=data
                 )
 
+            # Error
             elif event_type == "error":
                 return ClaudeCodeEvent(
                     type=EventType.ERROR,
-                    error=data.get("error") or data.get("message"),
+                    error=data.get("error", {}).get("message") if isinstance(data.get("error"), dict) else data.get("error") or data.get("message"),
                     raw=data
                 )
 
-            elif "system" in event_type.lower():
+            # System message
+            elif event_type == "system" or "system" in event_type.lower():
                 return ClaudeCodeEvent(
                     type=EventType.SYSTEM,
                     content=data.get("message") or data.get("content", ""),
                     raw=data
                 )
 
-            # Unknown event type - log and return as text if has content
+            # Skip these event types silently
+            elif event_type in ["message_start", "content_block_stop", "message_delta", "ping"]:
+                return None
+
+            # Unknown event type - try to extract content
+            logger.debug(f"Unknown event type: {event_type}")
             if data.get("text") or data.get("content"):
-                return ClaudeCodeEvent(
-                    type=EventType.TEXT,
-                    content=data.get("text") or data.get("content", ""),
-                    raw=data
-                )
+                content = data.get("text") or data.get("content", "")
+                if isinstance(content, str) and content:
+                    return ClaudeCodeEvent(
+                        type=EventType.TEXT,
+                        content=content,
+                        raw=data
+                    )
 
             return None
 
         except json.JSONDecodeError:
+            # Not JSON - could be plain text
             return None
 
     async def _handle_event(
