@@ -205,24 +205,50 @@ class ClaudeAgentSDKService:
 
     async def cancel_task(self, user_id: int) -> bool:
         """Cancel the active task for a user"""
+        cancelled = False
+
+        # Set cancel event to signal the running task
         cancel_event = self._cancel_events.get(user_id)
         if cancel_event:
             cancel_event.set()
+            cancelled = True
 
+        # Try to interrupt the SDK client
         client = self._clients.get(user_id)
         if client:
             try:
                 await client.interrupt()
-                return True
+                cancelled = True
+                logger.info(f"[{user_id}] Client interrupted")
             except Exception as e:
-                logger.error(f"Error interrupting client: {e}")
+                logger.error(f"[{user_id}] Error interrupting client: {e}")
 
+        # Try to cancel the asyncio task
         task = self._tasks.get(user_id)
         if task and not task.done():
             task.cancel()
-            return True
+            cancelled = True
+            logger.info(f"[{user_id}] Asyncio task cancelled")
 
-        return False
+        # Always reset status and clean up when cancel is requested
+        current_status = self._task_status.get(user_id, TaskStatus.IDLE)
+        if current_status != TaskStatus.IDLE:
+            logger.info(f"[{user_id}] Resetting task status from {current_status} to IDLE")
+            self._task_status[user_id] = TaskStatus.IDLE
+            cancelled = True
+
+        # Clean up any leftover state
+        self._clients.pop(user_id, None)
+        self._tasks.pop(user_id, None)
+        self._cancel_events.pop(user_id, None)
+        self._permission_events.pop(user_id, None)
+        self._question_events.pop(user_id, None)
+        self._permission_requests.pop(user_id, None)
+        self._question_requests.pop(user_id, None)
+        self._permission_responses.pop(user_id, None)
+        self._question_responses.pop(user_id, None)
+
+        return cancelled
 
     async def run_task(
         self,
@@ -279,6 +305,11 @@ class ClaudeAgentSDKService:
             logger.error(f"[{user_id}] {error_msg}")
             if on_error:
                 await on_error(error_msg)
+            # Reset status before returning (cleanup won't run for early returns)
+            self._task_status[user_id] = TaskStatus.IDLE
+            self._cancel_events.pop(user_id, None)
+            self._permission_events.pop(user_id, None)
+            self._question_events.pop(user_id, None)
             return SDKTaskResult(
                 success=False,
                 output="",

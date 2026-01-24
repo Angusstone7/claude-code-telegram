@@ -584,27 +584,25 @@ Just describe what you want!
     async def cancel(self, message: Message) -> None:
         """Handle /cancel command - cancel running Claude Code task"""
         user_id = message.from_user.id
-
-        # Check both SDK and CLI backends
         cancelled = False
 
-        # Try SDK first (if message handlers have SDK service)
+        # Try SDK first (preferred) - it handles full cleanup including status reset
         if self.message_handlers and hasattr(self.message_handlers, 'sdk_service'):
             sdk_service = self.message_handlers.sdk_service
-            if sdk_service and sdk_service.is_task_running(user_id):
+            if sdk_service:
                 cancelled = await sdk_service.cancel_task(user_id)
                 if cancelled:
-                    await message.answer("🛑 **Task cancelled**")
+                    await message.answer("🛑 **Task cancelled** (SDK)")
                     return
 
         # Try CLI fallback
-        if self.claude_proxy.is_task_running(user_id):
-            cancelled = await self.claude_proxy.cancel_task(user_id)
-            if cancelled:
-                await message.answer("🛑 **Task cancelled**")
-            else:
-                await message.answer("⚠️ Failed to cancel task")
-        elif not cancelled:
+        if self.claude_proxy:
+            cli_cancelled = await self.claude_proxy.cancel_task(user_id)
+            if cli_cancelled:
+                await message.answer("🛑 **Task cancelled** (CLI)")
+                return
+
+        if not cancelled:
             await message.answer("ℹ️ No task is currently running")
 
     async def status(self, message: Message) -> None:

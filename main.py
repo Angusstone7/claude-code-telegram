@@ -213,11 +213,12 @@ class Application:
         # Register message handlers after commands (commands take priority)
         register_msg_handlers(self.dp, msg_handlers)
 
-        # Callback handlers (with claude_proxy and project/context services for HITL)
+        # Callback handlers (with claude_proxy, sdk_service and project/context services for HITL)
         callback_handlers = CallbackHandlers(
             self.bot_service,
             msg_handlers,
             self.claude_proxy,
+            self.claude_sdk,  # SDK service for proper cancellation
             self.project_service,
             self.context_service,
             self.file_browser_service

@@ -17,13 +17,15 @@ class CallbackHandlers:
         bot_service,
         message_handlers,
         claude_proxy=None,
+        sdk_service=None,
         project_service=None,
         context_service=None,
         file_browser_service=None
     ):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
-        self.claude_proxy = claude_proxy  # ClaudeCodeProxyService instance
+        self.claude_proxy = claude_proxy  # ClaudeCodeProxyService instance (fallback)
+        self.sdk_service = sdk_service    # ClaudeAgentSDKService instance (preferred)
         self.project_service = project_service
         self.context_service = context_service
         self.file_browser_service = file_browser_service
@@ -468,19 +470,26 @@ class CallbackHandlers:
             return
 
         try:
-            # Cancel the task
-            if self.claude_proxy:
+            cancelled = False
+
+            # Try SDK service first (preferred) - it handles full cleanup
+            if self.sdk_service:
+                cancelled = await self.sdk_service.cancel_task(user_id)
+                logger.info(f"SDK cancel_task for user {user_id}: {cancelled}")
+
+            # Fall back to CLI proxy if SDK didn't cancel
+            if not cancelled and self.claude_proxy:
                 cancelled = await self.claude_proxy.cancel_task(user_id)
-                if cancelled:
-                    await callback.message.edit_text(
-                        "🛑 **Task cancelled**",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    await callback.answer("Task cancelled")
-                else:
-                    await callback.answer("No active task to cancel")
+                logger.info(f"Proxy cancel_task for user {user_id}: {cancelled}")
+
+            if cancelled:
+                await callback.message.edit_text(
+                    "🛑 **Task cancelled**",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await callback.answer("Task cancelled")
             else:
-                await callback.answer("❌ Proxy not available")
+                await callback.answer("No active task to cancel")
 
         except Exception as e:
             logger.error(f"Error cancelling task: {e}")
