@@ -5,6 +5,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from application.services.bot_service import BotService
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
+from infrastructure.claude_code.diagnostics import run_diagnostics, format_diagnostics_for_telegram
 from presentation.keyboards.keyboards import Keyboards
 
 logger = logging.getLogger(__name__)
@@ -263,7 +264,20 @@ Just describe what you want!
         if is_running:
             text += "\n\nUse /cancel to stop the current task."
 
+        text += "\n\nUse /diagnose to run full diagnostics."
+
         await message.answer(text, parse_mode="Markdown")
+
+    async def diagnose(self, message: Message) -> None:
+        """Handle /diagnose command - run full Claude Code diagnostics"""
+        await message.answer("🔍 Running diagnostics... (this may take up to 30 seconds)")
+
+        try:
+            results = await run_diagnostics(self.claude_proxy.claude_path)
+            text = format_diagnostics_for_telegram(results)
+            await message.answer(text, parse_mode="Markdown")
+        except Exception as e:
+            await message.answer(f"❌ Diagnostics failed: {e}")
 
 
 def register_handlers(router: Router, handlers: CommandHandlers) -> None:
@@ -278,6 +292,7 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.project, Command("project"))
     router.message.register(handlers.cancel, Command("cancel"))
     router.message.register(handlers.status, Command("status"))
+    router.message.register(handlers.diagnose, Command("diagnose"))
 
     # Menu buttons
     router.message.register(handlers.menu_chat, F.text == "💬 Chat")

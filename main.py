@@ -33,6 +33,7 @@ from infrastructure.persistence.sqlite_repository import (
     SQLiteCommandRepository
 )
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
+from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 from application.services.bot_service import BotService
 from presentation.handlers.commands import CommandHandlers, register_handlers as register_cmd_handlers
 from presentation.handlers.messages import MessageHandlers, register_handlers as register_msg_handlers
@@ -92,6 +93,9 @@ class Application:
         installed, message = await self.claude_proxy.check_claude_installed()
         if installed:
             logger.info(f"✓ {message}")
+            # Run full diagnostics
+            logger.info("Running Claude Code diagnostics...")
+            await run_and_log_diagnostics(self.claude_proxy.claude_path)
         else:
             logger.warning(f"⚠ {message}")
             logger.warning("Bot will start but Claude Code commands will fail until CLI is installed")
