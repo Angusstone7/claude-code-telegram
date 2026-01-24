@@ -272,9 +272,27 @@ class MessageHandlers:
         # Store original working dir to detect changes
         session._original_working_dir = working_dir  # type: ignore
 
-        # Start streaming handler
+        # Start streaming handler with project info
         streaming = StreamingHandler(bot, message.chat.id)
-        await streaming.start(f"🤖 **Working...**\n📁 `{working_dir}`\n\n")
+
+        # Build header with project info
+        header = "🤖 **Working...**\n"
+        if self.project_service:
+            try:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self.project_service.get_current(uid)
+                if project:
+                    header += f"📂 **{project.name}**\n"
+                    header += f"📁 `{working_dir}`\n\n"
+                else:
+                    header += f"📁 `{working_dir}`\n\n"
+            except Exception:
+                header += f"📁 `{working_dir}`\n\n"
+        else:
+            header += f"📁 `{working_dir}`\n\n"
+
+        await streaming.start(header)
         self._streaming_handlers[user_id] = streaming
 
         # Setup HITL events
@@ -633,13 +651,11 @@ class MessageHandlers:
         user_id = message.from_user.id
         self._expecting_answer[user_id] = False
 
-        # Send answer to waiting handler
-        self._question_responses[user_id] = message.text
-        event = self._question_events.get(user_id)
-        if event:
-            event.set()
+        answer = message.text
+        await message.answer(f"📝 Answer: {answer[:50]}...")
 
-        await message.answer(f"📝 Answer: {message.text[:50]}...")
+        # Use the unified response handler (supports both SDK and CLI)
+        await self.handle_question_response(user_id, answer)
 
     async def _handle_path_input(self, message: Message):
         """Handle text input for path"""

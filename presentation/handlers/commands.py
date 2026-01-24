@@ -68,16 +68,25 @@ class CommandHandlers:
         help_text = """
 🤖 **Claude Code Telegram Proxy - Help**
 
-**Claude Code Commands:**
-/project `<path>` - Set working directory
+**Navigation & Projects:**
+/cd - Browse and navigate folders
+/change - Switch between projects
+/fresh - Clear context, start fresh
+
+**Context Management:**
+/context new - Create new context
+/context list - List all contexts
+/context clear - Clear current context
+
+**Claude Code:**
 /cancel - Cancel running task
 /status - Show Claude Code status
-/clear - Clear session history
 
 **Basic Commands:**
 /start - Start the bot
 /help - Show this help
 /stats - Show your statistics
+/clear - Clear chat history
 
 **How it works:**
 1. Send any task as a message
@@ -385,6 +394,49 @@ Just describe what you want!
                 parse_mode="Markdown"
             )
 
+    async def fresh(self, message: Message) -> None:
+        """
+        Handle /fresh command - clear context and start fresh conversation.
+
+        Clears:
+        - Claude session ID (stops auto-continue)
+        - Context messages
+        - Internal session state
+        """
+        user_id = message.from_user.id
+
+        # Clear internal session state
+        if self.message_handlers:
+            self.message_handlers._continue_sessions.pop(user_id, None)
+
+        # Clear context in project
+        if self.project_service and self.context_service:
+            from domain.value_objects.user_id import UserId
+            uid = UserId.from_int(user_id)
+
+            project = await self.project_service.get_current(uid)
+            if project:
+                context = await self.context_service.get_current(project.id)
+                if context:
+                    await self.context_service.start_fresh(context.id)
+
+                    await message.answer(
+                        f"🧹 **Context Cleared!**\n\n"
+                        f"📂 Project: **{project.name}**\n"
+                        f"💬 Context: **{context.name}**\n\n"
+                        f"Session history cleared. Next message starts fresh conversation.",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+        # No project/context - just clear bot service session
+        await self.bot_service.clear_session(user_id)
+        await message.answer(
+            "🧹 **Session Cleared!**\n\n"
+            "Next message starts a fresh conversation.",
+            parse_mode="Markdown"
+        )
+
     async def cd(self, message: Message, command: CommandObject) -> None:
         """
         Handle /cd command - interactive folder navigation.
@@ -543,6 +595,7 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     # Project/Context management commands
     router.message.register(handlers.change, Command("change"))
     router.message.register(handlers.context, Command("context"))
+    router.message.register(handlers.fresh, Command("fresh"))
     router.message.register(handlers.cd, Command("cd"))
 
     # Menu buttons

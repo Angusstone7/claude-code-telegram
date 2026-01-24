@@ -24,6 +24,7 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.types import BotCommand
 
 from shared.config.settings import settings
 from infrastructure.persistence.sqlite_repository import (
@@ -173,6 +174,9 @@ class Application:
         self.dp.message.middleware(AuthMiddleware(self.bot_service))
         self.dp.callback_query.middleware(CallbackAuthMiddleware(self.bot_service))
 
+        # Register bot commands in Telegram menu
+        await self._register_bot_commands()
+
         logger.info("Bot initialized successfully")
         logger.info(f"Default working directory: {default_working_dir}")
 
@@ -211,6 +215,27 @@ class Application:
             self.file_browser_service
         )
         register_callback_handlers(self.dp, callback_handlers)
+
+    async def _register_bot_commands(self):
+        """Register bot commands in Telegram menu"""
+        commands = [
+            BotCommand(command="start", description="Start the bot"),
+            BotCommand(command="help", description="Show help"),
+            BotCommand(command="cd", description="Navigate folders"),
+            BotCommand(command="change", description="Switch project"),
+            BotCommand(command="fresh", description="Clear context & start fresh"),
+            BotCommand(command="context", description="Manage contexts"),
+            BotCommand(command="status", description="Claude Code status"),
+            BotCommand(command="cancel", description="Cancel running task"),
+            BotCommand(command="stats", description="Your statistics"),
+            BotCommand(command="clear", description="Clear chat history"),
+        ]
+
+        try:
+            await self.bot.set_my_commands(commands)
+            logger.info(f"✓ Registered {len(commands)} bot commands in Telegram menu")
+        except Exception as e:
+            logger.warning(f"⚠ Failed to register bot commands: {e}")
 
     async def start(self):
         """Start the bot"""
