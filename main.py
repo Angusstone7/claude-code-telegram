@@ -99,7 +99,7 @@ class Application:
         self._register_handlers()
 
         # Register middleware
-        self.dp.update.middleware(AuthMiddleware(self.bot_service))
+        self.dp.message.middleware(AuthMiddleware(self.bot_service))
         self.dp.callback_query.middleware(CallbackAuthMiddleware(self.bot_service))
 
         logger.info("Bot initialized successfully")

@@ -1,14 +1,14 @@
 import logging
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery, Update
-from typing import Callable, Awaitable, Any, Dict, Union
+from aiogram.types import Message, CallbackQuery
+from typing import Callable, Awaitable, Any, Dict
 from application.services.bot_service import BotService
 
 logger = logging.getLogger(__name__)
 
 
 class AuthMiddleware(BaseMiddleware):
-    """Middleware for user authorization"""
+    """Middleware for user authorization on Message events"""
 
     def __init__(self, bot_service: BotService):
         super().__init__()
@@ -17,37 +17,25 @@ class AuthMiddleware(BaseMiddleware):
     async def __call__(
         self,
         handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
-        event: Union[Message, Update],
+        event: Message,
         data: Dict[str, Any]
     ) -> Any:
         """Check if user is authorized"""
-
-        # Handle Update object (aiogram 3.x may pass Update directly)
-        if isinstance(event, Update):
-            # Extract the actual event from Update
-            if event.message:
-                event = event.message
-            elif event.callback_query:
-                event = event.callback_query
-            else:
-                logger.warning(f"Unhandled update type: {type(event)}")
-                return
-
-        # Get user_id from the event
-        user_id = event.from_user.id if hasattr(event, 'from_user') and event.from_user else None
-        if not user_id:
-            logger.warning("Event has no from_user")
+        # Get user_id from the message
+        if not event.from_user:
+            logger.warning("Message has no from_user")
             return
 
-        # For specific commands that don't need auth
-        if hasattr(event, 'text') and event.text and event.text.startswith("/start"):
+        user_id = event.from_user.id
+
+        # For /start command - allow without auth to create user
+        if event.text and event.text.startswith("/start"):
             return await handler(event, data)
 
         # Check authorization
         user = await self.bot_service.authorize_user(user_id)
         if not user:
-            if hasattr(event, 'answer'):
-                await event.answer("❌ You are not authorized to use this bot.")
+            await event.answer("❌ You are not authorized to use this bot.")
             return
 
         # Add user to data
@@ -65,29 +53,19 @@ class CallbackAuthMiddleware(BaseMiddleware):
     async def __call__(
         self,
         handler: Callable[[CallbackQuery, Dict[str, Any]], Awaitable[Any]],
-        event: Union[CallbackQuery, Update],
+        event: CallbackQuery,
         data: Dict[str, Any]
     ) -> Any:
         """Check if user is authorized for callback"""
-
-        # Handle Update object
-        if isinstance(event, Update):
-            if event.callback_query:
-                event = event.callback_query
-            else:
-                logger.warning(f"Non-callback update in CallbackAuthMiddleware: {type(event)}")
-                return
-
-        # Get user_id
-        user_id = event.from_user.id if hasattr(event, 'from_user') and event.from_user else None
-        if not user_id:
+        if not event.from_user:
             logger.warning("Callback query has no from_user")
             return
 
+        user_id = event.from_user.id
+
         user = await self.bot_service.authorize_user(user_id)
         if not user:
-            if hasattr(event, 'answer'):
-                await event.answer("❌ You are not authorized.")
+            await event.answer("❌ You are not authorized.")
             return
 
         data["user"] = user

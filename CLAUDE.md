@@ -2,18 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-This is a **Claude DevOps Bot** - a Telegram bot for server management using Claude AI with natural language processing. The project follows Domain-Driven Design (DDD) and SOLID principles.
-
 ## Development Commands
 
 ```bash
-# Local development
+# Run the bot locally
 python main.py
 
-# Testing
+# Run all tests
 pytest tests/
+
+# Run a single test file
+pytest tests/unit/domain/test_ai_provider_config.py
+
+# Run a specific test function
+pytest tests/unit/domain/test_ai_provider_config.py::test_function_name -v
 
 # Code formatting
 black application/ domain/ infrastructure/ presentation/ shared/
@@ -25,145 +27,62 @@ mypy application/ domain/ infrastructure/ presentation/ shared/
 docker-compose up -d --build
 ```
 
-## Architecture: DDD + SOLID
+## Architecture Overview
 
-The codebase is organized into four distinct layers:
+This is a Telegram bot for server management using Claude AI. It follows DDD (Domain-Driven Design) with four layers:
 
-```
-ubuntu_claude/
-├── domain/               # Business logic (core entities)
-│   ├── entities/        # User, Session, Command, Message
-│   ├── value_objects/   # UserId, Role, Permission
-│   ├── repositories/    # Repository interfaces
-│   └── services/        # Domain service interfaces
-├── application/          # Use cases & orchestration
-│   └── services/        # BotService (main coordinator)
-├── infrastructure/       # External dependencies
-│   ├── persistence/     # SQLite repositories
-│   ├── ssh/            # SSH command executor
-│   ├── messaging/      # Claude AI service
-│   └── monitoring/     # System metrics
-├── presentation/         # Telegram interface
-│   ├── handlers/       # Commands, messages, callbacks
-│   ├── keyboards/      # Inline keyboards
-│   └── middleware/     # Auth middleware
-└── shared/              # Common utilities
-    └── config/         # Settings management
-```
+**Domain** → **Application** → **Infrastructure** → **Presentation**
 
-### Layer Responsibilities
+### Request Flow
 
-| Layer | Responsibility |
-|-------|----------------|
-| **Domain** | Core business logic, entities, value objects, repository interfaces |
-| **Application** | Use case orchestration via `BotService` |
-| **Infrastructure** | External integrations (SSH, Claude AI, SQLite) |
-| **Presentation** | Telegram bot interface (handlers, keyboards, middleware) |
+1. **Telegram message arrives** → `presentation/handlers/messages.py`
+2. **Auth middleware checks user** → `presentation/middleware/auth.py`
+3. **Handler calls BotService** → `application/services/bot_service.py`
+4. **BotService orchestrates**:
+   - User/Session lookup via repositories (domain interfaces → infrastructure implementations)
+   - AI calls via `ClaudeAIService` → `infrastructure/messaging/claude_service.py`
+   - Command execution via `SSHCommandExecutor` → `infrastructure/ssh/ssh_executor.py`
+5. **Response sent back** to Telegram
 
-## Key Components
+### Key Design Patterns
 
-### Main Entry Point
-- **`main.py`**: Contains the `Application` class with initialization, setup, and lifecycle management
-- Entry point: `asyncio.run(main())` starts the bot polling
+- **Repository Pattern**: Domain layer defines interfaces (`domain/repositories/`), infrastructure implements them (`infrastructure/persistence/sqlite_repository.py`)
+- **Value Objects**: Immutable identifiers like `UserId`, `Role` in `domain/value_objects/`
+- **Application Service**: `BotService` is the single orchestrator - all presentation layer code calls through it
+- **Dependency Injection**: All services are injected in `main.py:Application.setup()`
 
-### Core Application Service
-- **`BotService`** (`application/services/bot_service.py`): Central orchestrator coordinating all operations
-  - User management and authorization
-  - Session management with persistent history
-  - AI chat integration with Claude
-  - Command execution workflow
-  - Multi-user support with role-based access
+### AI Provider Abstraction
 
-### Domain Entities
-- **User**: Core entity with role-based permissions (Admin, DevOps, User, ReadOnly)
-- **Session**: Persistent conversation history with context
-- **Command**: Commands with approval workflow and execution tracking
-- **Message**: Chat message with roles (user/assistant)
+The bot supports multiple Claude-compatible APIs (Anthropic, ZhipuAI). Configuration is handled through:
+- `domain/value_objects/ai_provider_config.py` - Provider configuration value object
+- `shared/config/settings.py:AnthropicConfig` - Environment-based configuration facade
+- `infrastructure/messaging/claude_service.py:ClaudeAIService` - Implementation
 
-### Infrastructure Layer
-- **ClaudeAIService** (`infrastructure/messaging/`): Integration with Anthropic API (claude-3-5-sonnet-20241022)
-- **SSHCommandExecutor** (`infrastructure/ssh/`): Secure command execution via AsyncSSH
-- **SQLite repositories** (`infrastructure/persistence/`): Data persistence for all entities
-- **System monitoring** (`infrastructure/monitoring/`): CPU, memory, disk metrics via psutil
+Use `ANTHROPIC_BASE_URL` for alternative API endpoints and `ANTHROPIC_AUTH_TOKEN` for non-standard auth.
 
-## Technology Stack
+### Command Approval Workflow
 
-- **Python**: 3.11+
-- **Bot Framework**: Aiogram 3.10.0
-- **AI Integration**: Anthropic Claude API (anthropic>=0.40.0)
-- **Database**: SQLite with aiosqlite (async SQLite driver)
-- **SSH**: AsyncSSH 2.17.0
-- **System Monitoring**: psutil 6.0.0+
-- **Deployment**: Docker with docker-compose
+Commands follow a state machine: `PENDING` → `APPROVED`/`REJECTED` → `EXECUTING` → `COMPLETED`/`FAILED`
+
+The flow is:
+1. AI suggests command → `BotService.create_pending_command()`
+2. User sees approval keyboard → `presentation/keyboards/keyboards.py`
+3. Callback handler processes → `presentation/handlers/callbacks.py`
+4. Approved: `BotService.execute_command()` runs via SSH
+5. Rejected: `BotService.reject_command()` logs and notifies
+
+### Session Management
+
+Sessions maintain conversation history per user:
+- `Session` entity holds `List[Message]` with role-based messages
+- Sessions persist to SQLite via `SQLiteSessionRepository`
+- AI receives full session context on each `chat_with_session()` call
 
 ## Configuration
 
-Configuration is managed through environment variables:
+All config loads from environment variables via `shared/config/settings.py`. The global `settings` instance is used throughout. Key required vars:
+- `TELEGRAM_TOKEN`, `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`), `ALLOWED_USER_ID`
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TELEGRAM_TOKEN` | Bot token from @BotFather | *required* |
-| `ANTHROPIC_API_KEY` | Claude API key | *required* |
-| `ALLOWED_USER_ID` | Allowed Telegram user ID | *required* |
-| `HOST_USER` | SSH user | `root` |
-| `SSH_HOST` | SSH host | `host.docker.internal` |
-| `SSH_PORT` | SSH port | `22` |
-| `DATABASE_URL` | Database path | `sqlite:///./data/bot.db` |
-| `LOG_LEVEL` | Logging level | `INFO` |
+## Testing
 
-### User Roles
-
-| Role | Permissions |
-|------|-------------|
-| **admin** | All permissions |
-| **devops** | Execute commands, Docker, GitLab, Metrics, Schedule tasks |
-| **user** | Execute commands, View logs, Manage sessions, View metrics |
-| **readonly** | View logs, View metrics |
-
-## Key Workflows
-
-### Natural Language Command Flow
-1. User sends natural language command
-2. Bot parses with Claude AI
-3. Proposes command for approval
-4. User approves or rejects
-5. Command executes via SSH
-6. Results returned to user
-
-### Multi-User Session Management
-1. User initiates session
-2. Session created with UUID
-3. Chat history persists in SQLite
-4. Context maintained across interactions
-5. Sessions can be cleared on request
-
-## Deployment
-
-### Docker Setup
-- **Dockerfile**: Python 3.11-slim with openssh-client
-- **docker-compose.yml**: Main container with SSH key volume mount
-- **docker-compose.prod.yml**: Production deployment configuration
-- Uses `host.docker.internal` for host access from container
-
-### CI/CD Pipeline
-- **GitLab CI/CD**: Automated deployment on main/master push
-- Stages: Build → Deploy
-- Features: Docker image building, SSH deployment, automatic SSH key generation, backup and rollback capability
-
-## Security Features
-
-- SSH key-based authentication for command execution
-- User authorization via ALLOWED_USER_ID
-- Role-based access control (4 tiers)
-- Dangerous command warnings with approval workflow
-- Audit logging of all executed commands
-
-## Important Design Decisions
-
-1. **DDD Architecture**: Clear separation of concerns with domain logic isolated from infrastructure
-2. **Async-first**: Full async/await implementation for performance
-3. **Repository Pattern**: Abstracted data access for testability
-4. **Dependency Injection**: Services injected for loose coupling
-5. **Event-driven**: Telegram callbacks and message handlers
-6. **Stateful**: Persistent sessions and command history
-7. **Security-first**: SSH key auth, approval workflows, RBAC
+Tests are in `tests/` with `pytest-asyncio` for async support. Run with `-v` for verbose output or `--tb=short` for shorter tracebacks.

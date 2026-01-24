@@ -242,7 +242,7 @@ class BotService:
             return {}
 
         commands = await self.command_repository.find_by_user(user_id, limit=1000)
-        sessions = await self.session_repository.find_by_user(Userd.from_int(user_id))
+        sessions = await self.session_repository.find_by_user(UserId.from_int(user_id))
 
         return {
             "user": {
