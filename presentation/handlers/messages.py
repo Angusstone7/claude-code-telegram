@@ -1,14 +1,18 @@
 """
 Message Handlers for Claude Code Proxy
 
-Handles user messages and forwards them to Claude Code CLI,
+Handles user messages and forwards them to Claude Code,
 managing streaming output, HITL interactions, and session state.
+
+Supports two backends:
+1. Claude Agent SDK (preferred) - proper HITL with can_use_tool callback
+2. CLI subprocess (fallback) - stream-json parsing
 """
 
 import asyncio
 import logging
 import uuid
-from typing import Optional
+from typing import Optional, Union
 from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.enums import ParseMode
@@ -17,6 +21,20 @@ from presentation.keyboards.keyboards import Keyboards
 from presentation.handlers.streaming import StreamingHandler
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService, TaskResult
 from domain.entities.claude_code_session import ClaudeCodeSession, SessionStatus
+
+# Try to import SDK service
+try:
+    from infrastructure.claude_code.sdk_service import (
+        ClaudeAgentSDKService,
+        SDKTaskResult,
+        TaskStatus,
+    )
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    ClaudeAgentSDKService = None
+    SDKTaskResult = None
+    TaskStatus = None
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -29,11 +47,17 @@ class MessageHandlers:
         self,
         bot_service,
         claude_proxy: ClaudeCodeProxyService,
+        sdk_service: Optional["ClaudeAgentSDKService"] = None,
         default_working_dir: str = "/root"
     ):
         self.bot_service = bot_service
-        self.claude_proxy = claude_proxy
+        self.claude_proxy = claude_proxy  # CLI fallback
+        self.sdk_service = sdk_service    # Preferred SDK backend
         self.default_working_dir = default_working_dir
+
+        # Determine which backend to use
+        self.use_sdk = sdk_service is not None and SDK_AVAILABLE
+        logger.info(f"MessageHandlers initialized with SDK backend: {self.use_sdk}")
 
         # User state tracking
         self._user_sessions: dict[int, ClaudeCodeSession] = {}
@@ -83,6 +107,13 @@ class MessageHandlers:
 
     async def handle_permission_response(self, user_id: int, approved: bool):
         """Handle permission response from callback"""
+        # Try SDK first
+        if self.use_sdk and self.sdk_service:
+            success = await self.sdk_service.respond_to_permission(user_id, approved)
+            if success:
+                return
+
+        # Fall back to CLI handling
         self._permission_responses[user_id] = approved
         event = self._permission_events.get(user_id)
         if event:
@@ -90,6 +121,13 @@ class MessageHandlers:
 
     async def handle_question_response(self, user_id: int, answer: str):
         """Handle question response from callback"""
+        # Try SDK first
+        if self.use_sdk and self.sdk_service:
+            success = await self.sdk_service.respond_to_question(user_id, answer)
+            if success:
+                return
+
+        # Fall back to CLI handling
         self._question_responses[user_id] = answer
         event = self._question_events.get(user_id)
         if event:
@@ -115,8 +153,14 @@ class MessageHandlers:
             await self._handle_path_input(message)
             return
 
-        # Check if already running
-        if self.claude_proxy.is_task_running(user_id):
+        # Check if already running (check both backends)
+        is_running = False
+        if self.use_sdk and self.sdk_service:
+            is_running = self.sdk_service.is_task_running(user_id)
+        if not is_running:
+            is_running = self.claude_proxy.is_task_running(user_id)
+
+        if is_running:
             await message.answer(
                 "⏳ A task is already running.\n\n"
                 "Use the cancel button or /cancel to stop it.",
@@ -147,22 +191,49 @@ class MessageHandlers:
         self._question_events[user_id] = asyncio.Event()
 
         try:
-            # Run Claude Code task
-            result = await self.claude_proxy.run_task(
-                user_id=user_id,
-                prompt=message.text,
-                working_dir=working_dir,
-                session_id=session_id,
-                on_text=lambda text: self._on_text(user_id, text),
-                on_tool_use=lambda tool, inp: self._on_tool_use(user_id, tool, inp, message),
-                on_tool_result=lambda tid, out: self._on_tool_result(user_id, tid, out),
-                on_permission=lambda tool, details: self._on_permission(user_id, tool, details, message),
-                on_question=lambda q, opts: self._on_question(user_id, q, opts, message),
-                on_error=lambda err: self._on_error(user_id, err),
-            )
+            # Choose backend: SDK (preferred) or CLI (fallback)
+            if self.use_sdk and self.sdk_service:
+                # Use SDK with proper HITL via can_use_tool callback
+                result = await self.sdk_service.run_task(
+                    user_id=user_id,
+                    prompt=message.text,
+                    working_dir=working_dir,
+                    session_id=session_id,
+                    on_text=lambda text: self._on_text(user_id, text),
+                    on_tool_use=lambda tool, inp: self._on_tool_use(user_id, tool, inp, message),
+                    on_tool_result=lambda tid, out: self._on_tool_result(user_id, tid, out),
+                    on_permission_request=lambda tool, details, inp: self._on_permission_sdk(
+                        user_id, tool, details, inp, message
+                    ),
+                    on_question=lambda q, opts: self._on_question_sdk(user_id, q, opts, message),
+                    on_thinking=lambda think: self._on_thinking(user_id, think),
+                    on_error=lambda err: self._on_error(user_id, err),
+                )
 
-            # Handle result
-            await self._handle_result(user_id, result, message)
+                # Convert SDK result to common format
+                cli_result = TaskResult(
+                    success=result.success,
+                    output=result.output,
+                    session_id=result.session_id,
+                    error=result.error,
+                    cancelled=result.cancelled,
+                )
+                await self._handle_result(user_id, cli_result, message)
+            else:
+                # Use CLI subprocess with stream-json
+                result = await self.claude_proxy.run_task(
+                    user_id=user_id,
+                    prompt=message.text,
+                    working_dir=working_dir,
+                    session_id=session_id,
+                    on_text=lambda text: self._on_text(user_id, text),
+                    on_tool_use=lambda tool, inp: self._on_tool_use(user_id, tool, inp, message),
+                    on_tool_result=lambda tid, out: self._on_tool_result(user_id, tid, out),
+                    on_permission=lambda tool, details: self._on_permission(user_id, tool, details, message),
+                    on_question=lambda q, opts: self._on_question(user_id, q, opts, message),
+                    on_error=lambda err: self._on_error(user_id, err),
+                )
+                await self._handle_result(user_id, result, message)
 
         except Exception as e:
             logger.error(f"Error running Claude Code: {e}")
@@ -302,6 +373,86 @@ class MessageHandlers:
         session = self._user_sessions.get(user_id)
         if session:
             session.fail(error)
+
+    async def _on_thinking(self, user_id: int, thinking: str):
+        """Handle thinking output from Claude (extended thinking models)"""
+        streaming = self._streaming_handlers.get(user_id)
+        if streaming and thinking:
+            # Show abbreviated thinking
+            preview = thinking[:200] + "..." if len(thinking) > 200 else thinking
+            await streaming.append(f"\n💭 *{preview}*\n")
+
+    async def _on_permission_sdk(
+        self,
+        user_id: int,
+        tool_name: str,
+        details: str,
+        tool_input: dict,
+        message: Message
+    ):
+        """
+        Handle permission request from SDK.
+
+        Unlike CLI version, this just sends the UI - the SDK's can_use_tool
+        callback handles waiting for the response.
+        """
+        session = self._user_sessions.get(user_id)
+        request_id = str(uuid.uuid4())[:8]
+
+        if session:
+            session.set_waiting_approval(request_id, tool_name, details)
+
+        # Send permission request message with inline buttons
+        text = f"🔐 **Permission Request**\n\n"
+        text += f"**Tool:** `{tool_name}`\n"
+        if details:
+            display_details = details if len(details) < 500 else details[:500] + "..."
+            text += f"**Details:**\n```\n{display_details}\n```"
+
+        await message.answer(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
+        )
+
+    async def _on_question_sdk(
+        self,
+        user_id: int,
+        question: str,
+        options: list[str],
+        message: Message
+    ):
+        """
+        Handle question from SDK (AskUserQuestion tool).
+
+        Unlike CLI version, this just sends the UI - the SDK's can_use_tool
+        callback handles waiting for the response.
+        """
+        session = self._user_sessions.get(user_id)
+        request_id = str(uuid.uuid4())[:8]
+
+        if session:
+            session.set_waiting_answer(request_id, question, options)
+
+        # Store options for callback lookup
+        self._pending_questions[user_id] = options
+
+        # Send question message with inline buttons
+        text = f"❓ **Question**\n\n{question}"
+
+        if options:
+            await message.answer(
+                text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=Keyboards.claude_question(user_id, options, request_id)
+            )
+        else:
+            # No options - expect text input
+            self._expecting_answer[user_id] = True
+            await message.answer(
+                text + "\n\n✏️ **Type your answer:**",
+                parse_mode=ParseMode.MARKDOWN
+            )
 
     async def _handle_result(self, user_id: int, result: TaskResult, message: Message):
         """Handle task completion"""

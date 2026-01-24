@@ -34,6 +34,14 @@ from infrastructure.persistence.sqlite_repository import (
 )
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
+
+# Try to import SDK service (optional, preferred when available)
+try:
+    from infrastructure.claude_code.sdk_service import ClaudeAgentSDKService
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    ClaudeAgentSDKService = None
 from application.services.bot_service import BotService
 from presentation.handlers.commands import CommandHandlers, register_handlers as register_cmd_handlers
 from presentation.handlers.messages import MessageHandlers, register_handlers as register_msg_handlers
@@ -61,6 +69,7 @@ class Application:
         self.dp: Dispatcher = None
         self.bot_service: BotService = None
         self.claude_proxy: ClaudeCodeProxyService = None
+        self.claude_sdk: "ClaudeAgentSDKService" = None  # SDK service (preferred)
         self._shutdown_event = asyncio.Event()
 
     async def setup(self):
@@ -89,16 +98,37 @@ class Application:
             timeout_seconds=int(os.getenv("CLAUDE_TIMEOUT", "600")),
         )
 
-        # Check if Claude Code is installed
+        # Check if Claude Code CLI is installed (fallback)
         installed, message = await self.claude_proxy.check_claude_installed()
         if installed:
-            logger.info(f"✓ {message}")
+            logger.info(f"✓ CLI: {message}")
             # Run full diagnostics
             logger.info("Running Claude Code diagnostics...")
             await run_and_log_diagnostics(self.claude_proxy.claude_path)
         else:
-            logger.warning(f"⚠ {message}")
-            logger.warning("Bot will start but Claude Code commands will fail until CLI is installed")
+            logger.warning(f"⚠ CLI: {message}")
+            logger.warning("Bot will start but CLI fallback will fail until installed")
+
+        # Initialize SDK service (preferred backend for HITL)
+        if SDK_AVAILABLE:
+            try:
+                self.claude_sdk = ClaudeAgentSDKService(
+                    default_working_dir=default_working_dir,
+                    max_turns=int(os.getenv("CLAUDE_MAX_TURNS", "50")),
+                    permission_mode=os.getenv("CLAUDE_PERMISSION_MODE", "default"),
+                )
+                sdk_ok, sdk_msg = await self.claude_sdk.check_sdk_available()
+                if sdk_ok:
+                    logger.info(f"✓ SDK: {sdk_msg} (HITL enabled)")
+                else:
+                    logger.warning(f"⚠ SDK: {sdk_msg}")
+                    self.claude_sdk = None
+            except Exception as e:
+                logger.warning(f"⚠ SDK initialization failed: {e}")
+                self.claude_sdk = None
+        else:
+            logger.info("ℹ SDK not available, using CLI-only mode")
+            self.claude_sdk = None
 
         # Initialize bot service (for auth and legacy features)
         self.bot_service = BotService(
@@ -126,8 +156,12 @@ class Application:
 
     def _register_handlers(self):
         """Register all handlers"""
-        # Message handlers (with claude_proxy for forwarding to Claude Code)
-        msg_handlers = MessageHandlers(self.bot_service, self.claude_proxy)
+        # Message handlers (with SDK service preferred, CLI as fallback)
+        msg_handlers = MessageHandlers(
+            self.bot_service,
+            self.claude_proxy,
+            sdk_service=self.claude_sdk  # Pass SDK service for proper HITL
+        )
 
         # Command handlers (with claude_proxy for new commands)
         cmd_handlers = CommandHandlers(self.bot_service, self.claude_proxy)

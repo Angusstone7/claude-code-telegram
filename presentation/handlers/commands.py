@@ -226,38 +226,66 @@ Just describe what you want!
         """Handle /cancel command - cancel running Claude Code task"""
         user_id = message.from_user.id
 
+        # Check both SDK and CLI backends
+        cancelled = False
+
+        # Try SDK first (if message handlers have SDK service)
+        if self.message_handlers and hasattr(self.message_handlers, 'sdk_service'):
+            sdk_service = self.message_handlers.sdk_service
+            if sdk_service and sdk_service.is_task_running(user_id):
+                cancelled = await sdk_service.cancel_task(user_id)
+                if cancelled:
+                    await message.answer("🛑 **Task cancelled**")
+                    return
+
+        # Try CLI fallback
         if self.claude_proxy.is_task_running(user_id):
             cancelled = await self.claude_proxy.cancel_task(user_id)
             if cancelled:
                 await message.answer("🛑 **Task cancelled**")
             else:
                 await message.answer("⚠️ Failed to cancel task")
-        else:
+        elif not cancelled:
             await message.answer("ℹ️ No task is currently running")
 
     async def status(self, message: Message) -> None:
         """Handle /status command - show Claude Code status"""
         user_id = message.from_user.id
 
-        # Check if Claude Code is installed
+        # Check if Claude Code CLI is installed
         installed, version_info = await self.claude_proxy.check_claude_installed()
 
-        # Check if task is running
-        is_running = self.claude_proxy.is_task_running(user_id)
+        # Check SDK availability
+        sdk_status = "❌ Not available"
+        sdk_running = False
+        if self.message_handlers and hasattr(self.message_handlers, 'sdk_service'):
+            sdk_service = self.message_handlers.sdk_service
+            if sdk_service:
+                sdk_ok, sdk_msg = await sdk_service.check_sdk_available()
+                sdk_status = "🟢 Available (HITL enabled)" if sdk_ok else f"🔴 {sdk_msg}"
+                sdk_running = sdk_service.is_task_running(user_id)
+
+        # Check if task is running (either backend)
+        cli_running = self.claude_proxy.is_task_running(user_id)
+        is_running = sdk_running or cli_running
 
         # Get working directory
         working_dir = "/root"
         if self.message_handlers:
             working_dir = self.message_handlers.get_working_dir(user_id)
 
-        status_emoji = "🟢" if installed else "🔴"
+        cli_emoji = "🟢" if installed else "🔴"
         task_status = "🔄 Running" if is_running else "⏸️ Idle"
+
+        # Determine backend in use
+        backend = "SDK" if sdk_running else ("CLI" if cli_running else "Idle")
 
         text = f"""
 📊 **Claude Code Status**
 
-**CLI:** {status_emoji} {version_info}
-**Task:** {task_status}
+**CLI:** {cli_emoji} {version_info}
+**SDK:** {sdk_status}
+**Task:** {task_status} ({backend})
 **Working dir:** `{working_dir}`
 """
 
