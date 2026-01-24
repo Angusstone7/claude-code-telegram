@@ -1,11 +1,7 @@
 """Unit tests for AIProviderConfig value object"""
 
 import pytest
-from domain.value_objects import (
-    AIProviderConfig,
-    AIProviderType,
-    AIModelConfig
-)
+from domain.value_objects import AIProviderConfig, AIProviderType, AIModelConfig
 from domain.services import AIMessage
 
 
@@ -18,7 +14,7 @@ class TestAIModelConfig:
             haiku="claude-3-5-haiku-20241022",
             sonnet="claude-3-5-sonnet-20241022",
             opus="claude-3-5-sonnet-20241022",
-            default="claude-3-5-sonnet-20241022"
+            default="claude-3-5-sonnet-20241022",
         )
         assert config.haiku == "claude-3-5-haiku-20241022"
         assert config.sonnet == "claude-3-5-sonnet-20241022"
@@ -31,7 +27,7 @@ class TestAIModelConfig:
             haiku="model-haiku",
             sonnet="model-sonnet",
             opus="model-opus",
-            default="model-default"
+            default="model-default",
         )
         assert config.get_model("haiku") == "model-haiku"
         assert config.get_model("sonnet") == "model-sonnet"
@@ -45,8 +41,7 @@ class TestAIProviderConfig:
     def test_create_anthropic_config(self):
         """Test creating Anthropic provider configuration"""
         config = AIProviderConfig(
-            provider_type=AIProviderType.ANTHROPIC,
-            api_key="sk-ant-test-key"
+            provider_type=AIProviderType.ANTHROPIC, api_key="sk-ant-test-key"
         )
         assert config.provider_type == AIProviderType.ANTHROPIC
         assert config.api_key == "sk-ant-test-key"
@@ -58,7 +53,7 @@ class TestAIProviderConfig:
         config = AIProviderConfig(
             provider_type=AIProviderType.ZHIPU_AI,
             api_key="test-zhipu-key",
-            base_url="https://open.bigmodel.cn/api/anthropic"
+            base_url="https://open.bigmodel.cn/api/anthropic",
         )
         assert config.provider_type == AIProviderType.ZHIPU_AI
         assert config.api_key == "test-zhipu-key"
@@ -68,10 +63,7 @@ class TestAIProviderConfig:
     def test_config_requires_api_key(self):
         """Test that configuration requires API key"""
         with pytest.raises(ValueError, match="api_key is required"):
-            AIProviderConfig(
-                provider_type=AIProviderType.ANTHROPIC,
-                api_key=""
-            )
+            AIProviderConfig(provider_type=AIProviderType.ANTHROPIC, api_key="")
 
     def test_config_validates_url_format(self):
         """Test that configuration validates URL format"""
@@ -79,14 +71,13 @@ class TestAIProviderConfig:
             AIProviderConfig(
                 provider_type=AIProviderType.CUSTOM,
                 api_key="test-key",
-                base_url="not-a-valid-url"
+                base_url="not-a-valid-url",
             )
 
     def test_from_env_detects_zhipu(self):
         """Test that from_env detects ZhipuAI from base_url"""
         config = AIProviderConfig.from_env(
-            api_key="test-key",
-            base_url="https://open.bigmodel.cn/api/anthropic"
+            api_key="test-key", base_url="https://open.bigmodel.cn/api/anthropic"
         )
         assert config.provider_type == AIProviderType.ZHIPU_AI
 
@@ -98,7 +89,7 @@ class TestAIProviderConfig:
             haiku_model="glm-4.5-air",
             sonnet_model="glm-4.7",
             opus_model="glm-4.7",
-            default_model="glm-4.7"
+            default_model="glm-4.7",
         )
         assert config.model_config.haiku == "glm-4.5-air"
         assert config.model_config.sonnet == "glm-4.7"
@@ -108,8 +99,7 @@ class TestAIProviderConfig:
     def test_with_model_returns_new_config(self):
         """Test that with_model returns a new immutable config"""
         original = AIProviderConfig(
-            provider_type=AIProviderType.ANTHROPIC,
-            api_key="test-key"
+            provider_type=AIProviderType.ANTHROPIC, api_key="test-key"
         )
         modified = original.with_model("claude-3-5-haiku-20241022")
 

@@ -11,7 +11,9 @@
       "Bash(find:*)",
       "Bash(dir \"C:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\")",
       "Bash(python -m pytest:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(black:*)",
+      "Bash(mypy:*)"
     ]
   }
 }

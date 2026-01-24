@@ -16,7 +16,7 @@ class TestClaudeAIService:
         return AIProviderConfig(
             provider_type=AIProviderType.ANTHROPIC,
             api_key="sk-ant-test-key",
-            max_tokens=4096
+            max_tokens=4096,
         )
 
     @pytest.fixture
@@ -26,7 +26,7 @@ class TestClaudeAIService:
             provider_type=AIProviderType.ZHIPU_AI,
             api_key="test-zhipu-key",
             base_url="https://open.bigmodel.cn/api/anthropic",
-            max_tokens=4096
+            max_tokens=4096,
         )
 
     @pytest.fixture
@@ -49,7 +49,9 @@ class TestClaudeAIService:
     def test_service_with_zhipu_config(self, service_zhipu):
         """Test service with ZhipuAI configuration"""
         assert service_zhipu.model == "glm-4.7"
-        assert service_zhipu._config.base_url == "https://open.bigmodel.cn/api/anthropic"
+        assert (
+            service_zhipu._config.base_url == "https://open.bigmodel.cn/api/anthropic"
+        )
 
     @pytest.mark.asyncio
     async def test_chat_uses_correct_model(self, service_anthropic):
@@ -63,14 +65,17 @@ class TestClaudeAIService:
         mock_client.messages = Mock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch('infrastructure.messaging.claude_service.AsyncAnthropic', return_value=mock_client):
+        with patch(
+            "infrastructure.messaging.claude_service.AsyncAnthropic",
+            return_value=mock_client,
+        ):
             messages = [AIMessage(role="user", content="Hello")]
             response = await service_anthropic.chat(messages)
 
             # Verify correct model was used
             call_args = mock_client.messages.create.call_args
-            assert call_args.kwargs['model'] == "claude-3-5-sonnet-20241022"
-            assert call_args.kwargs['max_tokens'] == 4096
+            assert call_args.kwargs["model"] == "claude-3-5-sonnet-20241022"
+            assert call_args.kwargs["max_tokens"] == 4096
 
     @pytest.mark.asyncio
     async def test_chat_with_zhipu_model(self, service_zhipu):
@@ -84,19 +89,24 @@ class TestClaudeAIService:
         mock_client.messages = Mock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch('infrastructure.messaging.claude_service.AsyncAnthropic', return_value=mock_client):
+        with patch(
+            "infrastructure.messaging.claude_service.AsyncAnthropic",
+            return_value=mock_client,
+        ):
             messages = [AIMessage(role="user", content="Hello")]
             await service_zhipu.chat(messages)
 
             # Verify ZhipuAI model was used
             call_args = mock_client.messages.create.call_args
-            assert call_args.kwargs['model'] == "glm-4.7"
+            assert call_args.kwargs["model"] == "glm-4.7"
 
     def test_client_lazy_initialization_anthropic(self, service_anthropic):
         """Test that Anthropic client is lazily initialized without base_url"""
         assert service_anthropic._client is None
 
-        with patch('infrastructure.messaging.claude_service.AsyncAnthropic') as mock_anthropic:
+        with patch(
+            "infrastructure.messaging.claude_service.AsyncAnthropic"
+        ) as mock_anthropic:
             _ = service_anthropic.client
             mock_anthropic.assert_called_once_with(api_key="sk-ant-test-key")
 
@@ -104,18 +114,20 @@ class TestClaudeAIService:
         """Test that client is lazily initialized with base_url for ZhipuAI"""
         assert service_zhipu._client is None
 
-        with patch('infrastructure.messaging.claude_service.AsyncAnthropic') as mock_anthropic:
+        with patch(
+            "infrastructure.messaging.claude_service.AsyncAnthropic"
+        ) as mock_anthropic:
             _ = service_zhipu.client
             mock_anthropic.assert_called_once_with(
                 api_key="test-zhipu-key",
-                base_url="https://open.bigmodel.cn/api/anthropic"
+                base_url="https://open.bigmodel.cn/api/anthropic",
             )
 
     @pytest.mark.asyncio
     async def test_set_api_key_updates_config(self, service_anthropic):
         """Test that set_api_key creates new config and resets client"""
         # Initialize client
-        with patch('anthropic.AsyncAnthropic'):
+        with patch("anthropic.AsyncAnthropic"):
             _ = service_anthropic.client
             assert service_anthropic._client is not None
 

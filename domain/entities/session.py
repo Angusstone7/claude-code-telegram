@@ -8,6 +8,7 @@ from domain.entities.message import Message
 @dataclass
 class Session:
     """Chat session entity - maintains conversation context with Claude"""
+
     session_id: str
     user_id: UserId
     messages: List[Message] = field(default_factory=list)
@@ -63,7 +64,4 @@ class Session:
 
     def get_conversation_history(self) -> List[Dict]:
         """Get conversation history in Claude API format"""
-        return [
-            {"role": msg.role, "content": msg.content}
-            for msg in self.messages
-        ]
+        return [{"role": msg.role, "content": msg.content} for msg in self.messages]

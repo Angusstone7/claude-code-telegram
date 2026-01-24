@@ -1,7 +1,10 @@
 import asyncio
 import logging
 from typing import Tuple, Optional
-from domain.services.command_execution_service import ICommandExecutionService, CommandExecutionResult
+from domain.services.command_execution_service import (
+    ICommandExecutionService,
+    CommandExecutionResult,
+)
 from shared.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -17,12 +20,16 @@ class SSHCommandExecutor(ICommandExecutionService):
         """Execute command via SSH"""
         ssh_cmd = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "ConnectTimeout=10",
-            "-i", self.config.key_path,
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=10",
+            "-i",
+            self.config.key_path,
             f"{self.config.user}@{self.config.host}",
-            "-p", str(self.config.port),
-            command
+            "-p",
+            str(self.config.port),
+            command,
         ]
 
         logger.info(f"Executing SSH command: {command[:100]}...")
@@ -30,15 +37,12 @@ class SSHCommandExecutor(ICommandExecutionService):
         try:
             start_time = asyncio.get_event_loop().time()
             process = await asyncio.create_subprocess_exec(
-                *ssh_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                *ssh_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=timeout
+                    process.communicate(), timeout=timeout
                 )
             except asyncio.TimeoutError:
                 process.kill()
@@ -48,15 +52,15 @@ class SSHCommandExecutor(ICommandExecutionService):
             end_time = asyncio.get_event_loop().time()
             execution_time = end_time - start_time
 
-            stdout_str = stdout.decode('utf-8', errors='replace').strip()
-            stderr_str = stderr.decode('utf-8', errors='replace').strip()
+            stdout_str = stdout.decode("utf-8", errors="replace").strip()
+            stderr_str = stderr.decode("utf-8", errors="replace").strip()
             exit_code = process.returncode or 0
 
             return CommandExecutionResult(
                 stdout=stdout_str,
                 stderr=stderr_str,
                 exit_code=exit_code,
-                execution_time=execution_time
+                execution_time=execution_time,
             )
 
         except FileNotFoundError:
@@ -64,7 +68,7 @@ class SSHCommandExecutor(ICommandExecutionService):
                 stdout="",
                 stderr="SSH client not found. Please ensure openssh-client is installed.",
                 exit_code=1,
-                execution_time=0
+                execution_time=0,
             )
         except Exception as e:
             logger.error(f"SSH execution error: {e}")
@@ -72,10 +76,12 @@ class SSHCommandExecutor(ICommandExecutionService):
                 stdout="",
                 stderr=f"SSH Execution Error: {str(e)}",
                 exit_code=1,
-                execution_time=0
+                execution_time=0,
             )
 
-    async def execute_script(self, script: str, timeout: int = 300) -> CommandExecutionResult:
+    async def execute_script(
+        self, script: str, timeout: int = 300
+    ) -> CommandExecutionResult:
         """Execute multi-line script via SSH"""
         # Escape the script for shell
         escaped_script = script.replace("'", "'\\''")

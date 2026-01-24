@@ -10,6 +10,7 @@ load_dotenv()
 @dataclass
 class TelegramConfig:
     """Telegram bot configuration"""
+
     token: str
     allowed_user_ids: List[int]
 
@@ -19,7 +20,9 @@ class TelegramConfig:
         if not token:
             raise ValueError("TELEGRAM_TOKEN is required")
         allowed_ids_str = os.getenv("ALLOWED_USER_ID", "")
-        allowed_user_ids = [int(id.strip()) for id in allowed_ids_str.split(",") if id.strip()]
+        allowed_user_ids = [
+            int(id.strip()) for id in allowed_ids_str.split(",") if id.strip()
+        ]
         return cls(token=token, allowed_user_ids=allowed_user_ids)
 
 
@@ -33,6 +36,7 @@ class AnthropicConfig:
 
     This is a facade over AIProviderConfig for backward compatibility.
     """
+
     _provider_config: AIProviderConfig
 
     @classmethod
@@ -57,7 +61,7 @@ class AnthropicConfig:
             sonnet_model=sonnet_model,
             opus_model=opus_model,
             default_model=default_model,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
         )
 
         return cls(_provider_config=provider_config)
@@ -103,6 +107,7 @@ class AnthropicConfig:
 @dataclass
 class SSHConfig:
     """SSH configuration for remote command execution"""
+
     host: str = "host.docker.internal"
     port: int = 22
     user: str = "root"
@@ -114,13 +119,14 @@ class SSHConfig:
             host=os.getenv("SSH_HOST", "host.docker.internal"),
             port=int(os.getenv("SSH_PORT", "22")),
             user=os.getenv("HOST_USER", "root"),
-            key_path=os.getenv("SSH_KEY_PATH", "/app/bot_key")
+            key_path=os.getenv("SSH_KEY_PATH", "/app/bot_key"),
         )
 
 
 @dataclass
 class DatabaseConfig:
     """Database configuration"""
+
     url: str = "sqlite:///./data/bot.db"
     echo: bool = False
 
@@ -128,13 +134,14 @@ class DatabaseConfig:
     def from_env(cls) -> "DatabaseConfig":
         return cls(
             url=os.getenv("DATABASE_URL", "sqlite:///./data/bot.db"),
-            echo=os.getenv("DATABASE_ECHO", "false").lower() == "true"
+            echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
         )
 
 
 @dataclass
 class GitLabConfig:
     """GitLab CI/CD configuration"""
+
     url: str = "https://gitlab.com"
     token: Optional[str] = None
     project_id: Optional[int] = None
@@ -144,13 +151,18 @@ class GitLabConfig:
         return cls(
             url=os.getenv("GITLAB_URL", "https://gitlab.com"),
             token=os.getenv("GITLAB_TOKEN"),
-            project_id=int(os.getenv("GITLAB_PROJECT_ID")) if os.getenv("GITLAB_PROJECT_ID") else None
+            project_id=(
+                int(os.getenv("GITLAB_PROJECT_ID"))
+                if os.getenv("GITLAB_PROJECT_ID")
+                else None
+            ),
         )
 
 
 @dataclass
 class MonitoringConfig:
     """Monitoring configuration"""
+
     enabled: bool = True
     metrics_port: int = 9090
     alert_threshold_cpu: float = 80.0
@@ -164,13 +176,14 @@ class MonitoringConfig:
             metrics_port=int(os.getenv("METRICS_PORT", "9090")),
             alert_threshold_cpu=float(os.getenv("ALERT_THRESHOLD_CPU", "80.0")),
             alert_threshold_memory=float(os.getenv("ALERT_THRESHOLD_MEMORY", "85.0")),
-            alert_threshold_disk=float(os.getenv("ALERT_THRESHOLD_DISK", "90.0"))
+            alert_threshold_disk=float(os.getenv("ALERT_THRESHOLD_DISK", "90.0")),
         )
 
 
 @dataclass
 class Settings:
     """Application settings"""
+
     telegram: TelegramConfig
     anthropic: AnthropicConfig
     ssh: SSHConfig
@@ -190,7 +203,7 @@ class Settings:
             gitlab=GitLabConfig.from_env(),
             monitoring=MonitoringConfig.from_env(),
             debug=os.getenv("DEBUG", "false").lower() == "true",
-            log_level=os.getenv("LOG_LEVEL", "INFO")
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
         )
 
 

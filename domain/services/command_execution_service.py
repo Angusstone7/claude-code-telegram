@@ -5,6 +5,7 @@ from domain.entities.command import Command
 
 class CommandExecutionResult:
     """Result of command execution"""
+
     def __init__(self, stdout: str, stderr: str, exit_code: int, execution_time: float):
         self.stdout = stdout
         self.stderr = stderr
@@ -32,7 +33,9 @@ class ICommandExecutionService(ABC):
         pass
 
     @abstractmethod
-    async def execute_script(self, script: str, timeout: int = 300) -> CommandExecutionResult:
+    async def execute_script(
+        self, script: str, timeout: int = 300
+    ) -> CommandExecutionResult:
         """Execute a multi-line script"""
         pass
 

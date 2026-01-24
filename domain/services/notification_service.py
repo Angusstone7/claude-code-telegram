@@ -5,6 +5,7 @@ from enum import Enum
 
 class NotificationPriority(Enum):
     """Priority levels for notifications"""
+
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
@@ -13,12 +14,13 @@ class NotificationPriority(Enum):
 
 class Notification:
     """Notification entity"""
+
     def __init__(
         self,
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.NORMAL,
-        recipients: Optional[List[int]] = None
+        recipients: Optional[List[int]] = None,
     ):
         self.title = title
         self.message = message
@@ -49,7 +51,7 @@ class INotificationService(ABC):
         self,
         title: str,
         message: str,
-        priority: NotificationPriority = NotificationPriority.HIGH
+        priority: NotificationPriority = NotificationPriority.HIGH,
     ) -> bool:
         """Send alert notification"""
         pass

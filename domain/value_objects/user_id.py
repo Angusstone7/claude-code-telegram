@@ -5,6 +5,7 @@ from typing import Union
 @dataclass(frozen=True)
 class UserId:
     """Value object representing a user identifier"""
+
     value: int
 
     def __post_init__(self):

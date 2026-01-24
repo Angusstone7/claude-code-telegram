@@ -6,6 +6,7 @@ from enum import Enum
 
 class CommandStatus(Enum):
     """Status of command execution"""
+
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -17,6 +18,7 @@ class CommandStatus(Enum):
 @dataclass
 class Command:
     """Command entity - represents a shell command to be executed"""
+
     command_id: str
     user_id: int
     command: str
@@ -78,9 +80,18 @@ class Command:
     def is_dangerous(self) -> bool:
         """Check if command is potentially dangerous"""
         dangerous_keywords = [
-            "rm -rf", "mkfs", "format", "dd if=", "> /dev/",
-            "shutdown", "reboot", "init 0", "halt",
-            "chmod 000", "chown -R", "kill -9"
+            "rm -rf",
+            "mkfs",
+            "format",
+            "dd if=",
+            "> /dev/",
+            "shutdown",
+            "reboot",
+            "init 0",
+            "halt",
+            "chmod 000",
+            "chown -R",
+            "kill -9",
         ]
         command_lower = self.command.lower()
         return any(keyword in command_lower for keyword in dangerous_keywords)

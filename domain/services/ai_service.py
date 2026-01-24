@@ -7,6 +7,7 @@ from domain.entities.session import Session
 @dataclass
 class AIMessage:
     """Message for AI service"""
+
     role: str
     content: str
 
@@ -16,12 +17,13 @@ class AIMessage:
 
 class AIResponse:
     """Response from AI service"""
+
     def __init__(
         self,
         content: str,
         tool_calls: Optional[List[Dict]] = None,
         model: Optional[str] = None,
-        tokens_used: Optional[int] = None
+        tokens_used: Optional[int] = None,
     ):
         self.content = content
         self.tool_calls = tool_calls or []
@@ -42,7 +44,7 @@ class IAIService(ABC):
         messages: List[AIMessage],
         tools: Optional[List[Dict]] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096
+        max_tokens: int = 4096,
     ) -> AIResponse:
         """Send chat request to AI"""
         pass
@@ -53,7 +55,7 @@ class IAIService(ABC):
         session: Session,
         user_message: str,
         tools: Optional[List[Dict]] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
     ) -> AIResponse:
         """Chat using session context"""
         pass

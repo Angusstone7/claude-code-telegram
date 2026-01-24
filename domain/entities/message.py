@@ -6,6 +6,7 @@ from enum import Enum
 
 class MessageRole(Enum):
     """Role of the message sender"""
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -14,6 +15,7 @@ class MessageRole(Enum):
 @dataclass
 class Message:
     """Message entity - represents a single message in the conversation"""
+
     role: MessageRole
     content: str
     timestamp: datetime = None
@@ -26,10 +28,7 @@ class Message:
 
     def to_dict(self) -> dict:
         """Convert message to dictionary format"""
-        result = {
-            "role": self.role.value,
-            "content": self.content
-        }
+        result = {"role": self.role.value, "content": self.content}
         if self.tool_use_id:
             result["tool_use_id"] = self.tool_use_id
         if self.tool_result is not None:
@@ -43,5 +42,5 @@ class Message:
             role=MessageRole(data["role"]),
             content=data["content"],
             tool_use_id=data.get("tool_use_id"),
-            tool_result=data.get("tool_result")
+            tool_result=data.get("tool_result"),
         )

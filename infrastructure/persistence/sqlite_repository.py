@@ -23,7 +23,11 @@ class SQLiteUserRepository(UserRepository):
 
     def _init_db(self):
         import os
-        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+
+        os.makedirs(
+            os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".",
+            exist_ok=True,
+        )
 
     async def _get_connection(self) -> aiosqlite.Connection:
         return await aiosqlite.connect(self.db_path)
@@ -32,8 +36,7 @@ class SQLiteUserRepository(UserRepository):
         async with await self._get_connection() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT * FROM users WHERE user_id = ?",
-                (int(user_id),)
+                "SELECT * FROM users WHERE user_id = ?", (int(user_id),)
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
@@ -49,20 +52,23 @@ class SQLiteUserRepository(UserRepository):
 
     async def save(self, user: User) -> None:
         async with await self._get_connection() as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT OR REPLACE INTO users
                 (user_id, username, first_name, last_name, role, is_active, created_at, last_command_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                int(user.user_id),
-                user.username,
-                user.first_name,
-                user.last_name,
-                user.role.name,
-                user.is_active,
-                user.created_at.isoformat() if user.created_at else None,
-                user.last_command_at.isoformat() if user.last_command_at else None
-            ))
+            """,
+                (
+                    int(user.user_id),
+                    user.username,
+                    user.first_name,
+                    user.last_name,
+                    user.role.name,
+                    user.is_active,
+                    user.created_at.isoformat() if user.created_at else None,
+                    user.last_command_at.isoformat() if user.last_command_at else None,
+                ),
+            )
             await db.commit()
 
     async def delete(self, user_id: UserId) -> None:
@@ -82,7 +88,7 @@ class SQLiteUserRepository(UserRepository):
             "admin": Role.admin(),
             "user": Role.user(),
             "readonly": Role.readonly(),
-            "devops": Role.devops()
+            "devops": Role.devops(),
         }
         role = role_map.get(row["role"], Role.user())
         return User(
@@ -92,8 +98,14 @@ class SQLiteUserRepository(UserRepository):
             last_name=row["last_name"],
             role=role,
             is_active=bool(row["is_active"]),
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
-            last_command_at=datetime.fromisoformat(row["last_command_at"]) if row["last_command_at"] else None
+            created_at=(
+                datetime.fromisoformat(row["created_at"]) if row["created_at"] else None
+            ),
+            last_command_at=(
+                datetime.fromisoformat(row["last_command_at"])
+                if row["last_command_at"]
+                else None
+            ),
         )
 
 
@@ -106,7 +118,11 @@ class SQLiteSessionRepository(SessionRepository):
 
     def _init_db(self):
         import os
-        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+
+        os.makedirs(
+            os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".",
+            exist_ok=True,
+        )
 
     async def _get_connection(self) -> aiosqlite.Connection:
         return await aiosqlite.connect(self.db_path)
@@ -115,8 +131,7 @@ class SQLiteSessionRepository(SessionRepository):
         async with await self._get_connection() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT * FROM sessions WHERE session_id = ?",
-                (session_id,)
+                "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
@@ -128,7 +143,7 @@ class SQLiteSessionRepository(SessionRepository):
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC",
-                (int(user_id),)
+                (int(user_id),),
             ) as cursor:
                 rows = await cursor.fetchall()
                 sessions = []
@@ -141,7 +156,7 @@ class SQLiteSessionRepository(SessionRepository):
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions WHERE user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1",
-                (int(user_id),)
+                (int(user_id),),
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
@@ -150,38 +165,49 @@ class SQLiteSessionRepository(SessionRepository):
 
     async def save(self, session: Session) -> None:
         async with await self._get_connection() as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT OR REPLACE INTO sessions
                 (session_id, user_id, context, created_at, updated_at, is_active)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                session.session_id,
-                int(session.user_id),
-                json.dumps(session.context),
-                session.created_at.isoformat() if session.created_at else None,
-                session.updated_at.isoformat() if session.updated_at else None,
-                session.is_active
-            ))
+            """,
+                (
+                    session.session_id,
+                    int(session.user_id),
+                    json.dumps(session.context),
+                    session.created_at.isoformat() if session.created_at else None,
+                    session.updated_at.isoformat() if session.updated_at else None,
+                    session.is_active,
+                ),
+            )
             # Save messages
-            await db.execute("DELETE FROM session_messages WHERE session_id = ?", (session.session_id,))
+            await db.execute(
+                "DELETE FROM session_messages WHERE session_id = ?",
+                (session.session_id,),
+            )
             for msg in session.messages:
-                await db.execute("""
+                await db.execute(
+                    """
                     INSERT INTO session_messages
                     (session_id, role, content, timestamp, tool_use_id, tool_result)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    session.session_id,
-                    msg.role.value,
-                    msg.content,
-                    msg.timestamp.isoformat() if msg.timestamp else None,
-                    msg.tool_use_id,
-                    msg.tool_result
-                ))
+                """,
+                    (
+                        session.session_id,
+                        msg.role.value,
+                        msg.content,
+                        msg.timestamp.isoformat() if msg.timestamp else None,
+                        msg.tool_use_id,
+                        msg.tool_result,
+                    ),
+                )
             await db.commit()
 
     async def delete(self, session_id: str) -> None:
         async with await self._get_connection() as db:
-            await db.execute("DELETE FROM session_messages WHERE session_id = ?", (session_id,))
+            await db.execute(
+                "DELETE FROM session_messages WHERE session_id = ?", (session_id,)
+            )
             await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             await db.commit()
 
@@ -189,8 +215,7 @@ class SQLiteSessionRepository(SessionRepository):
         cutoff = datetime.utcnow() - timedelta(days=days)
         async with await self._get_connection() as db:
             cursor = await db.execute(
-                "DELETE FROM sessions WHERE updated_at < ?",
-                (cutoff.isoformat(),)
+                "DELETE FROM sessions WHERE updated_at < ?", (cutoff.isoformat(),)
             )
             await db.commit()
             return cursor.rowcount
@@ -199,26 +224,36 @@ class SQLiteSessionRepository(SessionRepository):
         messages = []
         async with db.execute(
             "SELECT * FROM session_messages WHERE session_id = ? ORDER BY timestamp",
-            (row["session_id"],)
+            (row["session_id"],),
         ) as msg_cursor:
             msg_rows = await msg_cursor.fetchall()
             for msg_row in msg_rows:
-                messages.append(Message(
-                    role=MessageRole(msg_row["role"]),
-                    content=msg_row["content"],
-                    timestamp=datetime.fromisoformat(msg_row["timestamp"]) if msg_row["timestamp"] else None,
-                    tool_use_id=msg_row["tool_use_id"],
-                    tool_result=msg_row["tool_result"]
-                ))
+                messages.append(
+                    Message(
+                        role=MessageRole(msg_row["role"]),
+                        content=msg_row["content"],
+                        timestamp=(
+                            datetime.fromisoformat(msg_row["timestamp"])
+                            if msg_row["timestamp"]
+                            else None
+                        ),
+                        tool_use_id=msg_row["tool_use_id"],
+                        tool_result=msg_row["tool_result"],
+                    )
+                )
 
         return Session(
             session_id=row["session_id"],
             user_id=UserId.from_int(row["user_id"]),
             messages=messages,
             context=json.loads(row["context"]) if row["context"] else {},
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
-            updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None,
-            is_active=bool(row["is_active"])
+            created_at=(
+                datetime.fromisoformat(row["created_at"]) if row["created_at"] else None
+            ),
+            updated_at=(
+                datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None
+            ),
+            is_active=bool(row["is_active"]),
         )
 
 
@@ -231,7 +266,11 @@ class SQLiteCommandRepository(CommandRepository):
 
     def _init_db(self):
         import os
-        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+
+        os.makedirs(
+            os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".",
+            exist_ok=True,
+        )
 
     async def _get_connection(self) -> aiosqlite.Connection:
         return await aiosqlite.connect(self.db_path)
@@ -240,8 +279,7 @@ class SQLiteCommandRepository(CommandRepository):
         async with await self._get_connection() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT * FROM commands WHERE command_id = ?",
-                (command_id,)
+                "SELECT * FROM commands WHERE command_id = ?", (command_id,)
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
@@ -253,7 +291,7 @@ class SQLiteCommandRepository(CommandRepository):
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM commands WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-                (user_id, limit)
+                (user_id, limit),
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [self._row_to_command(row) for row in rows]
@@ -269,32 +307,34 @@ class SQLiteCommandRepository(CommandRepository):
 
     async def save(self, command: Command) -> None:
         async with await self._get_connection() as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT OR REPLACE INTO commands
                 (command_id, user_id, command, status, output, error, exit_code, execution_time,
                  created_at, started_at, completed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                command.command_id,
-                command.user_id,
-                command.command,
-                command.status.value,
-                command.output,
-                command.error,
-                command.exit_code,
-                command.execution_time,
-                command.created_at.isoformat() if command.created_at else None,
-                command.started_at.isoformat() if command.started_at else None,
-                command.completed_at.isoformat() if command.completed_at else None
-            ))
+            """,
+                (
+                    command.command_id,
+                    command.user_id,
+                    command.command,
+                    command.status.value,
+                    command.output,
+                    command.error,
+                    command.exit_code,
+                    command.execution_time,
+                    command.created_at.isoformat() if command.created_at else None,
+                    command.started_at.isoformat() if command.started_at else None,
+                    command.completed_at.isoformat() if command.completed_at else None,
+                ),
+            )
             await db.commit()
 
     async def delete_old_commands(self, days: int = 30) -> int:
         cutoff = datetime.utcnow() - timedelta(days=days)
         async with await self._get_connection() as db:
             cursor = await db.execute(
-                "DELETE FROM commands WHERE created_at < ?",
-                (cutoff.isoformat(),)
+                "DELETE FROM commands WHERE created_at < ?", (cutoff.isoformat(),)
             )
             await db.commit()
             return cursor.rowcount
@@ -317,6 +357,7 @@ class SQLiteCommandRepository(CommandRepository):
 
     def _row_to_command(self, row) -> Command:
         from domain.entities.command import CommandStatus
+
         return Command(
             command_id=row["command_id"],
             user_id=row["user_id"],
@@ -326,9 +367,17 @@ class SQLiteCommandRepository(CommandRepository):
             error=row["error"],
             exit_code=row["exit_code"],
             execution_time=row["execution_time"],
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
-            started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            created_at=(
+                datetime.fromisoformat(row["created_at"]) if row["created_at"] else None
+            ),
+            started_at=(
+                datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
+            ),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"])
+                if row["completed_at"]
+                else None
+            ),
         )
 
 
@@ -336,7 +385,10 @@ async def init_database(db_path: str = None):
     """Initialize database tables"""
     db_path = db_path or settings.database.url.replace("sqlite:///", "")
     import os
-    os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
+
+    os.makedirs(
+        os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True
+    )
 
     async with aiosqlite.connect(db_path) as db:
         # Users table
@@ -428,8 +480,14 @@ async def init_database(db_path: str = None):
         """)
 
         # Indexes
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_commands_user ON commands(user_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_commands_user ON commands(user_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)"
+        )
 
         await db.commit()

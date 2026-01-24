@@ -50,7 +50,7 @@ class ClaudeAIService(IAIService):
         messages: List[AIMessage],
         tools: Optional[List[dict]] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = None
+        max_tokens: Optional[int] = None,
     ) -> AIResponse:
         """Send chat request to Claude"""
         try:
@@ -59,7 +59,7 @@ class ClaudeAIService(IAIService):
             kwargs = {
                 "model": self.model,
                 "max_tokens": max_tokens or self.max_tokens,
-                "messages": api_messages
+                "messages": api_messages,
             }
 
             if system_prompt:
@@ -76,17 +76,15 @@ class ClaudeAIService(IAIService):
                 if block.type == "text":
                     content += block.text
                 elif block.type == "tool_use":
-                    tool_calls.append({
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input
-                    })
+                    tool_calls.append(
+                        {"id": block.id, "name": block.name, "input": block.input}
+                    )
 
             return AIResponse(
                 content=content,
                 tool_calls=tool_calls,
                 model=response.model,
-                tokens_used=response.usage.input_tokens + response.usage.output_tokens
+                tokens_used=response.usage.input_tokens + response.usage.output_tokens,
             )
 
         except Exception as e:
@@ -98,11 +96,12 @@ class ClaudeAIService(IAIService):
         session: Session,
         user_message: str,
         tools: Optional[List[dict]] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
     ) -> AIResponse:
         """Chat using session context"""
         # Add user message to session
         from domain.entities.message import Message, MessageRole
+
         session.add_message(Message(role=MessageRole.USER, content=user_message))
 
         # Get conversation history
@@ -115,11 +114,13 @@ class ClaudeAIService(IAIService):
 
         # Add assistant response to session
         if response.content:
-            session.add_message(Message(role=MessageRole.ASSISTANT, content=response.content))
+            session.add_message(
+                Message(role=MessageRole.ASSISTANT, content=response.content)
+            )
 
         return response
 
-    def set_api_key(self, api_key: str, base_url: str = None) -> None:
+    def set_api_key(self, api_key: str, base_url: Optional[str] = None) -> None:
         """Set API key and optionally base URL for the service
 
         Creates a new configuration with the updated values.
@@ -127,16 +128,14 @@ class ClaudeAIService(IAIService):
         if base_url:
             # Create new config with both updated values
             self._config = AIProviderConfig.from_env(
-                api_key=api_key,
-                base_url=base_url,
-                max_tokens=self._config.max_tokens
+                api_key=api_key, base_url=base_url, max_tokens=self._config.max_tokens
             )
         else:
             # Keep existing base_url, just update api_key
             self._config = AIProviderConfig.from_env(
                 api_key=api_key,
                 base_url=self._config.base_url,
-                max_tokens=self._config.max_tokens
+                max_tokens=self._config.max_tokens,
             )
         self._client = None  # Reset client to use new configuration
 

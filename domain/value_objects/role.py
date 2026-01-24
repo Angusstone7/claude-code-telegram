@@ -5,6 +5,7 @@ from typing import Set
 
 class Permission(Enum):
     """User permissions"""
+
     EXECUTE_COMMANDS = "execute_commands"
     VIEW_LOGS = "view_logs"
     MANAGE_SESSIONS = "manage_sessions"
@@ -18,6 +19,7 @@ class Permission(Enum):
 @dataclass(frozen=True)
 class Role:
     """Value object representing user role with permissions"""
+
     name: str
     permissions: Set[Permission]
 
@@ -32,10 +34,7 @@ class Role:
     @classmethod
     def admin(cls) -> "Role":
         """Create admin role with all permissions"""
-        return cls(
-            name="admin",
-            permissions=set(Permission)
-        )
+        return cls(name="admin", permissions=set(Permission))
 
     @classmethod
     def user(cls) -> "Role":
@@ -47,7 +46,7 @@ class Role:
                 Permission.VIEW_LOGS,
                 Permission.MANAGE_SESSIONS,
                 Permission.VIEW_METRICS,
-            }
+            },
         )
 
     @classmethod
@@ -58,7 +57,7 @@ class Role:
             permissions={
                 Permission.VIEW_LOGS,
                 Permission.VIEW_METRICS,
-            }
+            },
         )
 
     @classmethod
@@ -74,5 +73,5 @@ class Role:
                 Permission.MANAGE_GITLAB,
                 Permission.VIEW_METRICS,
                 Permission.SCHEDULE_TASKS,
-            }
+            },
         )

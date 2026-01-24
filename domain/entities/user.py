@@ -8,6 +8,7 @@ from domain.value_objects.role import Role
 @dataclass
 class User:
     """User entity - represents a Telegram user with access to the bot"""
+
     user_id: UserId
     username: Optional[str]
     first_name: str

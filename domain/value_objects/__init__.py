@@ -3,7 +3,7 @@
 from domain.value_objects.ai_provider_config import (
     AIProviderType,
     AIModelConfig,
-    AIProviderConfig
+    AIProviderConfig,
 )
 
 __all__ = [
