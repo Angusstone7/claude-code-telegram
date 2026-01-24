@@ -171,85 +171,29 @@ class ClaudeCodeProxyService:
             env = os.environ.copy()
             env["CI"] = "true"  # Non-interactive mode
             env["TERM"] = "dumb"  # Simple terminal
-            logger.info(f"Starting with API key present: {'ANTHROPIC_API_KEY' in env}")
+            logger.info(f"[{user_id}] Starting with API key present: {'ANTHROPIC_API_KEY' in env}")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.PIPE,
                 cwd=work_dir,
                 env=env,
             )
             self._processes[user_id] = process
             logger.info(f"[{user_id}] Process started with PID: {process.pid}")
 
-            # Process output stream
-            async def read_stdout():
-                nonlocal result_session_id
-                logger.info(f"[{user_id}] Starting stdout reader")
-
-                while True:
-                    # Check for cancellation
-                    if self._cancel_events[user_id].is_set():
-                        logger.info(f"[{user_id}] Stdout reader cancelled")
-                        return
-
-                    line = await process.stdout.readline()
-                    if not line:
-                        logger.info(f"[{user_id}] Stdout EOF")
-                        break
-
-                    try:
-                        line_str = line.decode('utf-8').strip()
-                        if not line_str:
-                            continue
-
-                        logger.info(f"[{user_id}] STDOUT: {line_str[:300]}")
-
-                        event = self._parse_event(line_str)
-                        logger.info(f"[{user_id}] Parsed: {event.type if event else 'None'}")
-                        if event:
-                            await self._handle_event(
-                                user_id, event,
-                                on_text, on_tool_use, on_tool_result,
-                                on_permission, on_question, on_error,
-                                output_buffer
-                            )
-
-                            # Extract session_id from result
-                            if event.type == EventType.RESULT and event.session_id:
-                                result_session_id = event.session_id
-
-                    except json.JSONDecodeError:
-                        # Non-JSON output, treat as text
-                        logger.info(f"[{user_id}] Non-JSON: {line_str[:100]}")
-                        if on_text and line_str:
-                            output_buffer.append(line_str)
-                            await on_text(line_str)
-                    except Exception as e:
-                        logger.error(f"[{user_id}] Error processing line: {e}")
-
-            # Stderr reader - runs concurrently
-            async def read_stderr():
-                logger.info(f"[{user_id}] Starting stderr reader")
-                while True:
-                    line = await process.stderr.readline()
-                    if not line:
-                        logger.info(f"[{user_id}] Stderr EOF")
-                        break
-                    line_str = line.decode('utf-8').strip()
-                    if line_str:
-                        logger.warning(f"[{user_id}] STDERR: {line_str}")
-
-            # Run both readers concurrently with timeout
+            # Use communicate() like the working diagnostics
+            # This waits for full output (no streaming) but actually works
             try:
-                await asyncio.wait_for(
-                    asyncio.gather(read_stdout(), read_stderr()),
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
                     timeout=self.timeout_seconds
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"Task timeout for user {user_id}")
+                logger.warning(f"[{user_id}] Task timeout after {self.timeout_seconds}s")
+                process.kill()
+                await process.wait()
                 if on_error:
                     await on_error("Task timed out")
                 return TaskResult(
@@ -258,10 +202,6 @@ class ClaudeCodeProxyService:
                     session_id=result_session_id,
                     error="Task timed out"
                 )
-
-            # Wait for process to finish
-            await process.wait()
-            logger.info(f"Claude Code process finished with returncode {process.returncode}")
 
             # Check if cancelled
             if self._cancel_events[user_id].is_set():
@@ -272,21 +212,32 @@ class ClaudeCodeProxyService:
                     cancelled=True
                 )
 
-            # Read any stderr
-            stderr = await process.stderr.read()
-            error_msg = stderr.decode('utf-8') if stderr else ""
-            if error_msg:
-                logger.info(f"Claude Code stderr: {error_msg[:500]}")
-            if error_msg and process.returncode != 0:
-                logger.error(f"Claude Code error: {error_msg}")
+            stdout_str = stdout.decode('utf-8') if stdout else ""
+            stderr_str = stderr.decode('utf-8') if stderr else ""
+
+            logger.info(f"[{user_id}] Process finished, returncode={process.returncode}")
+            logger.info(f"[{user_id}] STDOUT length: {len(stdout_str)}")
+            if stdout_str:
+                logger.info(f"[{user_id}] STDOUT: {stdout_str[:1000]}")
+            if stderr_str:
+                logger.warning(f"[{user_id}] STDERR: {stderr_str[:500]}")
+
+            # Process the output
+            if stdout_str:
+                output_buffer.append(stdout_str)
+                if on_text:
+                    await on_text(stdout_str)
+
+            # Handle errors
+            if stderr_str and process.returncode != 0:
                 if on_error:
-                    await on_error(error_msg)
+                    await on_error(stderr_str)
 
             return TaskResult(
                 success=process.returncode == 0,
                 output="\n".join(output_buffer),
                 session_id=result_session_id,
-                error=error_msg if error_msg and process.returncode != 0 else None
+                error=stderr_str if stderr_str and process.returncode != 0 else None
             )
 
         except Exception as e:
