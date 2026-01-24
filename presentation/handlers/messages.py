@@ -1,23 +1,104 @@
+"""
+Message Handlers for Claude Code Proxy
+
+Handles user messages and forwards them to Claude Code CLI,
+managing streaming output, HITL interactions, and session state.
+"""
+
+import asyncio
 import logging
-from aiogram import Router, F
+import uuid
+from typing import Optional
+from aiogram import Router, F, Bot
 from aiogram.types import Message
-from application.services.bot_service import BotService
+from aiogram.enums import ParseMode
+
 from presentation.keyboards.keyboards import Keyboards
+from presentation.handlers.streaming import StreamingHandler
+from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService, TaskResult
+from domain.entities.claude_code_session import ClaudeCodeSession, SessionStatus
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 
 class MessageHandlers:
-    """Bot message handlers"""
+    """Bot message handlers for Claude Code proxy"""
 
-    def __init__(self, bot_service: BotService):
+    def __init__(
+        self,
+        bot_service,
+        claude_proxy: ClaudeCodeProxyService,
+        default_working_dir: str = "/root"
+    ):
         self.bot_service = bot_service
-        self.pending_tools = {}  # Store pending tool approvals
+        self.claude_proxy = claude_proxy
+        self.default_working_dir = default_working_dir
+
+        # User state tracking
+        self._user_sessions: dict[int, ClaudeCodeSession] = {}
+        self._user_working_dirs: dict[int, str] = {}
+        self._continue_sessions: dict[int, str] = {}  # user_id -> claude_session_id
+
+        # HITL state
+        self._expecting_answer: dict[int, bool] = {}
+        self._expecting_path: dict[int, bool] = {}
+        self._pending_questions: dict[int, list[str]] = {}  # user_id -> options list
+
+        # Permission/Question response events
+        self._permission_events: dict[int, asyncio.Event] = {}
+        self._permission_responses: dict[int, bool] = {}
+        self._question_events: dict[int, asyncio.Event] = {}
+        self._question_responses: dict[int, str] = {}
+
+        # Active streaming handlers
+        self._streaming_handlers: dict[int, StreamingHandler] = {}
+
+    def get_working_dir(self, user_id: int) -> str:
+        """Get user's working directory"""
+        return self._user_working_dirs.get(user_id, self.default_working_dir)
+
+    def set_working_dir(self, user_id: int, path: str):
+        """Set user's working directory"""
+        self._user_working_dirs[user_id] = path
+
+    def set_expecting_answer(self, user_id: int, expecting: bool):
+        """Set whether we're expecting a text answer from user"""
+        self._expecting_answer[user_id] = expecting
+
+    def set_expecting_path(self, user_id: int, expecting: bool):
+        """Set whether we're expecting a path from user"""
+        self._expecting_path[user_id] = expecting
+
+    def set_continue_session(self, user_id: int, session_id: str):
+        """Set session to continue on next message"""
+        self._continue_sessions[user_id] = session_id
+
+    def get_pending_question_option(self, user_id: int, index: int) -> str:
+        """Get option text by index from pending question"""
+        options = self._pending_questions.get(user_id, [])
+        if 0 <= index < len(options):
+            return options[index]
+        return str(index)
+
+    async def handle_permission_response(self, user_id: int, approved: bool):
+        """Handle permission response from callback"""
+        self._permission_responses[user_id] = approved
+        event = self._permission_events.get(user_id)
+        if event:
+            event.set()
+
+    async def handle_question_response(self, user_id: int, answer: str):
+        """Handle question response from callback"""
+        self._question_responses[user_id] = answer
+        event = self._question_events.get(user_id)
+        if event:
+            event.set()
 
     async def handle_text(self, message: Message) -> None:
-        """Handle text messages - chat with AI"""
+        """Handle text messages - main entry point"""
         user_id = message.from_user.id
+        bot = message.bot
 
         # Check authorization
         user = await self.bot_service.authorize_user(user_id)
@@ -25,152 +106,261 @@ class MessageHandlers:
             await message.answer("❌ You are not authorized to use this bot.")
             return
 
-        try:
-            # Send typing action
-            await message.bot.send_chat_action(user_id, "typing")
+        # Handle special input modes
+        if self._expecting_answer.get(user_id):
+            await self._handle_answer_input(message)
+            return
 
-            # Get AI response
-            response_text, tool_calls = await self.bot_service.chat(
+        if self._expecting_path.get(user_id):
+            await self._handle_path_input(message)
+            return
+
+        # Check if already running
+        if self.claude_proxy.is_task_running(user_id):
+            await message.answer(
+                "⏳ A task is already running.\n\n"
+                "Use the cancel button or /cancel to stop it.",
+                reply_markup=Keyboards.claude_cancel(user_id)
+            )
+            return
+
+        # Get working directory and session
+        working_dir = self.get_working_dir(user_id)
+        session_id = self._continue_sessions.pop(user_id, None)
+
+        # Create session state
+        session = ClaudeCodeSession(
+            user_id=user_id,
+            working_dir=working_dir,
+            claude_session_id=session_id
+        )
+        session.start_task(message.text)
+        self._user_sessions[user_id] = session
+
+        # Start streaming handler
+        streaming = StreamingHandler(bot, message.chat.id)
+        await streaming.start(f"🤖 **Working...**\n📁 `{working_dir}`\n\n")
+        self._streaming_handlers[user_id] = streaming
+
+        # Setup HITL events
+        self._permission_events[user_id] = asyncio.Event()
+        self._question_events[user_id] = asyncio.Event()
+
+        try:
+            # Run Claude Code task
+            result = await self.claude_proxy.run_task(
                 user_id=user_id,
-                message=message.text,
-                enable_tools=True
+                prompt=message.text,
+                working_dir=working_dir,
+                session_id=session_id,
+                on_text=lambda text: self._on_text(user_id, text),
+                on_tool_use=lambda tool, inp: self._on_tool_use(user_id, tool, inp, message),
+                on_tool_result=lambda tid, out: self._on_tool_result(user_id, tid, out),
+                on_permission=lambda tool, details: self._on_permission(user_id, tool, details, message),
+                on_question=lambda q, opts: self._on_question(user_id, q, opts, message),
+                on_error=lambda err: self._on_error(user_id, err),
             )
 
-            # Send response
-            if response_text:
-                # Handle long messages
-                if len(response_text) > 4000:
-                    for i in range(0, len(response_text), 4000):
-                        await message.answer(response_text[i:i+4000], parse_mode="Markdown")
-                else:
-                    await message.answer(response_text, parse_mode="Markdown")
-
-            # Handle tool calls (need approval)
-            if tool_calls:
-                for tool in tool_calls:
-                    if tool["name"] == "bash":
-                        command = tool["input"]["command"]
-                        await self._request_command_approval(
-                            message=message,
-                            tool_id=tool["id"],
-                            command=command
-                        )
-                    elif tool["name"] == "get_metrics":
-                        await self._handle_metrics(message, tool["id"])
-                    elif tool["name"] == "list_containers":
-                        await self._handle_containers(message, tool["id"])
+            # Handle result
+            await self._handle_result(user_id, result, message)
 
         except Exception as e:
-            logger.error(f"Error handling message: {e}")
-            await message.answer(f"❌ Error: {str(e)}")
+            logger.error(f"Error running Claude Code: {e}")
+            await streaming.send_error(str(e))
+            session.fail(str(e))
 
-    async def _request_command_approval(self, message: Message, tool_id: str, command: str) -> None:
-        """Request user approval for command execution"""
-        # Create pending command
-        cmd = await self.bot_service.create_pending_command(
-            user_id=message.from_user.id,
-            command=command
-        )
+        finally:
+            # Cleanup
+            self._permission_events.pop(user_id, None)
+            self._question_events.pop(user_id, None)
+            self._streaming_handlers.pop(user_id, None)
 
-        # Store mapping for callback
-        self.pending_tools[tool_id] = cmd.command_id
+    async def _on_text(self, user_id: int, text: str):
+        """Handle streaming text output"""
+        streaming = self._streaming_handlers.get(user_id)
+        if streaming:
+            await streaming.append(text)
 
-        # Check if dangerous
-        is_dangerous = cmd.is_dangerous
+    async def _on_tool_use(self, user_id: int, tool_name: str, tool_input: dict, message: Message):
+        """Handle tool use notification"""
+        streaming = self._streaming_handlers.get(user_id)
+        if streaming:
+            # Format tool details
+            details = ""
+            if tool_name.lower() == "bash":
+                details = tool_input.get("command", "")[:100]
+            elif tool_name.lower() in ["read", "write", "edit"]:
+                details = tool_input.get("file_path", tool_input.get("path", ""))[:100]
+            elif tool_name.lower() == "glob":
+                details = tool_input.get("pattern", "")[:100]
+            elif tool_name.lower() == "grep":
+                details = tool_input.get("pattern", "")[:100]
 
-        # Show command with approval buttons
-        warning = "⚠️ **DANGEROUS COMMAND**\n\n" if is_dangerous else ""
-        text = f"{warning}🔧 **Proposed Command:**\n```bash\n{command}\n```"
+            await streaming.show_tool_use(tool_name, details)
 
-        if is_dangerous:
-            text += "\n\n⚠️ This command may be dangerous. Are you sure?"
+    async def _on_tool_result(self, user_id: int, tool_id: str, output: str):
+        """Handle tool result"""
+        # Just log for now - output is streamed
+        logger.debug(f"Tool result for user {user_id}: {output[:100]}...")
+
+    async def _on_permission(self, user_id: int, tool_name: str, details: str, message: Message) -> bool:
+        """Handle permission request - show approval buttons and wait"""
+        session = self._user_sessions.get(user_id)
+        request_id = str(uuid.uuid4())[:8]
+
+        if session:
+            session.set_waiting_approval(request_id, tool_name, details)
+
+        # Send permission request message
+        text = f"🔐 **Permission Request**\n\n"
+        text += f"**Tool:** `{tool_name}`\n"
+        if details:
+            # Truncate long details
+            display_details = details if len(details) < 500 else details[:500] + "..."
+            text += f"**Details:**\n```\n{display_details}\n```"
 
         await message.answer(
             text,
-            parse_mode="Markdown",
-            reply_markup=Keyboards.command_approval(cmd.command_id, command, is_dangerous)
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
         )
 
-    async def _handle_metrics(self, message: Message, tool_id: str) -> None:
-        """Handle get_metrics tool call"""
-        try:
-            info = await self.bot_service.get_system_info()
-            metrics = info["metrics"]
+        # Wait for response (with timeout)
+        event = self._permission_events.get(user_id)
+        if event:
+            event.clear()
+            try:
+                await asyncio.wait_for(event.wait(), timeout=300)  # 5 min timeout
+                approved = self._permission_responses.get(user_id, False)
+            except asyncio.TimeoutError:
+                await message.answer("⏱️ Permission request timed out. Rejecting.")
+                approved = False
 
-            response = (
-                f"📊 **System Metrics:**\n\n"
-                f"💻 CPU: {metrics['cpu_percent']:.1f}%\n"
-                f"🧠 Memory: {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)\n"
-                f"💾 Disk: {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)\n"
+            if session:
+                session.resume_running()
+
+            return approved
+
+        return False
+
+    async def _on_question(self, user_id: int, question: str, options: list[str], message: Message) -> str:
+        """Handle question - show options and wait for answer"""
+        session = self._user_sessions.get(user_id)
+        request_id = str(uuid.uuid4())[:8]
+
+        if session:
+            session.set_waiting_answer(request_id, question, options)
+
+        # Store options for later lookup
+        self._pending_questions[user_id] = options
+
+        # Send question message
+        text = f"❓ **Question**\n\n{question}"
+
+        if options:
+            await message.answer(
+                text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=Keyboards.claude_question(user_id, options, request_id)
+            )
+        else:
+            # No options - expect text input
+            self._expecting_answer[user_id] = True
+            await message.answer(
+                text + "\n\n✏️ **Type your answer:**",
+                parse_mode=ParseMode.MARKDOWN
             )
 
-            # Send tool result to AI
-            await self.bot_service.handle_tool_result(
-                user_id=message.from_user.id,
-                tool_id=tool_id,
-                result=response
-            )
+        # Wait for response
+        event = self._question_events.get(user_id)
+        if event:
+            event.clear()
+            try:
+                await asyncio.wait_for(event.wait(), timeout=300)
+                answer = self._question_responses.get(user_id, "")
+            except asyncio.TimeoutError:
+                await message.answer("⏱️ Question timed out.")
+                answer = ""
 
-            # Get follow-up from AI
-            follow_up, _ = await self.bot_service.chat(
-                user_id=message.from_user.id,
-                message="",  # Empty since we sent tool result
-                enable_tools=False
-            )
+            if session:
+                session.resume_running()
 
-            if follow_up:
-                await message.answer(follow_up, parse_mode="Markdown")
+            # Cleanup
+            self._pending_questions.pop(user_id, None)
+            self._expecting_answer.pop(user_id, None)
 
-        except Exception as e:
-            logger.error(f"Error getting metrics: {e}")
-            await self.bot_service.handle_tool_result(
-                user_id=message.from_user.id,
-                tool_id=tool_id,
-                result=f"Error getting metrics: {e}"
-            )
+            return answer
 
-    async def _handle_containers(self, message: Message, tool_id: str) -> None:
-        """Handle list_containers tool call"""
-        try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
-            containers = await monitor.get_docker_containers()
+        return ""
 
-            if not containers:
-                result = "No Docker containers found."
-            else:
-                lines = ["🐳 **Docker Containers:**\n"]
-                for c in containers:
-                    status_emoji = "✅" if c["status"] == "running" else "⏸️"
-                    lines.append(f"{status_emoji} **{c['name']}** - {c['status']}")
-                    lines.append(f"   Image: {c['image']}")
+    async def _on_error(self, user_id: int, error: str):
+        """Handle error from Claude Code"""
+        streaming = self._streaming_handlers.get(user_id)
+        if streaming:
+            await streaming.send_error(error)
 
-                result = "\n".join(lines)
+        session = self._user_sessions.get(user_id)
+        if session:
+            session.fail(error)
 
-            # Send tool result to AI
-            await self.bot_service.handle_tool_result(
-                user_id=message.from_user.id,
-                tool_id=tool_id,
-                result=result
-            )
+    async def _handle_result(self, user_id: int, result: TaskResult, message: Message):
+        """Handle task completion"""
+        session = self._user_sessions.get(user_id)
+        streaming = self._streaming_handlers.get(user_id)
 
-            # Get follow-up from AI
-            follow_up, _ = await self.bot_service.chat(
-                user_id=message.from_user.id,
-                message="",
-                enable_tools=False
-            )
+        if result.cancelled:
+            if streaming:
+                await streaming.finalize("🛑 **Task cancelled**")
+            if session:
+                session.cancel()
+            return
 
-            if follow_up:
-                await message.answer(follow_up, parse_mode="Markdown")
+        if result.success:
+            if streaming:
+                await streaming.send_completion(success=True)
+            if session:
+                session.complete(result.session_id)
 
-        except Exception as e:
-            logger.error(f"Error getting containers: {e}")
-            await self.bot_service.handle_tool_result(
-                user_id=message.from_user.id,
-                tool_id=tool_id,
-                result=f"Error getting containers: {e}"
-            )
+            # Offer to continue if we have a session
+            if result.session_id:
+                await message.answer(
+                    "✅ **Task completed**\n\nYou can continue this conversation or start fresh.",
+                    reply_markup=Keyboards.claude_continue(user_id, result.session_id)
+                )
+        else:
+            if streaming:
+                await streaming.send_completion(success=False)
+            if session:
+                session.fail(result.error or "Unknown error")
+
+            if result.error:
+                await message.answer(f"⚠️ **Completed with error:**\n```\n{result.error[:1000]}\n```")
+
+    async def _handle_answer_input(self, message: Message):
+        """Handle text input for question answer"""
+        user_id = message.from_user.id
+        self._expecting_answer[user_id] = False
+
+        # Send answer to waiting handler
+        self._question_responses[user_id] = message.text
+        event = self._question_events.get(user_id)
+        if event:
+            event.set()
+
+        await message.answer(f"📝 Answer: {message.text[:50]}...")
+
+    async def _handle_path_input(self, message: Message):
+        """Handle text input for path"""
+        user_id = message.from_user.id
+        self._expecting_path[user_id] = False
+
+        path = message.text.strip()
+        self.set_working_dir(user_id, path)
+
+        await message.answer(
+            f"📁 **Working directory set:**\n`{path}`",
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 
 def register_handlers(router: Router, handlers: MessageHandlers) -> None:
@@ -178,6 +368,6 @@ def register_handlers(router: Router, handlers: MessageHandlers) -> None:
     router.message.register(handlers.handle_text, F.text)
 
 
-def get_message_handlers(bot_service: BotService) -> MessageHandlers:
+def get_message_handlers(bot_service, claude_proxy: ClaudeCodeProxyService) -> MessageHandlers:
     """Factory function to create message handlers"""
-    return MessageHandlers(bot_service)
+    return MessageHandlers(bot_service, claude_proxy)

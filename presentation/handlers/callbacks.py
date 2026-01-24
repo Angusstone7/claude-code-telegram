@@ -3,6 +3,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.enums import ParseMode
 from presentation.keyboards.keyboards import CallbackData
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -11,9 +12,10 @@ router = Router()
 class CallbackHandlers:
     """Bot callback query handlers"""
 
-    def __init__(self, bot_service, message_handlers):
+    def __init__(self, bot_service, message_handlers, claude_proxy=None):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
+        self.claude_proxy = claude_proxy  # ClaudeCodeProxyService instance
 
     async def handle_command_approve(self, callback: CallbackQuery) -> None:
         """Handle command approval callback"""
@@ -136,9 +138,223 @@ class CallbackHandlers:
 
         await callback.answer()
 
+    # ============== Claude Code HITL Callbacks ==============
+
+    async def handle_claude_approve(self, callback: CallbackQuery) -> None:
+        """Handle Claude Code permission approval"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ This action is not for you")
+            return
+
+        try:
+            # Update message to show approved
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✅ **Approved**",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+            # Send approval to Claude Code proxy
+            if self.claude_proxy:
+                await self.claude_proxy.respond_to_permission(user_id, True)
+
+            # Notify message handler to continue
+            if hasattr(self.message_handlers, 'handle_permission_response'):
+                await self.message_handlers.handle_permission_response(user_id, True)
+
+            await callback.answer("✅ Approved")
+
+        except Exception as e:
+            logger.error(f"Error handling claude approve: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_claude_reject(self, callback: CallbackQuery) -> None:
+        """Handle Claude Code permission rejection"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ This action is not for you")
+            return
+
+        try:
+            # Update message to show rejected
+            await callback.message.edit_text(
+                callback.message.text + "\n\n❌ **Rejected**",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+            # Send rejection to Claude Code proxy
+            if self.claude_proxy:
+                await self.claude_proxy.respond_to_permission(user_id, False)
+
+            # Notify message handler
+            if hasattr(self.message_handlers, 'handle_permission_response'):
+                await self.message_handlers.handle_permission_response(user_id, False)
+
+            await callback.answer("❌ Rejected")
+
+        except Exception as e:
+            logger.error(f"Error handling claude reject: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_claude_answer(self, callback: CallbackQuery) -> None:
+        """Handle Claude Code question answer (selected option)"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+        option_index = int(data.get("option_index", 0))
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ This action is not for you")
+            return
+
+        try:
+            # Get the answer text from message handler's pending question
+            answer = str(option_index)  # Default to index
+            if hasattr(self.message_handlers, 'get_pending_question_option'):
+                answer = self.message_handlers.get_pending_question_option(user_id, option_index)
+
+            # Update message to show answer
+            await callback.message.edit_text(
+                callback.message.text + f"\n\n📝 **Answer:** {answer}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+            # Send answer to Claude Code proxy
+            if self.claude_proxy:
+                await self.claude_proxy.respond_to_question(user_id, answer)
+
+            # Notify message handler
+            if hasattr(self.message_handlers, 'handle_question_response'):
+                await self.message_handlers.handle_question_response(user_id, answer)
+
+            await callback.answer(f"Answered: {answer[:20]}...")
+
+        except Exception as e:
+            logger.error(f"Error handling claude answer: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_claude_other(self, callback: CallbackQuery) -> None:
+        """Handle Claude Code question - user wants to type custom answer"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ This action is not for you")
+            return
+
+        try:
+            # Update message to prompt for text input
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✏️ **Type your answer below:**",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+            # Set message handler to expect text answer
+            if hasattr(self.message_handlers, 'set_expecting_answer'):
+                self.message_handlers.set_expecting_answer(user_id, True)
+
+            await callback.answer("Type your answer in chat")
+
+        except Exception as e:
+            logger.error(f"Error handling claude other: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_claude_cancel(self, callback: CallbackQuery) -> None:
+        """Handle Claude Code task cancellation"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ This action is not for you")
+            return
+
+        try:
+            # Cancel the task
+            if self.claude_proxy:
+                cancelled = await self.claude_proxy.cancel_task(user_id)
+                if cancelled:
+                    await callback.message.edit_text(
+                        "🛑 **Task cancelled**",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    await callback.answer("Task cancelled")
+                else:
+                    await callback.answer("No active task to cancel")
+            else:
+                await callback.answer("❌ Proxy not available")
+
+        except Exception as e:
+            logger.error(f"Error cancelling task: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_claude_continue(self, callback: CallbackQuery) -> None:
+        """Handle continue Claude Code session"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+        session_id = data.get("session_id")
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ This action is not for you")
+            return
+
+        try:
+            await callback.message.edit_text(
+                "▶️ **Continuing session...**\n\nSend your next message to continue.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+            # Store session_id for next message
+            if hasattr(self.message_handlers, 'set_continue_session'):
+                self.message_handlers.set_continue_session(user_id, session_id)
+
+            await callback.answer("Send your next message")
+
+        except Exception as e:
+            logger.error(f"Error continuing session: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_project_select(self, callback: CallbackQuery) -> None:
+        """Handle project selection"""
+        data = CallbackData.parse_project_callback(callback.data)
+        action = data.get("action")
+        path = data.get("path", "")
+
+        user_id = callback.from_user.id
+
+        try:
+            if action == "select" and path:
+                # Set working directory
+                if hasattr(self.message_handlers, 'set_working_dir'):
+                    self.message_handlers.set_working_dir(user_id, path)
+
+                await callback.message.edit_text(
+                    f"📁 **Working directory set:**\n`{path}`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await callback.answer(f"Project: {path}")
+
+            elif action == "custom":
+                # Prompt for custom path input
+                if hasattr(self.message_handlers, 'set_expecting_path'):
+                    self.message_handlers.set_expecting_path(user_id, True)
+
+                await callback.message.edit_text(
+                    "📂 **Enter project path:**\n\nType the full path to your project directory.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await callback.answer("Type path in chat")
+
+        except Exception as e:
+            logger.error(f"Error handling project select: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
 
 def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     """Register callback handlers"""
+    # Legacy command handlers
     router.callback_query.register(
         handlers.handle_command_approve,
         F.data.startswith("exec:")
@@ -156,7 +372,39 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
         F.data == "docker:list"
     )
 
+    # Claude Code HITL handlers
+    router.callback_query.register(
+        handlers.handle_claude_approve,
+        F.data.startswith("claude:approve:")
+    )
+    router.callback_query.register(
+        handlers.handle_claude_reject,
+        F.data.startswith("claude:reject:")
+    )
+    router.callback_query.register(
+        handlers.handle_claude_answer,
+        F.data.startswith("claude:answer:")
+    )
+    router.callback_query.register(
+        handlers.handle_claude_other,
+        F.data.startswith("claude:other:")
+    )
+    router.callback_query.register(
+        handlers.handle_claude_cancel,
+        F.data.startswith("claude:cancel:")
+    )
+    router.callback_query.register(
+        handlers.handle_claude_continue,
+        F.data.startswith("claude:continue:")
+    )
 
-def get_callback_handlers(bot_service, message_handlers) -> CallbackHandlers:
+    # Project selection handlers
+    router.callback_query.register(
+        handlers.handle_project_select,
+        F.data.startswith("project:")
+    )
+
+
+def get_callback_handlers(bot_service, message_handlers, claude_proxy=None) -> CallbackHandlers:
     """Factory function to create callback handlers"""
-    return CallbackHandlers(bot_service, message_handlers)
+    return CallbackHandlers(bot_service, message_handlers, claude_proxy)

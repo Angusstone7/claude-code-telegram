@@ -1,8 +1,10 @@
 import logging
+import os
 from aiogram import Router, F, types
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from application.services.bot_service import BotService
+from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from presentation.keyboards.keyboards import Keyboards
 
 logger = logging.getLogger(__name__)
@@ -10,10 +12,17 @@ router = Router()
 
 
 class CommandHandlers:
-    """Bot command handlers"""
+    """Bot command handlers for Claude Code proxy"""
 
-    def __init__(self, bot_service: BotService):
+    def __init__(
+        self,
+        bot_service: BotService,
+        claude_proxy: ClaudeCodeProxyService,
+        message_handlers=None  # Optional, set after initialization
+    ):
         self.bot_service = bot_service
+        self.claude_proxy = claude_proxy
+        self.message_handlers = message_handlers
 
     async def start(self, message: Message) -> None:
         """Handle /start command"""
@@ -24,12 +33,23 @@ class CommandHandlers:
             last_name=message.from_user.last_name
         )
 
+        # Get working directory
+        working_dir = "/root"
+        if self.message_handlers:
+            working_dir = self.message_handlers.get_working_dir(message.from_user.id)
+
+        # Check Claude Code status
+        installed, version_info = await self.claude_proxy.check_claude_installed()
+        status = f"✅ {version_info}" if installed else f"⚠️ {version_info}"
+
         await message.answer(
-            f"🤖 **Claude DevOps Bot**\n\n"
+            f"🤖 **Claude Code Telegram Proxy**\n\n"
             f"Welcome, {user.first_name}!\n"
             f"Your role: **{user.role.name}**\n\n"
-            f"I can help you manage servers via SSH using natural language.\n"
-            f"Just ask me to do something, and I'll figure out the commands!\n\n"
+            f"**Claude Code:** {status}\n"
+            f"**Working dir:** `{working_dir}`\n\n"
+            f"Just send me a task and Claude Code will handle it!\n"
+            f"I'll forward all outputs, permissions, and questions to you.\n\n"
             f"Use /help to see available commands.",
             parse_mode="Markdown",
             reply_markup=Keyboards.main_menu()
@@ -38,28 +58,38 @@ class CommandHandlers:
     async def help(self, message: Message) -> None:
         """Handle /help command"""
         help_text = """
-🤖 **Claude DevOps Bot - Help**
+🤖 **Claude Code Telegram Proxy - Help**
+
+**Claude Code Commands:**
+/project `<path>` - Set working directory
+/cancel - Cancel running task
+/status - Show Claude Code status
+/clear - Clear session history
 
 **Basic Commands:**
 /start - Start the bot
 /help - Show this help
-/clear - Clear chat history
 /stats - Show your statistics
 
-**Main Menu:**
-💬 **Chat** - Talk with Claude AI
-📊 **Metrics** - System metrics
-🐳 **Docker** - Container management
-📝 **Commands** - Command history
+**How it works:**
+1. Send any task as a message
+2. Claude Code will work on it
+3. You'll see real-time output
+4. Approve/reject tool executions
+5. Answer questions when asked
 
-**Features:**
-• Execute server commands via natural language
-• Monitor system resources
-• Manage Docker containers
-• View command history
-• AI-powered assistance
+**HITL (Human-in-the-Loop):**
+🔐 **Permissions** - Approve dangerous operations
+❓ **Questions** - Answer Claude's questions
+🛑 **Cancel** - Stop running tasks anytime
 
-Just describe what you want to do, and I'll help you!
+**Examples:**
+• "Create a Python script that prints hello"
+• "Read the README.md file"
+• "Run npm install in the project"
+• "Fix the bug in main.py"
+
+Just describe what you want!
         """
         await message.answer(help_text, parse_mode="Markdown")
 
@@ -134,13 +164,106 @@ Just describe what you want to do, and I'll help you!
             reply_markup=Keyboards.system_metrics()
         )
 
+    async def project(self, message: Message, command: CommandObject) -> None:
+        """Handle /project command - set working directory"""
+        user_id = message.from_user.id
+
+        if command.args:
+            # Set working directory directly
+            path = command.args.strip()
+
+            # Validate path exists (basic check)
+            if not os.path.isabs(path):
+                path = os.path.abspath(path)
+
+            if self.message_handlers:
+                self.message_handlers.set_working_dir(user_id, path)
+                await message.answer(
+                    f"📁 **Working directory set:**\n`{path}`",
+                    parse_mode="Markdown"
+                )
+            else:
+                await message.answer(
+                    "⚠️ Message handlers not initialized",
+                    parse_mode="Markdown"
+                )
+        else:
+            # Show current working directory and prompt for input
+            current_dir = "/root"
+            if self.message_handlers:
+                current_dir = self.message_handlers.get_working_dir(user_id)
+
+            # List some common project directories
+            projects = []
+            for dir_path in ["/root", "/home", "/var/www", "/opt"]:
+                if os.path.exists(dir_path):
+                    projects.append({"name": os.path.basename(dir_path) or dir_path, "path": dir_path})
+
+            await message.answer(
+                f"📁 **Current working directory:**\n`{current_dir}`\n\n"
+                f"Use `/project <path>` to change it.\n\n"
+                f"Example:\n`/project /home/myproject`",
+                parse_mode="Markdown",
+                reply_markup=Keyboards.project_selection(projects) if projects else None
+            )
+
+    async def cancel(self, message: Message) -> None:
+        """Handle /cancel command - cancel running Claude Code task"""
+        user_id = message.from_user.id
+
+        if self.claude_proxy.is_task_running(user_id):
+            cancelled = await self.claude_proxy.cancel_task(user_id)
+            if cancelled:
+                await message.answer("🛑 **Task cancelled**")
+            else:
+                await message.answer("⚠️ Failed to cancel task")
+        else:
+            await message.answer("ℹ️ No task is currently running")
+
+    async def status(self, message: Message) -> None:
+        """Handle /status command - show Claude Code status"""
+        user_id = message.from_user.id
+
+        # Check if Claude Code is installed
+        installed, version_info = await self.claude_proxy.check_claude_installed()
+
+        # Check if task is running
+        is_running = self.claude_proxy.is_task_running(user_id)
+
+        # Get working directory
+        working_dir = "/root"
+        if self.message_handlers:
+            working_dir = self.message_handlers.get_working_dir(user_id)
+
+        status_emoji = "🟢" if installed else "🔴"
+        task_status = "🔄 Running" if is_running else "⏸️ Idle"
+
+        text = f"""
+📊 **Claude Code Status**
+
+**CLI:** {status_emoji} {version_info}
+**Task:** {task_status}
+**Working dir:** `{working_dir}`
+"""
+
+        if is_running:
+            text += "\n\nUse /cancel to stop the current task."
+
+        await message.answer(text, parse_mode="Markdown")
+
 
 def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     """Register command handlers"""
+    # Basic commands
     router.message.register(handlers.start, Command("start"))
     router.message.register(handlers.help, Command("help"))
     router.message.register(handlers.clear, Command("clear"))
     router.message.register(handlers.stats, Command("stats"))
+
+    # Claude Code commands
+    router.message.register(handlers.project, Command("project"))
+    router.message.register(handlers.cancel, Command("cancel"))
+    router.message.register(handlers.status, Command("status"))
 
     # Menu buttons
     router.message.register(handlers.menu_chat, F.text == "💬 Chat")

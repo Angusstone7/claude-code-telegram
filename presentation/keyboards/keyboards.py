@@ -118,6 +118,101 @@ class Keyboards:
             [InlineKeyboardButton(text="🔙 Back", callback_data=f"back:{button}")]
         ])
 
+    # ============== Claude Code HITL Keyboards ==============
+
+    @staticmethod
+    def claude_permission(user_id: int, tool_name: str, request_id: str) -> InlineKeyboardMarkup:
+        """Keyboard for Claude Code permission request (approve/reject tool execution)"""
+        is_dangerous = tool_name.lower() in ["bash", "write", "edit", "notebookedit"]
+        warning = "⚠️ " if is_dangerous else ""
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    text=f"{warning}✅ Approve",
+                    callback_data=f"claude:approve:{user_id}:{request_id}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Reject",
+                    callback_data=f"claude:reject:{user_id}:{request_id}"
+                )
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def claude_question(user_id: int, options: List[str], request_id: str) -> InlineKeyboardMarkup:
+        """Keyboard for Claude Code question with options"""
+        buttons = []
+
+        # Add option buttons (max 4 per row)
+        row = []
+        for i, option in enumerate(options[:8]):  # Max 8 options
+            # Truncate long options
+            display = option if len(option) <= 30 else option[:27] + "..."
+            row.append(InlineKeyboardButton(
+                text=display,
+                callback_data=f"claude:answer:{user_id}:{request_id}:{i}"
+            ))
+            if len(row) >= 2:  # 2 buttons per row
+                buttons.append(row)
+                row = []
+
+        if row:
+            buttons.append(row)
+
+        # Add "Other" button for custom input
+        buttons.append([
+            InlineKeyboardButton(
+                text="✏️ Other (type answer)",
+                callback_data=f"claude:other:{user_id}:{request_id}"
+            )
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def claude_cancel(user_id: int) -> InlineKeyboardMarkup:
+        """Keyboard to cancel running Claude Code task"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛑 Cancel Task", callback_data=f"claude:cancel:{user_id}")]
+        ])
+
+    @staticmethod
+    def claude_continue(user_id: int, session_id: str) -> InlineKeyboardMarkup:
+        """Keyboard to continue a Claude Code session"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="▶️ Continue",
+                    callback_data=f"claude:continue:{user_id}:{session_id}"
+                ),
+                InlineKeyboardButton(
+                    text="🔄 New Session",
+                    callback_data=f"claude:new:{user_id}"
+                )
+            ]
+        ])
+
+    @staticmethod
+    def project_selection(projects: List[Dict[str, str]]) -> InlineKeyboardMarkup:
+        """Keyboard for project selection"""
+        buttons = []
+        for proj in projects[:10]:  # Max 10 projects
+            name = proj.get("name", "Unknown")
+            path = proj.get("path", "")
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"📁 {name}",
+                    callback_data=f"project:select:{path[:50]}"  # Truncate path for callback
+                )
+            ])
+
+        buttons.append([
+            InlineKeyboardButton(text="📂 Custom path...", callback_data="project:custom")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 class CallbackData:
     """Helper for parsing callback data"""
@@ -139,3 +234,76 @@ class CallbackData:
     def get_command_id(callback_data: str) -> str:
         parts = callback_data.split(":")
         return parts[1] if len(parts) > 1 else None
+
+    # ============== Claude Code Callback Helpers ==============
+
+    @staticmethod
+    def is_claude_callback(callback_data: str) -> bool:
+        """Check if this is a Claude Code callback"""
+        return callback_data.startswith("claude:")
+
+    @staticmethod
+    def is_claude_approve(callback_data: str) -> bool:
+        return callback_data.startswith("claude:approve:")
+
+    @staticmethod
+    def is_claude_reject(callback_data: str) -> bool:
+        return callback_data.startswith("claude:reject:")
+
+    @staticmethod
+    def is_claude_answer(callback_data: str) -> bool:
+        return callback_data.startswith("claude:answer:")
+
+    @staticmethod
+    def is_claude_other(callback_data: str) -> bool:
+        return callback_data.startswith("claude:other:")
+
+    @staticmethod
+    def is_claude_cancel(callback_data: str) -> bool:
+        return callback_data.startswith("claude:cancel:")
+
+    @staticmethod
+    def is_claude_continue(callback_data: str) -> bool:
+        return callback_data.startswith("claude:continue:")
+
+    @staticmethod
+    def parse_claude_callback(callback_data: str) -> Dict[str, str]:
+        """
+        Parse Claude Code callback data.
+
+        Returns dict with:
+        - action: approve/reject/answer/other/cancel/continue
+        - user_id: User ID
+        - request_id: Request ID (for approve/reject/answer)
+        - option_index: Option index (for answer)
+        - session_id: Session ID (for continue)
+        """
+        parts = callback_data.split(":")
+        result = {"action": parts[1] if len(parts) > 1 else ""}
+
+        if len(parts) > 2:
+            result["user_id"] = parts[2]
+        if len(parts) > 3:
+            if result["action"] == "answer":
+                result["request_id"] = parts[3]
+                if len(parts) > 4:
+                    result["option_index"] = parts[4]
+            elif result["action"] == "continue":
+                result["session_id"] = parts[3]
+            else:
+                result["request_id"] = parts[3]
+
+        return result
+
+    @staticmethod
+    def is_project_callback(callback_data: str) -> bool:
+        return callback_data.startswith("project:")
+
+    @staticmethod
+    def parse_project_callback(callback_data: str) -> Dict[str, str]:
+        """Parse project selection callback"""
+        parts = callback_data.split(":")
+        result = {"action": parts[1] if len(parts) > 1 else ""}
+        if len(parts) > 2:
+            result["path"] = ":".join(parts[2:])  # Rejoin in case path has colons
+        return result
