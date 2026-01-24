@@ -24,19 +24,48 @@ class TelegramConfig:
 
 @dataclass
 class AnthropicConfig:
-    """Anthropic Claude API configuration"""
+    """Anthropic Claude API configuration
+
+    Supports both Anthropic's official API and compatible APIs like ZhipuAI.
+    For ZhipuAI, set ANTHROPIC_BASE_URL to https://open.bigmodel.cn/api/anthropic
+    and use ANTHROPIC_AUTH_TOKEN instead of ANTHROPIC_API_KEY.
+    """
     api_key: str
+    base_url: Optional[str] = None
+    auth_token: Optional[str] = None
     model: str = "claude-3-5-sonnet-20241022"
+    haiku_model: str = "claude-3-5-haiku-20241022"
+    sonnet_model: str = "claude-3-5-sonnet-20241022"
+    opus_model: str = "claude-3-5-sonnet-20241022"
     max_tokens: int = 4096
 
     @classmethod
     def from_env(cls) -> "AnthropicConfig":
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        # Support both ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN
+        # For ZhipuAI, use ANTHROPIC_AUTH_TOKEN
+        api_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY is required")
+            raise ValueError("ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY is required")
+
+        base_url = os.getenv("ANTHROPIC_BASE_URL")
+        auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
+
         model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        haiku_model = os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-3-5-haiku-20241022")
+        sonnet_model = os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-3-5-sonnet-20241022")
+        opus_model = os.getenv("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-3-5-sonnet-20241022")
         max_tokens = int(os.getenv("ANTHROPIC_MAX_TOKENS", "4096"))
-        return cls(api_key=api_key, model=model, max_tokens=max_tokens)
+
+        return cls(
+            api_key=api_key,
+            base_url=base_url,
+            auth_token=auth_token,
+            model=model,
+            haiku_model=haiku_model,
+            sonnet_model=sonnet_model,
+            opus_model=opus_model,
+            max_tokens=max_tokens
+        )
 
 
 @dataclass

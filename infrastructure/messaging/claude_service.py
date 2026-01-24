@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 class ClaudeAIService(IAIService):
     """Anthropic Claude AI service implementation"""
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, base_url: str = None):
         self._api_key = api_key or settings.anthropic.api_key
+        self._base_url = base_url or settings.anthropic.base_url
         self._client: Optional[AsyncAnthropic] = None
         self.model = settings.anthropic.model
         self.max_tokens = settings.anthropic.max_tokens
@@ -21,7 +22,10 @@ class ClaudeAIService(IAIService):
     def client(self) -> AsyncAnthropic:
         """Lazy initialization of Anthropic client"""
         if self._client is None:
-            self._client = AsyncAnthropic(api_key=self._api_key)
+            client_kwargs = {"api_key": self._api_key}
+            if self._base_url:
+                client_kwargs["base_url"] = self._base_url
+            self._client = AsyncAnthropic(**client_kwargs)
         return self._client
 
     async def chat(
@@ -98,10 +102,12 @@ class ClaudeAIService(IAIService):
 
         return response
 
-    def set_api_key(self, api_key: str) -> None:
-        """Set API key for the service"""
+    def set_api_key(self, api_key: str, base_url: str = None) -> None:
+        """Set API key and optionally base URL for the service"""
         self._api_key = api_key
-        self._client = None  # Reset client to use new key
+        if base_url:
+            self._base_url = base_url
+        self._client = None  # Reset client to use new key/base_url
 
 
 class SystemPrompts:
