@@ -33,7 +33,7 @@ class BotService:
         self.user_repository = user_repository
         self.session_repository = session_repository
         self.command_repository = command_repository
-        self.ai_service = ai_service or ClaudeAIService()
+        self.ai_service = ai_service  # Now optional - Claude Code proxy handles main AI interactions
         self.command_executor = command_executor or SSHCommandExecutor()
 
     # User management
@@ -86,7 +86,7 @@ class BotService:
         session.clear_messages()
         await self.session_repository.save(session)
 
-    # AI Chat
+    # AI Chat (Legacy - now handled by Claude Code proxy)
     async def chat(
         self,
         user_id: int,
@@ -94,7 +94,9 @@ class BotService:
         system_prompt: str = None,
         enable_tools: bool = True
     ) -> tuple[str, List[Dict]]:
-        """Process user message with AI"""
+        """Process user message with AI (Legacy method - use Claude Code proxy instead)"""
+        if not self.ai_service:
+            raise RuntimeError("AI service not configured. Use Claude Code proxy for AI interactions.")
         session = await self.get_or_create_session(user_id)
 
         # Define available tools
@@ -156,7 +158,9 @@ class BotService:
         tool_id: str,
         result: str
     ) -> tuple[str, List[Dict]]:
-        """Handle tool execution result and get follow-up from AI"""
+        """Handle tool execution result and get follow-up from AI (Legacy method)"""
+        if not self.ai_service:
+            raise RuntimeError("AI service not configured. Use Claude Code proxy for AI interactions.")
         session = await self.get_or_create_session(user_id)
 
         # Add tool result to session
