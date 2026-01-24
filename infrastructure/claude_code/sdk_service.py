@@ -14,6 +14,7 @@ Key features:
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Awaitable, Optional
@@ -100,6 +101,8 @@ class ClaudeAgentSDKService:
         default_working_dir: str = "/root",
         max_turns: int = 50,
         permission_mode: str = "default",  # "default", "acceptEdits", "bypassPermissions"
+        plugins_dir: str = "/plugins",
+        enabled_plugins: list[str] = None,
     ):
         if not SDK_AVAILABLE:
             raise RuntimeError(
@@ -110,6 +113,8 @@ class ClaudeAgentSDKService:
         self.default_working_dir = default_working_dir
         self.max_turns = max_turns
         self.permission_mode = permission_mode
+        self.plugins_dir = plugins_dir
+        self.enabled_plugins = enabled_plugins or []
 
         # Active clients by user_id
         self._clients: dict[int, ClaudeSDKClient] = {}
@@ -133,6 +138,35 @@ class ClaudeAgentSDKService:
         if not SDK_AVAILABLE:
             return False, "claude-agent-sdk not installed. Install with: pip install claude-agent-sdk"
         return True, "Claude Agent SDK is available"
+
+    def _get_plugin_configs(self) -> list[dict]:
+        """Build plugin configuration list for ClaudeAgentOptions"""
+        plugins = []
+        for plugin_name in self.enabled_plugins:
+            if not plugin_name:  # Skip empty strings
+                continue
+            plugin_path = os.path.join(self.plugins_dir, plugin_name)
+            if os.path.isdir(plugin_path):
+                plugins.append({"type": "local", "path": plugin_path})
+                logger.debug(f"Plugin enabled: {plugin_name} at {plugin_path}")
+            else:
+                logger.warning(f"Plugin not found: {plugin_name} at {plugin_path}")
+        return plugins
+
+    def get_enabled_plugins_info(self) -> list[dict]:
+        """Get info about enabled plugins for display"""
+        plugins_info = []
+        for plugin_name in self.enabled_plugins:
+            if not plugin_name:
+                continue
+            plugin_path = os.path.join(self.plugins_dir, plugin_name)
+            exists = os.path.isdir(plugin_path)
+            plugins_info.append({
+                "name": plugin_name,
+                "path": plugin_path,
+                "available": exists
+            })
+        return plugins_info
 
     def is_task_running(self, user_id: int) -> bool:
         """Check if a task is currently running for a user"""
@@ -403,6 +437,11 @@ class ClaudeAgentSDKService:
             return {}
 
         try:
+            # Build plugin configurations
+            plugins = self._get_plugin_configs()
+            if plugins:
+                logger.info(f"[{user_id}] Using {len(plugins)} plugins: {[p['path'] for p in plugins]}")
+
             # Build options
             options = ClaudeAgentOptions(
                 cwd=work_dir,
@@ -414,6 +453,7 @@ class ClaudeAgentSDKService:
                     "PostToolUse": [HookMatcher(hooks=[post_tool_hook])],
                 },
                 resume=session_id,
+                plugins=plugins if plugins else None,
             )
 
             logger.info(f"[{user_id}] Starting SDK task in {work_dir}")

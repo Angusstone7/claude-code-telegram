@@ -91,15 +91,45 @@ class StreamingHandler:
         await self._schedule_update()
 
     async def show_tool_use(self, tool_name: str, details: str = ""):
-        """Show that a tool is being used"""
-        tool_display = f"\n🔧 **{tool_name}**"
+        """Show that a tool is being used with nice formatting"""
+        # Emoji mapping for different tools
+        emoji_map = {
+            "bash": "💻",
+            "write": "📝",
+            "read": "📖",
+            "edit": "✏️",
+            "glob": "🔍",
+            "grep": "🔎",
+            "task": "🤖",
+            "webfetch": "🌐",
+            "websearch": "🔎",
+            "askuserquestion": "❓",
+            "todowrite": "📋",
+        }
+        emoji = emoji_map.get(tool_name.lower(), "🔧")
+
+        tool_display = f"\n{emoji} **{tool_name}**"
         if details:
             # Truncate long details
-            if len(details) > 200:
-                details = details[:200] + "..."
-            tool_display += f": `{details}`"
+            if len(details) > 150:
+                details = details[:150] + "..."
+            tool_display += f"\n`{details}`"
         tool_display += "\n"
         await self.append(tool_display)
+
+    async def show_tool_result(self, output: str, success: bool = True):
+        """Show tool execution result with formatting"""
+        if not output or not output.strip():
+            return
+
+        # Truncate long output
+        truncated = output.strip()
+        if len(truncated) > 1500:
+            truncated = truncated[:1500] + "\n... (truncated)"
+
+        status = "✅" if success else "❌"
+        result_text = f"{status} **Output:**\n```\n{truncated}\n```\n"
+        await self.append(result_text)
 
     async def _schedule_update(self):
         """Schedule a debounced update"""

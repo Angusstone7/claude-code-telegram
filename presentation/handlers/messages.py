@@ -84,6 +84,17 @@ class MessageHandlers:
         # Active streaming handlers
         self._streaming_handlers: dict[int, StreamingHandler] = {}
 
+        # YOLO mode (auto-approve all operations)
+        self._yolo_mode: dict[int, bool] = {}
+
+    def is_yolo_mode(self, user_id: int) -> bool:
+        """Check if YOLO mode is enabled for user"""
+        return self._yolo_mode.get(user_id, False)
+
+    def set_yolo_mode(self, user_id: int, enabled: bool):
+        """Set YOLO mode for user"""
+        self._yolo_mode[user_id] = enabled
+
     def get_working_dir(self, user_id: int) -> str:
         """Get user's working directory"""
         return self._user_working_dirs.get(user_id, self.default_working_dir)
@@ -275,8 +286,9 @@ class MessageHandlers:
         # Start streaming handler with project info
         streaming = StreamingHandler(bot, message.chat.id)
 
-        # Build header with project info
-        header = "🤖 **Working...**\n"
+        # Build header with project info and YOLO indicator
+        yolo_indicator = " ⚡YOLO" if self.is_yolo_mode(user_id) else ""
+        header = f"🤖 **Working...**{yolo_indicator}\n"
         if self.project_service:
             try:
                 from domain.value_objects.user_id import UserId
@@ -396,12 +408,23 @@ class MessageHandlers:
             await streaming.show_tool_use(tool_name, details)
 
     async def _on_tool_result(self, user_id: int, tool_id: str, output: str):
-        """Handle tool result"""
-        # Just log for now - output is streamed
+        """Handle tool result - show output to user"""
+        streaming = self._streaming_handlers.get(user_id)
+        if streaming and output:
+            await streaming.show_tool_result(output, success=True)
         logger.debug(f"Tool result for user {user_id}: {output[:100]}...")
 
     async def _on_permission(self, user_id: int, tool_name: str, details: str, message: Message) -> bool:
         """Handle permission request - show approval buttons and wait"""
+        # YOLO mode: auto-approve without waiting
+        if self.is_yolo_mode(user_id):
+            streaming = self._streaming_handlers.get(user_id)
+            if streaming:
+                truncated_details = details[:100] + "..." if len(details) > 100 else details
+                await streaming.append(f"\n⚡ **Auto-approved:** `{tool_name}`\n`{truncated_details}`\n")
+            return True
+
+        # Normal mode: show buttons and wait for approval
         session = self._user_sessions.get(user_id)
         request_id = str(uuid.uuid4())[:8]
 
@@ -522,6 +545,19 @@ class MessageHandlers:
         Unlike CLI version, this just sends the UI - the SDK's can_use_tool
         callback handles waiting for the response.
         """
+        # YOLO mode: auto-approve without showing buttons
+        if self.is_yolo_mode(user_id):
+            streaming = self._streaming_handlers.get(user_id)
+            if streaming:
+                truncated_details = details[:100] + "..." if len(details) > 100 else details
+                await streaming.append(f"\n⚡ **Auto-approved:** `{tool_name}`\n`{truncated_details}`\n")
+
+            # Auto-approve via SDK
+            if self.sdk_service:
+                await self.sdk_service.respond_to_permission(user_id, True)
+            return
+
+        # Normal mode: show permission request with buttons
         session = self._user_sessions.get(user_id)
         request_id = str(uuid.uuid4())[:8]
 

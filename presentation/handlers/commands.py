@@ -79,6 +79,8 @@ class CommandHandlers:
 /context clear - Clear current context
 
 **Claude Code:**
+/yolo - Toggle YOLO mode (auto-approve)
+/plugins - Show enabled plugins
 /cancel - Cancel running task
 /status - Show Claude Code status
 
@@ -437,6 +439,93 @@ Just describe what you want!
             parse_mode="Markdown"
         )
 
+    async def yolo(self, message: Message) -> None:
+        """
+        Handle /yolo command - toggle YOLO mode.
+
+        YOLO mode auto-approves all operations without waiting for confirmation.
+        Use with caution!
+        """
+        user_id = message.from_user.id
+
+        if not self.message_handlers:
+            await message.answer("⚠️ Message handlers not initialized")
+            return
+
+        current = self.message_handlers.is_yolo_mode(user_id)
+        new_state = not current
+        self.message_handlers.set_yolo_mode(user_id, new_state)
+
+        if new_state:
+            await message.answer(
+                "🚀 **YOLO Mode: ON**\n\n"
+                "⚡ Все операции будут выполняться автоматически!\n"
+                "⚠️ Будьте осторожны - нет подтверждений!\n\n"
+                "Используйте `/yolo` снова чтобы выключить.",
+                parse_mode="Markdown"
+            )
+        else:
+            await message.answer(
+                "🛡️ **YOLO Mode: OFF**\n\n"
+                "Операции снова требуют подтверждения.",
+                parse_mode="Markdown"
+            )
+
+    async def plugins(self, message: Message) -> None:
+        """
+        Handle /plugins command - show enabled Claude Code plugins.
+
+        Plugins extend Claude Code with:
+        - Skills (slash commands like /commit, /review-pr)
+        - Specialized agents (feature-dev, code-review)
+        - Hooks (pre/post commit)
+        """
+        if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
+            await message.answer(
+                "🔌 **Plugins**\n\n"
+                "⚠️ SDK service not available.\n"
+                "Plugins require Claude Agent SDK.",
+                parse_mode="Markdown"
+            )
+            return
+
+        sdk_service = self.message_handlers.sdk_service
+        if not sdk_service:
+            await message.answer(
+                "🔌 **Plugins**\n\n"
+                "⚠️ SDK service not initialized.",
+                parse_mode="Markdown"
+            )
+            return
+
+        plugins_info = sdk_service.get_enabled_plugins_info()
+
+        if not plugins_info:
+            await message.answer(
+                "🔌 **Plugins**\n\n"
+                "No plugins configured.\n\n"
+                "Set `CLAUDE_ENABLED_PLUGINS` env variable:\n"
+                "`code-review,commit-commands,feature-dev`",
+                parse_mode="Markdown"
+            )
+            return
+
+        lines = ["🔌 **Enabled Plugins:**\n"]
+        for p in plugins_info:
+            status = "✅" if p["available"] else "❌"
+            lines.append(f"{status} `{p['name']}`")
+            if not p["available"]:
+                lines.append(f"   _(not found at {p['path']})_")
+
+        lines.append("\n**Available Skills:**")
+        lines.append("• `/commit` - Create git commit")
+        lines.append("• `/commit-push-pr` - Commit + push + PR")
+        lines.append("• `/code-review` - Review code/PR")
+        lines.append("• `/feature-dev` - Guided feature dev")
+        lines.append("\n_Use skills by telling Claude, e.g. 'run /commit'_")
+
+        await message.answer("\n".join(lines), parse_mode="Markdown")
+
     async def cd(self, message: Message, command: CommandObject) -> None:
         """
         Handle /cd command - interactive folder navigation.
@@ -596,6 +685,8 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.change, Command("change"))
     router.message.register(handlers.context, Command("context"))
     router.message.register(handlers.fresh, Command("fresh"))
+    router.message.register(handlers.yolo, Command("yolo"))
+    router.message.register(handlers.plugins, Command("plugins"))
     router.message.register(handlers.cd, Command("cd"))
 
     # Menu buttons
