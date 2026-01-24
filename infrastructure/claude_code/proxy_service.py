@@ -167,13 +167,18 @@ class ClaudeCodeProxyService:
         result_session_id = session_id
 
         try:
-            # Start process
+            # Start process with inherited environment
+            # ANTHROPIC_API_KEY should be set in container environment
+            env = os.environ.copy()
+            logger.info(f"Starting with API key present: {'ANTHROPIC_API_KEY' in env}")
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 stdin=asyncio.subprocess.PIPE,
                 cwd=work_dir,
+                env=env,
             )
             self._processes[user_id] = process
 
