@@ -118,6 +118,42 @@ class Keyboards:
             [InlineKeyboardButton(text="🔙 Back", callback_data=f"back:{button}")]
         ])
 
+    @staticmethod
+    def docker_list(containers: List[Dict]) -> InlineKeyboardMarkup:
+        """Keyboard with list of containers and their action buttons"""
+        buttons = []
+        for c in containers[:10]:  # Max 10 containers
+            container_id = c.get("id", "")
+            name = c.get("name", "unknown")[:15]
+            status = c.get("status", "unknown")
+
+            # Status indicator
+            status_emoji = "🟢" if status == "running" else "🔴"
+
+            # Action based on status
+            if status == "running":
+                action_text = "⏸️"
+                action_callback = f"docker:stop:{container_id}"
+            else:
+                action_text = "▶️"
+                action_callback = f"docker:start:{container_id}"
+
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{status_emoji} {name}",
+                    callback_data=f"docker:info:{container_id}"
+                ),
+                InlineKeyboardButton(text=action_text, callback_data=action_callback),
+                InlineKeyboardButton(text="📋", callback_data=f"docker:logs:{container_id}"),
+            ])
+
+        # Refresh button
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Refresh", callback_data="docker:list")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
     # ============== Claude Code HITL Keyboards ==============
 
     @staticmethod

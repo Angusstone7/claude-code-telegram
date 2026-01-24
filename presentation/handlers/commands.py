@@ -157,13 +157,44 @@ Just describe what you want!
         await message.answer("\n".join(lines), parse_mode="Markdown", reply_markup=Keyboards.system_metrics())
 
     async def menu_docker(self, message: Message) -> None:
-        """Handle docker menu button"""
-        await message.answer(
-            "🐳 **Docker Management**\n\n"
-            "Use buttons below to manage containers:",
-            parse_mode="Markdown",
-            reply_markup=Keyboards.system_metrics()
-        )
+        """Handle docker menu button - show list of containers"""
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            containers = await monitor.get_docker_containers()
+
+            if not containers:
+                await message.answer(
+                    "🐳 **Docker Containers**\n\n"
+                    "No containers found.\n\n"
+                    "Use Claude Code to manage Docker:\n"
+                    "• 'docker ps -a'\n"
+                    "• 'docker run ...'",
+                    parse_mode="Markdown"
+                )
+                return
+
+            # Build container list with action buttons
+            lines = ["🐳 **Docker Containers:**\n"]
+            for c in containers:
+                status_emoji = "🟢" if c["status"] == "running" else "🔴"
+                lines.append(f"\n{status_emoji} **{c['name']}**")
+                lines.append(f"   Status: {c['status']}")
+                lines.append(f"   Image: `{c['image'][:30]}`")
+
+            text = "\n".join(lines)
+            await message.answer(
+                text,
+                parse_mode="Markdown",
+                reply_markup=Keyboards.docker_list(containers)
+            )
+
+        except Exception as e:
+            logger.error(f"Error getting docker containers: {e}")
+            await message.answer(
+                f"🐳 **Docker**\n\n❌ Error: {e}",
+                parse_mode="Markdown"
+            )
 
     async def menu_commands(self, message: Message) -> None:
         """Handle commands menu button"""

@@ -17,8 +17,8 @@ asyncssh==2.17.0
 # System Monitoring
 psutil>=6.0.0
 
-# Docker (optional, for container management)
-# docker>=7.0.0
+# Docker (for container management)
+docker>=7.0.0
 
 # Development
 pytest>=7.4.0

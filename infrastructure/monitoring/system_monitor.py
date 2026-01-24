@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 import psutil
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -222,5 +223,70 @@ class SystemMonitor:
 
         return "\n".join(lines)
 
+    # ============== Docker Operations ==============
 
-import time
+    async def docker_stop(self, container_id: str) -> tuple[bool, str]:
+        """Stop a Docker container"""
+        try:
+            import docker
+            client = docker.from_env()
+            container = client.containers.get(container_id)
+            container.stop()
+            return True, f"Container {container.name} stopped"
+        except ImportError:
+            return False, "Docker module not installed"
+        except Exception as e:
+            return False, str(e)
+
+    async def docker_start(self, container_id: str) -> tuple[bool, str]:
+        """Start a Docker container"""
+        try:
+            import docker
+            client = docker.from_env()
+            container = client.containers.get(container_id)
+            container.start()
+            return True, f"Container {container.name} started"
+        except ImportError:
+            return False, "Docker module not installed"
+        except Exception as e:
+            return False, str(e)
+
+    async def docker_restart(self, container_id: str) -> tuple[bool, str]:
+        """Restart a Docker container"""
+        try:
+            import docker
+            client = docker.from_env()
+            container = client.containers.get(container_id)
+            container.restart()
+            return True, f"Container {container.name} restarted"
+        except ImportError:
+            return False, "Docker module not installed"
+        except Exception as e:
+            return False, str(e)
+
+    async def docker_logs(self, container_id: str, lines: int = 50) -> tuple[bool, str]:
+        """Get Docker container logs"""
+        try:
+            import docker
+            client = docker.from_env()
+            container = client.containers.get(container_id)
+            logs = container.logs(tail=lines).decode('utf-8', errors='replace')
+            return True, logs
+        except ImportError:
+            return False, "Docker module not installed"
+        except Exception as e:
+            return False, str(e)
+
+    async def docker_remove(self, container_id: str, force: bool = False) -> tuple[bool, str]:
+        """Remove a Docker container"""
+        try:
+            import docker
+            client = docker.from_env()
+            container = client.containers.get(container_id)
+            name = container.name
+            container.remove(force=force)
+            return True, f"Container {name} removed"
+        except ImportError:
+            return False, "Docker module not installed"
+        except Exception as e:
+            return False, str(e)

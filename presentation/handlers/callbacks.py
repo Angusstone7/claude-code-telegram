@@ -114,26 +114,207 @@ class CallbackHandlers:
         """Handle docker list callback"""
         try:
             from infrastructure.monitoring.system_monitor import SystemMonitor
+            from presentation.keyboards.keyboards import Keyboards
             monitor = SystemMonitor()
             containers = await monitor.get_docker_containers()
 
             if not containers:
                 text = "🐳 **No containers found**"
+                await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
             else:
                 lines = ["🐳 **Docker Containers:**\n"]
                 for c in containers:
-                    status_emoji = "✅" if c["status"] == "running" else "⏸️"
+                    status_emoji = "🟢" if c["status"] == "running" else "🔴"
                     lines.append(f"\n{status_emoji} **{c['name']}**")
-                    lines.append(f"   ID: `{c['id']}`")
-                    lines.append(f"   Image: {c['image']}")
                     lines.append(f"   Status: {c['status']}")
+                    lines.append(f"   Image: `{c['image'][:30]}`")
+
+                text = "\n".join(lines)
+                await callback.message.edit_text(
+                    text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=Keyboards.docker_list(containers)
+                )
+
+        except Exception as e:
+            logger.error(f"Error listing containers: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+        await callback.answer()
+
+    async def handle_docker_stop(self, callback: CallbackQuery) -> None:
+        """Handle docker stop container"""
+        container_id = callback.data.split(":")[-1]
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            success, message = await monitor.docker_stop(container_id)
+
+            if success:
+                await callback.answer(f"✅ {message}")
+                await self.handle_docker_list(callback)
+            else:
+                await callback.answer(f"❌ {message}")
+
+        except Exception as e:
+            logger.error(f"Error stopping container: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_docker_start(self, callback: CallbackQuery) -> None:
+        """Handle docker start container"""
+        container_id = callback.data.split(":")[-1]
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            success, message = await monitor.docker_start(container_id)
+
+            if success:
+                await callback.answer(f"✅ {message}")
+                await self.handle_docker_list(callback)
+            else:
+                await callback.answer(f"❌ {message}")
+
+        except Exception as e:
+            logger.error(f"Error starting container: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_docker_restart(self, callback: CallbackQuery) -> None:
+        """Handle docker restart container"""
+        container_id = callback.data.split(":")[-1]
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            success, message = await monitor.docker_restart(container_id)
+
+            if success:
+                await callback.answer(f"✅ {message}")
+                await self.handle_docker_list(callback)
+            else:
+                await callback.answer(f"❌ {message}")
+
+        except Exception as e:
+            logger.error(f"Error restarting container: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_docker_logs(self, callback: CallbackQuery) -> None:
+        """Handle docker logs"""
+        container_id = callback.data.split(":")[-1]
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            success, logs = await monitor.docker_logs(container_id, lines=30)
+
+            if success:
+                if len(logs) > 3500:
+                    logs = logs[-3500:]
+                text = f"📋 **Logs** (`{container_id}`)\n\n```\n{logs}\n```"
+                await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+            else:
+                await callback.answer(f"❌ {logs}")
+
+        except Exception as e:
+            logger.error(f"Error getting logs: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+        await callback.answer()
+
+    async def handle_docker_rm(self, callback: CallbackQuery) -> None:
+        """Handle docker remove container"""
+        container_id = callback.data.split(":")[-1]
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            success, message = await monitor.docker_remove(container_id, force=True)
+
+            if success:
+                await callback.answer(f"✅ {message}")
+                await self.handle_docker_list(callback)
+            else:
+                await callback.answer(f"❌ {message}")
+
+        except Exception as e:
+            logger.error(f"Error removing container: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+    async def handle_docker_info(self, callback: CallbackQuery) -> None:
+        """Handle docker container info - show detailed view with actions"""
+        container_id = callback.data.split(":")[-1]
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            from presentation.keyboards.keyboards import Keyboards
+            monitor = SystemMonitor()
+            containers = await monitor.get_docker_containers()
+
+            container = next((c for c in containers if c["id"] == container_id), None)
+            if container:
+                text = (
+                    f"🐳 **Container: {container['name']}**\n\n"
+                    f"**ID:** `{container['id']}`\n"
+                    f"**Status:** {container['status']}\n"
+                    f"**Image:** `{container['image']}`\n"
+                )
+                if container.get("ports"):
+                    text += f"**Ports:** {', '.join(str(p) for p in container['ports'])}\n"
+
+                await callback.message.edit_text(
+                    text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=Keyboards.container_actions(container_id, container["status"])
+                )
+            else:
+                await callback.answer("Container not found")
+
+        except Exception as e:
+            logger.error(f"Error getting container info: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+        await callback.answer()
+
+    async def handle_metrics_top(self, callback: CallbackQuery) -> None:
+        """Handle top processes request"""
+        try:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            monitor = SystemMonitor()
+            processes = await monitor.get_top_processes(limit=10)
+
+            lines = ["📈 **Top Processes:**\n"]
+            for p in processes:
+                lines.append(
+                    f"`{p.pid:>6}` | CPU: {p.cpu_percent:>5.1f}% | MEM: {p.memory_percent:>5.1f}% | {p.name[:20]}"
+                )
+
+            text = "\n".join(lines)
+            await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+
+        except Exception as e:
+            logger.error(f"Error getting top processes: {e}")
+            await callback.answer(f"❌ Error: {e}")
+
+        await callback.answer()
+
+    async def handle_commands_history(self, callback: CallbackQuery) -> None:
+        """Handle commands history request"""
+        try:
+            from domain.value_objects.user_id import UserId
+            user_id = UserId.from_int(callback.from_user.id)
+
+            commands = await self.bot_service.command_repository.find_by_user(user_id, limit=10)
+
+            if not commands:
+                text = "📝 **Command History**\n\nNo commands yet."
+            else:
+                lines = ["📝 **Command History:**\n"]
+                for cmd in commands[:10]:
+                    status_emoji = "✅" if cmd.status.value == "completed" else "⏳"
+                    cmd_preview = cmd.command[:30] + "..." if len(cmd.command) > 30 else cmd.command
+                    lines.append(f"{status_emoji} `{cmd_preview}`")
 
                 text = "\n".join(lines)
 
             await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
 
         except Exception as e:
-            logger.error(f"Error listing containers: {e}")
+            logger.error(f"Error getting command history: {e}")
             await callback.answer(f"❌ Error: {e}")
 
         await callback.answer()
@@ -402,6 +583,44 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     router.callback_query.register(
         handlers.handle_project_select,
         F.data.startswith("project:")
+    )
+
+    # Docker action handlers
+    router.callback_query.register(
+        handlers.handle_docker_stop,
+        F.data.startswith("docker:stop:")
+    )
+    router.callback_query.register(
+        handlers.handle_docker_start,
+        F.data.startswith("docker:start:")
+    )
+    router.callback_query.register(
+        handlers.handle_docker_restart,
+        F.data.startswith("docker:restart:")
+    )
+    router.callback_query.register(
+        handlers.handle_docker_logs,
+        F.data.startswith("docker:logs:")
+    )
+    router.callback_query.register(
+        handlers.handle_docker_rm,
+        F.data.startswith("docker:rm:")
+    )
+    router.callback_query.register(
+        handlers.handle_docker_info,
+        F.data.startswith("docker:info:")
+    )
+
+    # Metrics handlers
+    router.callback_query.register(
+        handlers.handle_metrics_top,
+        F.data == "metrics:top"
+    )
+
+    # Commands history handler
+    router.callback_query.register(
+        handlers.handle_commands_history,
+        F.data == "commands:history"
     )
 
 
