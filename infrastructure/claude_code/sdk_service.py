@@ -273,6 +273,18 @@ class ClaudeAgentSDKService:
         output_buffer = []
         result_session_id = session_id
 
+        # Validate working directory
+        if not os.path.isdir(work_dir):
+            error_msg = f"Working directory does not exist: {work_dir}"
+            logger.error(f"[{user_id}] {error_msg}")
+            if on_error:
+                await on_error(error_msg)
+            return SDKTaskResult(
+                success=False,
+                output="",
+                error=error_msg
+            )
+
         # Create permission handler that integrates with Telegram HITL
         async def can_use_tool(
             tool_name: str,
@@ -443,6 +455,10 @@ class ClaudeAgentSDKService:
                 logger.info(f"[{user_id}] Using {len(plugins)} plugins: {[p['path'] for p in plugins]}")
 
             # Build options
+            # Note: Don't pass resume parameter for now - it can cause silent failures
+            # when the session is stale/invalid. The SDK exits with 0 turns instead of
+            # starting a fresh conversation. We'll re-enable once we have proper
+            # session validation.
             options = ClaudeAgentOptions(
                 cwd=work_dir,
                 max_turns=self.max_turns,
@@ -452,18 +468,21 @@ class ClaudeAgentSDKService:
                     "PreToolUse": [HookMatcher(hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(hooks=[post_tool_hook])],
                 },
-                resume=session_id,
+                # resume=session_id,  # Disabled: causes silent failures with stale sessions
                 plugins=plugins if plugins else None,
             )
 
             logger.info(f"[{user_id}] Starting SDK task in {work_dir}")
+            logger.debug(f"[{user_id}] Prompt: {prompt[:200]}")
 
             # Use context manager for proper cleanup
             async with ClaudeSDKClient(options=options) as client:
                 self._clients[user_id] = client
 
                 # Send the prompt
+                logger.debug(f"[{user_id}] Sending query to Claude SDK...")
                 await client.query(prompt)
+                logger.debug(f"[{user_id}] Query sent, waiting for response...")
 
                 # Process messages
                 async for message in client.receive_response():
@@ -503,6 +522,14 @@ class ClaudeAgentSDKService:
                             f"turns={message.num_turns}, "
                             f"cost=${message.total_cost_usd or 0:.4f}"
                         )
+
+                        # Warn if no turns were executed - indicates potential issue
+                        if message.num_turns == 0:
+                            logger.warning(
+                                f"[{user_id}] Task completed with 0 turns! "
+                                f"This usually means the prompt was not processed. "
+                                f"Prompt was: {prompt[:100]}..."
+                            )
 
                 # Check final status
                 if self._cancel_events[user_id].is_set():
