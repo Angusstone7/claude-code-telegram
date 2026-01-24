@@ -8,7 +8,10 @@
       "Bash(git push:*)",
       "Bash(ssh-keyscan:*)",
       "WebSearch",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(dir \"C:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\")",
+      "Bash(python -m pytest:*)",
+      "Bash(pip install:*)"
     ]
   }
 }

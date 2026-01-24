@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 import os
 from dotenv import load_dotenv
+from domain.value_objects import AIProviderConfig
 
 load_dotenv()
 
@@ -29,15 +30,10 @@ class AnthropicConfig:
     Supports both Anthropic's official API and compatible APIs like ZhipuAI.
     For ZhipuAI, set ANTHROPIC_BASE_URL to https://open.bigmodel.cn/api/anthropic
     and use ANTHROPIC_AUTH_TOKEN instead of ANTHROPIC_API_KEY.
+
+    This is a facade over AIProviderConfig for backward compatibility.
     """
-    api_key: str
-    base_url: Optional[str] = None
-    auth_token: Optional[str] = None
-    model: str = "claude-3-5-sonnet-20241022"
-    haiku_model: str = "claude-3-5-haiku-20241022"
-    sonnet_model: str = "claude-3-5-sonnet-20241022"
-    opus_model: str = "claude-3-5-sonnet-20241022"
-    max_tokens: int = 4096
+    _provider_config: AIProviderConfig
 
     @classmethod
     def from_env(cls) -> "AnthropicConfig":
@@ -48,24 +44,60 @@ class AnthropicConfig:
             raise ValueError("ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY is required")
 
         base_url = os.getenv("ANTHROPIC_BASE_URL")
-        auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
-
-        model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-        haiku_model = os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-3-5-haiku-20241022")
-        sonnet_model = os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-3-5-sonnet-20241022")
-        opus_model = os.getenv("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-3-5-sonnet-20241022")
+        haiku_model = os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+        sonnet_model = os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL")
+        opus_model = os.getenv("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        default_model = os.getenv("ANTHROPIC_MODEL")
         max_tokens = int(os.getenv("ANTHROPIC_MAX_TOKENS", "4096"))
 
-        return cls(
+        provider_config = AIProviderConfig.from_env(
             api_key=api_key,
             base_url=base_url,
-            auth_token=auth_token,
-            model=model,
             haiku_model=haiku_model,
             sonnet_model=sonnet_model,
             opus_model=opus_model,
+            default_model=default_model,
             max_tokens=max_tokens
         )
+
+        return cls(_provider_config=provider_config)
+
+    @property
+    def api_key(self) -> str:
+        return self._provider_config.api_key
+
+    @property
+    def base_url(self) -> Optional[str]:
+        return self._provider_config.base_url
+
+    @property
+    def auth_token(self) -> Optional[str]:
+        return self._provider_config.api_key
+
+    @property
+    def model(self) -> str:
+        return self._provider_config.default_model
+
+    @property
+    def haiku_model(self) -> str:
+        return self._provider_config.model_config.haiku
+
+    @property
+    def sonnet_model(self) -> str:
+        return self._provider_config.model_config.sonnet
+
+    @property
+    def opus_model(self) -> str:
+        return self._provider_config.model_config.opus
+
+    @property
+    def max_tokens(self) -> int:
+        return self._provider_config.max_tokens
+
+    @property
+    def provider_config(self) -> AIProviderConfig:
+        """Get the underlying provider configuration"""
+        return self._provider_config
 
 
 @dataclass

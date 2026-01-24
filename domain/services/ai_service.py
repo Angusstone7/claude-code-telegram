@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import List, Dict, Optional, Any
 from domain.entities.session import Session
 
 
-class AIMessage(    """Message for AI service"""
+@dataclass
+class AIMessage:
+    """Message for AI service"""
     role: str
     content: str
 
@@ -56,6 +59,6 @@ class IAIService(ABC):
         pass
 
     @abstractmethod
-    def set_api_key(self, api_key: str) -> None:
-        """Set API key for the service"""
+    def set_api_key(self, api_key: str, base_url: Optional[str] = None) -> None:
+        """Set API key and optionally base URL for the service"""
         pass

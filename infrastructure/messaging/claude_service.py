@@ -3,30 +3,47 @@ from typing import List, Optional
 from anthropic import AsyncAnthropic
 from domain.services.ai_service import IAIService, AIMessage, AIResponse
 from domain.entities.session import Session
-from shared.config.settings import settings
+from domain.value_objects import AIProviderConfig
 
 logger = logging.getLogger(__name__)
 
 
 class ClaudeAIService(IAIService):
-    """Anthropic Claude AI service implementation"""
+    """Anthropic Claude AI service implementation
 
-    def __init__(self, api_key: str = None, base_url: str = None):
-        self._api_key = api_key or settings.anthropic.api_key
-        self._base_url = base_url or settings.anthropic.base_url
+    Implements IAIService interface using Anthropic's AsyncAnthropic client.
+    Supports both official Anthropic API and compatible APIs like ZhipuAI.
+    Follows Dependency Inversion Principle by accepting config via constructor.
+    """
+
+    def __init__(self, provider_config: AIProviderConfig):
+        """Initialize the service with provider configuration
+
+        Args:
+            provider_config: AI provider configuration value object
+        """
+        self._config = provider_config
         self._client: Optional[AsyncAnthropic] = None
-        self.model = settings.anthropic.model
-        self.max_tokens = settings.anthropic.max_tokens
 
     @property
     def client(self) -> AsyncAnthropic:
         """Lazy initialization of Anthropic client"""
         if self._client is None:
-            client_kwargs = {"api_key": self._api_key}
-            if self._base_url:
-                client_kwargs["base_url"] = self._base_url
+            client_kwargs = {"api_key": self._config.api_key}
+            if self._config.base_url:
+                client_kwargs["base_url"] = self._config.base_url
             self._client = AsyncAnthropic(**client_kwargs)
         return self._client
+
+    @property
+    def model(self) -> str:
+        """Get the current default model"""
+        return self._config.default_model
+
+    @property
+    def max_tokens(self) -> int:
+        """Get the max tokens setting"""
+        return self._config.max_tokens
 
     async def chat(
         self,
@@ -103,50 +120,26 @@ class ClaudeAIService(IAIService):
         return response
 
     def set_api_key(self, api_key: str, base_url: str = None) -> None:
-        """Set API key and optionally base URL for the service"""
-        self._api_key = api_key
+        """Set API key and optionally base URL for the service
+
+        Creates a new configuration with the updated values.
+        """
         if base_url:
-            self._base_url = base_url
-        self._client = None  # Reset client to use new key/base_url
+            # Create new config with both updated values
+            self._config = AIProviderConfig.from_env(
+                api_key=api_key,
+                base_url=base_url,
+                max_tokens=self._config.max_tokens
+            )
+        else:
+            # Keep existing base_url, just update api_key
+            self._config = AIProviderConfig.from_env(
+                api_key=api_key,
+                base_url=self._config.base_url,
+                max_tokens=self._config.max_tokens
+            )
+        self._client = None  # Reset client to use new configuration
 
 
-class SystemPrompts:
-    """Predefined system prompts for different use cases"""
-
-    DEVOPS = """You are an intelligent DevOps assistant with access to a Linux server via SSH.
-You can help with:
-- Server administration and troubleshooting
-- Docker container management
-- Git operations and CI/CD pipelines
-- Log analysis and monitoring
-- System resource monitoring
-
-When executing commands:
-1. Always explain what the command does before suggesting it
-2. For dangerous operations (rm -rf, formatting, etc.), always ask for confirmation
-3. Provide clear explanations of command output
-4. Suggest safer alternatives when possible
-
-You have access to bash command execution tool. Use it to help the user.
-"""
-
-    CODE_ASSISTANT = """You are an expert programmer and code assistant.
-You can help with:
-- Writing and reviewing code
-- Debugging and troubleshooting
-- Code optimization and refactoring
-- Explaining code and concepts
-
-Provide clear, concise explanations and well-structured code examples."""
-
-    SECURITY_AUDITOR = """You are a security specialist focused on identifying and explaining security issues.
-When analyzing systems or code:
-1. Identify potential vulnerabilities
-2. Explain the risks clearly
-3. Suggest remediation steps
-4. Prioritize issues by severity"""
-
-    @classmethod
-    def custom(cls, prompt: str) -> str:
-        """Get custom system prompt"""
-        return prompt
+# Re-export SystemPrompts from domain layer for backward compatibility
+from domain.services.system_prompts import SystemPrompts
