@@ -188,6 +188,7 @@ class ClaudeCodeProxyService:
 
                     line = await process.stdout.readline()
                     if not line:
+                        logger.info(f"Claude Code stdout ended for user {user_id}")
                         break
 
                     try:
@@ -195,7 +196,10 @@ class ClaudeCodeProxyService:
                         if not line_str:
                             continue
 
+                        logger.info(f"Claude Code raw output: {line_str[:200]}")
+
                         event = self._parse_event(line_str)
+                        logger.info(f"Parsed event: {event.type if event else 'None'}")
                         if event:
                             await self._handle_event(
                                 user_id, event,
@@ -232,6 +236,7 @@ class ClaudeCodeProxyService:
 
             # Wait for process to finish
             await process.wait()
+            logger.info(f"Claude Code process finished with returncode {process.returncode}")
 
             # Check if cancelled
             if self._cancel_events[user_id].is_set():
@@ -244,9 +249,11 @@ class ClaudeCodeProxyService:
 
             # Read any stderr
             stderr = await process.stderr.read()
-            if stderr and process.returncode != 0:
-                error_msg = stderr.decode('utf-8')
-                logger.error(f"Claude Code stderr: {error_msg}")
+            error_msg = stderr.decode('utf-8') if stderr else ""
+            if error_msg:
+                logger.info(f"Claude Code stderr: {error_msg[:500]}")
+            if error_msg and process.returncode != 0:
+                logger.error(f"Claude Code error: {error_msg}")
                 if on_error:
                     await on_error(error_msg)
 
@@ -254,7 +261,7 @@ class ClaudeCodeProxyService:
                 success=process.returncode == 0,
                 output="\n".join(output_buffer),
                 session_id=result_session_id,
-                error=stderr.decode('utf-8') if stderr and process.returncode != 0 else None
+                error=error_msg if error_msg and process.returncode != 0 else None
             )
 
         except Exception as e:
