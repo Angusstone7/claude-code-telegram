@@ -153,7 +153,7 @@ class ClaudeCodeProxyService:
             self.claude_path,
             "-p", prompt,
             "--output-format", "stream-json",
-            "--working-directory", work_dir,
+            "--cwd", work_dir,
             "--max-turns", str(self.max_turns),
             "--verbose",
         ]
