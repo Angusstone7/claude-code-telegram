@@ -473,19 +473,15 @@ class CommandHandlers:
 
     async def plugins(self, message: Message) -> None:
         """
-        Handle /plugins command - show available Claude Code skills.
+        Handle /plugins command - show available Claude Code plugins.
 
-        Skills are built-in capabilities of Claude Code:
-        - /commit - Create git commit
-        - /commit-push-pr - Commit + push + PR
-        - /code-review - Code review
-        - /feature-dev - Feature development
+        Shows plugins from the official anthropic/claude-plugins-official repo.
         """
         if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
             await message.answer(
-                "🔌 **Навыки Claude Code**\n\n"
+                "🔌 **Плагины Claude Code**\n\n"
                 "⚠️ SDK сервис недоступен.\n"
-                "Навыки требуют Claude Agent SDK.",
+                "Плагины требуют Claude Agent SDK.",
                 parse_mode="Markdown"
             )
             return
@@ -493,25 +489,42 @@ class CommandHandlers:
         sdk_service = self.message_handlers.sdk_service
         if not sdk_service:
             await message.answer(
-                "🔌 **Навыки Claude Code**\n\n"
+                "🔌 **Плагины Claude Code**\n\n"
                 "⚠️ SDK сервис не инициализирован.",
                 parse_mode="Markdown"
             )
             return
 
-        skills_info = sdk_service.get_enabled_plugins_info()
+        plugins_info = sdk_service.get_enabled_plugins_info()
 
-        lines = ["🔌 **Встроенные навыки Claude Code:**\n"]
-        for skill in skills_info:
-            lines.append(f"✅ `/{skill['name']}` — {skill['description']}")
+        if not plugins_info:
+            await message.answer(
+                "🔌 **Плагины Claude Code**\n\n"
+                "Плагины не настроены.",
+                parse_mode="Markdown"
+            )
+            return
 
-        lines.append("\n**Как использовать:**")
-        lines.append("Просто скажите Claude что нужно сделать:")
-        lines.append("• _'сделай коммит'_")
-        lines.append("• _'запусти /commit'_")
-        lines.append("• _'создай PR'_")
-        lines.append("• _'проведи код ревью'_")
-        lines.append("\nClaude сам определит какой навык использовать!")
+        lines = ["🔌 **Плагины Claude Code:**\n"]
+        available_count = 0
+        for plugin in plugins_info:
+            if plugin.get("available"):
+                lines.append(f"✅ `/{plugin['name']}` — {plugin['description']}")
+                available_count += 1
+            else:
+                lines.append(f"❌ `/{plugin['name']}` — не найден")
+
+        if available_count > 0:
+            lines.append("\n**Как использовать:**")
+            lines.append("Просто скажите Claude что нужно сделать:")
+            lines.append("• _'сделай коммит'_")
+            lines.append("• _'запусти /commit'_")
+            lines.append("• _'создай PR'_")
+            lines.append("• _'проведи код ревью'_")
+            lines.append("\nClaude сам определит какой плагин использовать!")
+        else:
+            lines.append("\n⚠️ Плагины не найдены в директории.")
+            lines.append(f"Путь: `{sdk_service.plugins_dir}`")
 
         await message.answer("\n".join(lines), parse_mode="Markdown")
 

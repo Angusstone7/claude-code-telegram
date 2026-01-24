@@ -16,7 +16,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN npm install -g @anthropic-ai/claude-code
 
 # Clone official Claude Code plugins
-RUN git clone --depth 1 https://github.com/anthropics/claude-plugins-official.git /plugins
+# The repo structure is: /plugins-repo/plugins/<plugin-name>/
+# We need plugins accessible at /plugins/<plugin-name>/
+RUN git clone --depth 1 https://github.com/anthropics/claude-plugins-official.git /plugins-repo && \
+    mv /plugins-repo/plugins /plugins && \
+    rm -rf /plugins-repo
 
 WORKDIR /app
 

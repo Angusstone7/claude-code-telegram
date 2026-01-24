@@ -121,14 +121,31 @@ class Application:
         # Initialize SDK service (preferred backend for HITL)
         if SDK_AVAILABLE:
             try:
+                # Configure plugins from official anthropic repo
+                plugins_dir = os.getenv("CLAUDE_PLUGINS_DIR", "/plugins")
+                enabled_plugins_str = os.getenv(
+                    "CLAUDE_PLUGINS",
+                    "commit-commands,code-review,feature-dev,frontend-design"
+                )
+                enabled_plugins = [p.strip() for p in enabled_plugins_str.split(",") if p.strip()]
+
                 self.claude_sdk = ClaudeAgentSDKService(
                     default_working_dir=default_working_dir,
                     max_turns=int(os.getenv("CLAUDE_MAX_TURNS", "50")),
                     permission_mode=os.getenv("CLAUDE_PERMISSION_MODE", "default"),
+                    plugins_dir=plugins_dir,
+                    enabled_plugins=enabled_plugins,
                 )
                 sdk_ok, sdk_msg = await self.claude_sdk.check_sdk_available()
                 if sdk_ok:
-                    logger.info(f"✓ SDK: {sdk_msg} (HITL + встроенные навыки)")
+                    logger.info(f"✓ SDK: {sdk_msg}")
+                    # Log enabled plugins
+                    plugins_info = self.claude_sdk.get_enabled_plugins_info()
+                    available_plugins = [p["name"] for p in plugins_info if p.get("available")]
+                    if available_plugins:
+                        logger.info(f"✓ Плагины: {', '.join(available_plugins)}")
+                    else:
+                        logger.warning("⚠ Плагины настроены, но не найдены в директории")
                 else:
                     logger.warning(f"⚠ SDK: {sdk_msg}")
                     self.claude_sdk = None
