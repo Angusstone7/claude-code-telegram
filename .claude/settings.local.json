@@ -7,9 +7,7 @@
       "Read(*)",
       "WebSearch",
       "WebFetch(*)",
-      "mcp__*",
-      "Bash(grep:*)",
-      "Bash(if not exist \"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\\\\unit\\\\application\" mkdir \"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\\\\unit\\\\application\")"
+      "mcp__*"
     ]
   }
 }
