@@ -370,6 +370,15 @@ class AccountService:
         if mode_env.pop("_REMOVE_ANTHROPIC_DEFAULT_OPUS_MODEL", None):
             base_env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
 
+        # Additional safety: For Claude Account mode, ensure API keys are removed
+        # This is a double-check to prevent using old/stale API keys
+        if mode == AuthMode.CLAUDE_ACCOUNT:
+            # Only remove if ANTHROPIC_API_KEY is not explicitly set in mode_env
+            if "ANTHROPIC_API_KEY" not in mode_env:
+                base_env.pop("ANTHROPIC_API_KEY", None)
+                base_env.pop("ANTHROPIC_AUTH_TOKEN", None)
+                logger.debug("Claude Account mode: ensuring no API keys in environment")
+
         # Apply remaining env vars
         base_env.update(mode_env)
 
