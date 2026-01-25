@@ -19,15 +19,18 @@ from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
 logger = logging.getLogger(__name__)
 
 
-def markdown_to_html(text: str) -> str:
+def markdown_to_html(text: str, is_streaming: bool = False) -> str:
     """
-    Convert basic Markdown to Telegram HTML.
+    Convert Markdown to Telegram HTML.
 
     Supports:
     - **bold** → <b>bold</b>
     - *italic* → <i>italic</i>
     - `code` → <code>code</code>
     - ```code block``` → <pre>code block</pre>
+    - __underline__ → <u>underline</u>
+    - ~~strike~~ → <s>strike</s>
+    - Unclosed code blocks (for streaming)
     """
     if not text:
         return text
@@ -37,8 +40,20 @@ def markdown_to_html(text: str) -> str:
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
 
-    # Code blocks (``` ... ```) - must be before inline code
-    text = re.sub(r'```(\w*)\n?(.*?)```', r'<pre>\2</pre>', text, flags=re.DOTALL)
+    # Handle unclosed code blocks (for streaming)
+    code_fence_count = text.count('```')
+    if code_fence_count % 2 != 0 and is_streaming:
+        last_fence = text.rfind('```')
+        text_before = text[:last_fence]
+        unclosed_code = text[last_fence + 3:]
+        # Extract language hint
+        lang_match = re.match(r"(\w*)\n?", unclosed_code)
+        code_content = unclosed_code[lang_match.end():] if lang_match else unclosed_code
+        # Don't close </pre> - _prepare_html_for_telegram will do it
+        text = text_before + f"<pre>{code_content}"
+    else:
+        # Closed code blocks (``` ... ```) - must be before inline code
+        text = re.sub(r'```(\w*)\n?(.*?)```', r'<pre>\2</pre>', text, flags=re.DOTALL)
 
     # Inline code (`code`)
     text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
@@ -46,10 +61,60 @@ def markdown_to_html(text: str) -> str:
     # Bold (**text**)
     text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
 
+    # Underline (__text__)
+    text = re.sub(r'__([^_]+)__', r'<u>\1</u>', text)
+
+    # Strikethrough (~~text~~)
+    text = re.sub(r'~~([^~]+)~~', r'<s>\1</s>', text)
+
     # Italic (*text*) - be careful not to match **
     text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
 
     return text
+
+
+def get_open_html_tags(text: str) -> list[str]:
+    """
+    Returns stack of unclosed HTML tags.
+
+    Used to properly close tags before sending to Telegram.
+    """
+    tags = re.findall(r'<(/?)(\w+)[^>]*>', text)
+    stack = []
+    for is_closing, tag_name in tags:
+        tag_name_lower = tag_name.lower()
+        # Skip self-closing tags
+        if tag_name_lower in ('br', 'hr', 'img'):
+            continue
+        if not is_closing:
+            stack.append(tag_name_lower)
+        elif stack and tag_name_lower == stack[-1]:
+            stack.pop()
+    return stack
+
+
+def prepare_html_for_telegram(text: str, is_final: bool = False) -> str:
+    """
+    Prepare HTML text for Telegram - close unclosed tags, add cursor.
+
+    Args:
+        text: HTML text to prepare
+        is_final: If False, adds blinking cursor █ at the end
+    """
+    # Remove incomplete opening tag at the end (e.g. "<b" without ">")
+    last_open = text.rfind('<')
+    last_close = text.rfind('>')
+    if last_open > last_close:
+        text = text[:last_open]
+
+    # Close all open tags
+    open_tags = get_open_html_tags(text)
+    closing_tags = "".join([f"</{tag}>" for tag in reversed(open_tags)])
+
+    # Add blinking cursor for non-final messages
+    suffix = "" if is_final else " █"
+
+    return text + closing_tags + suffix
 
 
 class StreamingHandler:
@@ -60,12 +125,17 @@ class StreamingHandler:
     - Debouncing updates to avoid API rate limits
     - Splitting long messages that exceed Telegram's 4096 char limit
     - Graceful handling of rate limit errors with exponential backoff
+    - Adaptive update intervals based on message size
     """
 
     # Telegram limits
     MAX_MESSAGE_LENGTH = 4000  # Leave buffer from 4096
-    DEBOUNCE_INTERVAL = 2.0  # Seconds between updates
+    DEBOUNCE_INTERVAL = 2.0  # Base seconds between updates
     MIN_UPDATE_INTERVAL = 1.0  # Minimum seconds between edits
+
+    # Adaptive interval thresholds (bytes)
+    LARGE_TEXT_BYTES = 2500  # >2.5KB → 2.5s interval
+    VERY_LARGE_TEXT_BYTES = 6000  # >6KB → 4.0s interval
 
     def __init__(
         self,
@@ -141,6 +211,19 @@ class StreamingHandler:
             return f"{self.buffer}\n\n{self._status_line}"
         return self.buffer
 
+    def _calc_edit_interval(self) -> float:
+        """Calculate adaptive edit interval based on buffer size."""
+        try:
+            byte_size = len(self.buffer.encode('utf-8'))
+        except Exception:
+            byte_size = len(self.buffer)
+
+        if byte_size >= self.VERY_LARGE_TEXT_BYTES:
+            return 4.0  # Very large messages - update less frequently
+        if byte_size >= self.LARGE_TEXT_BYTES:
+            return 2.5  # Large messages
+        return self.DEBOUNCE_INTERVAL  # Default 2.0s
+
     async def show_tool_use(self, tool_name: str, details: str = ""):
         """Show that a tool is being used with nice formatting"""
         # Emoji mapping for different tools
@@ -183,18 +266,19 @@ class StreamingHandler:
         await self.append(result_text)
 
     async def _schedule_update(self):
-        """Schedule a debounced update"""
+        """Schedule a debounced update with adaptive interval"""
         async with self._update_lock:
             now = time.time()
             time_since_update = now - self.last_update_time
+            interval = self._calc_edit_interval()
 
-            if time_since_update >= self.DEBOUNCE_INTERVAL:
+            if time_since_update >= interval:
                 # Enough time passed, update immediately
                 await self._do_update()
             else:
                 # Schedule delayed update if not already pending
                 if self._pending_update is None or self._pending_update.done():
-                    delay = self.DEBOUNCE_INTERVAL - time_since_update
+                    delay = interval - time_since_update
                     self._pending_update = asyncio.create_task(
                         self._delayed_update(delay)
                     )
@@ -240,10 +324,13 @@ class StreamingHandler:
         except Exception as e:
             logger.error(f"Error updating message: {e}")
 
-    async def _edit_current_message(self, text: str):
+    async def _edit_current_message(self, text: str, is_final: bool = False):
         """Edit the current message with new text (converts Markdown to HTML)"""
         if self.current_message:
-            html_text = markdown_to_html(text)
+            # Convert Markdown to HTML with streaming support
+            html_text = markdown_to_html(text, is_streaming=not is_final)
+            # Prepare for Telegram - close unclosed tags, add cursor if not final
+            html_text = prepare_html_for_telegram(html_text, is_final=is_final)
             try:
                 await self.current_message.edit_text(
                     html_text,
@@ -256,9 +343,12 @@ class StreamingHandler:
                     text, parse_mode=None, reply_markup=self.reply_markup
                 )
 
-    async def _send_new_message(self, text: str) -> Message:
+    async def _send_new_message(self, text: str, is_final: bool = False) -> Message:
         """Send a new message (converts Markdown to HTML)"""
-        html_text = markdown_to_html(text)
+        # Convert Markdown to HTML with streaming support
+        html_text = markdown_to_html(text, is_streaming=not is_final)
+        # Prepare for Telegram - close unclosed tags, add cursor if not final
+        html_text = prepare_html_for_telegram(html_text, is_final=is_final)
         try:
             msg = await self.bot.send_message(
                 self.chat_id,
@@ -276,7 +366,7 @@ class StreamingHandler:
         self.current_message = msg
         return msg
 
-    async def _handle_overflow(self):
+    async def _handle_overflow(self, is_final: bool = False):
         """Handle buffer overflow with sliding window - remove old content, keep newest"""
         # Extract header (first lines with emoji status)
         lines = self.buffer.split("\n")
@@ -317,7 +407,7 @@ class StreamingHandler:
             self.buffer = header + "\n" + content if header else content
 
         # Update message with trimmed content
-        await self._edit_current_message(self.buffer)
+        await self._edit_current_message(self.buffer, is_final=is_final)
 
     async def finalize(self, final_text: Optional[str] = None):
         """Finalize the stream with optional final text"""
@@ -334,13 +424,13 @@ class StreamingHandler:
         if final_text:
             self.buffer = final_text
 
-        # Force final update (without status, without cancel button)
+        # Force final update (without status, without cancel button, without cursor)
         if self.buffer:
             try:
                 if len(self.buffer) > self.MAX_MESSAGE_LENGTH:
-                    await self._handle_overflow()
+                    await self._handle_overflow(is_final=True)
                 else:
-                    await self._edit_current_message(self.buffer)
+                    await self._edit_current_message(self.buffer, is_final=True)
             except Exception as e:
                 logger.error(f"Error finalizing: {e}")
 
