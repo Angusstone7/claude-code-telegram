@@ -27,12 +27,23 @@ class SQLiteAccountRepository:
                 CREATE TABLE IF NOT EXISTS account_settings (
                     user_id INTEGER PRIMARY KEY,
                     auth_mode TEXT NOT NULL DEFAULT 'zai_api',
+                    model TEXT,
                     proxy_url TEXT,
                     created_at TEXT,
                     updated_at TEXT
                 )
             """)
             await db.commit()
+
+            # Add model column if it doesn't exist (migration)
+            try:
+                await db.execute("ALTER TABLE account_settings ADD COLUMN model TEXT")
+                await db.commit()
+                logger.info("Added model column to account_settings table")
+            except Exception:
+                # Column already exists, that's fine
+                pass
+
             logger.info("Account settings table initialized")
 
     async def find_by_user_id(self, user_id: int) -> Optional["AccountSettings"]:
@@ -55,11 +66,12 @@ class SQLiteAccountRepository:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO account_settings
-                (user_id, auth_mode, proxy_url, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                (user_id, auth_mode, model, proxy_url, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 settings.user_id,
                 settings.auth_mode.value,
+                settings.model,
                 settings.proxy_url,
                 settings.created_at.isoformat() if settings.created_at else None,
                 settings.updated_at.isoformat() if settings.updated_at else None,
@@ -82,6 +94,7 @@ class SQLiteAccountRepository:
         return AccountSettings(
             user_id=row["user_id"],
             auth_mode=AuthMode(row["auth_mode"]),
+            model=row.get("model"),  # May be None for existing records
             proxy_url=row["proxy_url"],
             created_at=(
                 datetime.fromisoformat(row["created_at"])

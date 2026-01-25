@@ -32,11 +32,39 @@ class AuthMode(str, Enum):
     CLAUDE_ACCOUNT = "claude_account"
 
 
+class ClaudeModel(str, Enum):
+    """Available Claude models"""
+    OPUS = "claude-opus-4-5"
+    SONNET = "claude-sonnet-4-5"
+    HAIKU = "claude-haiku-4"
+
+    @classmethod
+    def get_display_name(cls, model: str) -> str:
+        """Get user-friendly display name for model"""
+        mapping = {
+            cls.OPUS: "Opus 4.5",
+            cls.SONNET: "Sonnet 4.5",
+            cls.HAIKU: "Haiku 4",
+        }
+        return mapping.get(model, model)
+
+    @classmethod
+    def get_description(cls, model: str) -> str:
+        """Get model description"""
+        descriptions = {
+            cls.OPUS: "Самая мощная модель, лучшая для сложных задач",
+            cls.SONNET: "Баланс между скоростью и качеством (рекомендуется)",
+            cls.HAIKU: "Быстрая модель для простых задач",
+        }
+        return descriptions.get(model, "")
+
+
 @dataclass
 class AccountSettings:
     """User account settings"""
     user_id: int
     auth_mode: AuthMode = AuthMode.ZAI_API
+    model: Optional[str] = None  # Preferred Claude model (e.g., "claude-sonnet-4-5")
     proxy_url: str = CLAUDE_PROXY
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -111,13 +139,60 @@ class AccountService:
         settings = await self.get_settings(user_id)
         return settings.auth_mode
 
-    async def set_auth_mode(self, user_id: int, mode: AuthMode) -> AccountSettings:
-        """Set auth mode for user"""
+    async def set_auth_mode(self, user_id: int, mode: AuthMode) -> tuple[bool, AccountSettings, Optional[str]]:
+        """
+        Set auth mode for user.
+
+        Args:
+            user_id: User ID
+            mode: Authorization mode to switch to
+
+        Returns:
+            Tuple of (success, settings, error_message)
+            - success: Whether the mode was changed successfully
+            - settings: Updated account settings
+            - error_message: Error message if failed, None if successful
+        """
+        # Validate Claude Account mode has valid credentials
+        if mode == AuthMode.CLAUDE_ACCOUNT:
+            access_token = self.get_access_token_from_credentials()
+            if not access_token:
+                logger.warning(f"[{user_id}] Attempted to switch to Claude Account without valid credentials")
+                settings = await self.get_settings(user_id)
+                return False, settings, "❌ Нет файла с учётными данными. Загрузите credentials.json или войдите через OAuth."
+
         settings = await self.get_settings(user_id)
         settings.auth_mode = mode
         settings.updated_at = datetime.now()
         await self.repository.save(settings)
         logger.info(f"[{user_id}] Auth mode set to: {mode.value}")
+        return True, settings, None
+
+    async def get_model(self, user_id: int) -> Optional[str]:
+        """
+        Get preferred model for user.
+
+        Returns model ID or None (uses SDK/CLI default).
+        """
+        settings = await self.get_settings(user_id)
+        return settings.model
+
+    async def set_model(self, user_id: int, model: Optional[str]) -> AccountSettings:
+        """
+        Set preferred model for user.
+
+        Args:
+            user_id: User ID
+            model: Model ID (e.g., "claude-sonnet-4-5") or None for default
+
+        Returns:
+            Updated settings
+        """
+        settings = await self.get_settings(user_id)
+        settings.model = model
+        settings.updated_at = datetime.now()
+        await self.repository.save(settings)
+        logger.info(f"[{user_id}] Model set to: {model or 'default'}")
         return settings
 
     def get_credentials_info(self) -> CredentialsInfo:
@@ -135,6 +210,25 @@ class AccountService:
             return False
 
         return True
+
+    def get_access_token_from_credentials(self) -> Optional[str]:
+        """
+        Extract access token from credentials file.
+
+        Returns:
+            Access token if available, None otherwise
+        """
+        try:
+            if not os.path.exists(CREDENTIALS_PATH):
+                return None
+
+            with open(CREDENTIALS_PATH, "r") as f:
+                data = json.load(f)
+
+            return data.get("claudeAiOauth", {}).get("accessToken")
+        except Exception as e:
+            logger.error(f"Error reading access token from credentials: {e}")
+            return None
 
     def save_credentials(self, credentials_json: str) -> tuple[bool, str]:
         """
@@ -210,8 +304,13 @@ class AccountService:
 
         elif mode == AuthMode.CLAUDE_ACCOUNT:
             # Claude Account mode - use credentials file with proxy
-            # IMPORTANT: Do NOT set ANTHROPIC_API_KEY or ANTHROPIC_BASE_URL
-            # Claude CLI will use the credentials file
+
+            # Extract access token from credentials file
+            access_token = self.get_access_token_from_credentials()
+            if access_token:
+                env["ANTHROPIC_API_KEY"] = access_token
+            else:
+                logger.warning("No access token found in credentials file")
 
             # Set proxy for accessing claude.ai
             env["HTTP_PROXY"] = CLAUDE_PROXY
@@ -219,12 +318,14 @@ class AccountService:
             env["http_proxy"] = CLAUDE_PROXY
             env["https_proxy"] = CLAUDE_PROXY
 
-            # Ensure API key is NOT set (remove from env if present)
-            # The caller should use env.update() and then pop these keys
-            env["_REMOVE_ANTHROPIC_API_KEY"] = "1"
+            # Remove ZhipuAI configuration (use official Claude API with SDK defaults)
             env["_REMOVE_ANTHROPIC_BASE_URL"] = "1"
+            env["_REMOVE_ANTHROPIC_MODEL"] = "1"
+            env["_REMOVE_ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "1"
+            env["_REMOVE_ANTHROPIC_DEFAULT_SONNET_MODEL"] = "1"
+            env["_REMOVE_ANTHROPIC_DEFAULT_OPUS_MODEL"] = "1"
 
-            logger.debug(f"Claude Account mode env: proxy={CLAUDE_PROXY[:30]}...")
+            logger.debug(f"Claude Account mode: using SDK default models, proxy={CLAUDE_PROXY[:30]}...")
 
         return env
 
@@ -255,6 +356,16 @@ class AccountService:
 
         if mode_env.pop("_REMOVE_ANTHROPIC_BASE_URL", None):
             base_env.pop("ANTHROPIC_BASE_URL", None)
+
+        # Remove model environment variables (let SDK use defaults)
+        if mode_env.pop("_REMOVE_ANTHROPIC_MODEL", None):
+            base_env.pop("ANTHROPIC_MODEL", None)
+        if mode_env.pop("_REMOVE_ANTHROPIC_DEFAULT_HAIKU_MODEL", None):
+            base_env.pop("ANTHROPIC_DEFAULT_HAIKU_MODEL", None)
+        if mode_env.pop("_REMOVE_ANTHROPIC_DEFAULT_SONNET_MODEL", None):
+            base_env.pop("ANTHROPIC_DEFAULT_SONNET_MODEL", None)
+        if mode_env.pop("_REMOVE_ANTHROPIC_DEFAULT_OPUS_MODEL", None):
+            base_env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
 
         # Apply remaining env vars
         base_env.update(mode_env)

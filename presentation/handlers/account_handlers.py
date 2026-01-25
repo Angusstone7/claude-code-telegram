@@ -362,6 +362,15 @@ class AccountHandlers:
             # Show credentials file upload prompt
             await self._show_upload_prompt(callback, state)
 
+        elif action == "select_model":
+            # Show model selection menu
+            await self._show_model_selection(callback, state)
+
+        elif action == "model":
+            # Handle model selection
+            model_value = data.get("value", "")
+            await self._handle_model_selection(callback, state, model_value)
+
         else:
             await callback.answer(f"Неизвестное действие: {action}")
 
@@ -447,7 +456,14 @@ class AccountHandlers:
             return
 
         # Switch mode
-        await self.account_service.set_auth_mode(user_id, mode)
+        success, settings, error_msg = await self.account_service.set_auth_mode(user_id, mode)
+
+        if not success:
+            # Failed to switch - show error
+            await callback.answer(error_msg, show_alert=True)
+            # Show menu with current (unchanged) mode
+            await self._show_menu(callback, state)
+            return
 
         mode_name = "z.ai API" if mode == AuthMode.ZAI_API else "Claude Account"
         await callback.answer(f"✅ Режим: {mode_name}")
@@ -523,7 +539,9 @@ class AccountHandlers:
                 current_mode=settings.auth_mode.value,
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
-            )
+                current_model=settings.model,
+            ),
+            parse_mode="HTML"
         )
 
     async def _show_upload_prompt(self, callback: CallbackQuery, state: FSMContext):
@@ -544,6 +562,61 @@ class AccountHandlers:
             reply_markup=Keyboards.account_upload_credentials()
         )
         await callback.answer()
+
+    async def _show_model_selection(self, callback: CallbackQuery, state: FSMContext):
+        """Show model selection menu"""
+        user_id = callback.from_user.id
+
+        # Get current model
+        current_model = await self.account_service.get_model(user_id)
+
+        from application.services.account_service import ClaudeModel
+
+        text = (
+            "🤖 <b>Выбор модели Claude</b>\n\n"
+            "Выберите модель для использования:\n\n"
+        )
+
+        # Add model descriptions
+        for model in [ClaudeModel.OPUS, ClaudeModel.SONNET, ClaudeModel.HAIKU]:
+            display_name = ClaudeModel.get_display_name(model)
+            description = ClaudeModel.get_description(model)
+            emoji = "✅" if current_model == model else "  "
+            text += f"{emoji} <b>{display_name}</b>\n"
+            text += f"   <i>{description}</i>\n\n"
+
+        text += "\n<i>Выбор модели доступен для всех режимов авторизации</i>"
+
+        await callback.message.edit_text(
+            text,
+            reply_markup=Keyboards.model_select(current_model),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+
+    async def _handle_model_selection(
+        self,
+        callback: CallbackQuery,
+        state: FSMContext,
+        model_value: str
+    ):
+        """Handle model selection"""
+        user_id = callback.from_user.id
+
+        # Parse model value
+        if model_value == "default":
+            # Set to None for default/auto
+            await self.account_service.set_model(user_id, None)
+            model_name = "По умолчанию (авто)"
+        else:
+            # Set specific model
+            await self.account_service.set_model(user_id, model_value)
+            from application.services.account_service import ClaudeModel
+            model_name = ClaudeModel.get_display_name(model_value)
+
+        # Return to menu with success message
+        await self._show_menu(callback, state)
+        await callback.answer(f"✅ Модель: {model_name}")
 
     async def handle_credentials_upload(self, message: Message, state: FSMContext):
         """Handle credentials file upload"""
@@ -581,7 +654,19 @@ class AccountHandlers:
 
             if success:
                 # Switch to Claude Account mode
-                await self.account_service.set_auth_mode(user_id, AuthMode.CLAUDE_ACCOUNT)
+                mode_success, _, mode_error = await self.account_service.set_auth_mode(user_id, AuthMode.CLAUDE_ACCOUNT)
+
+                if not mode_success:
+                    # This shouldn't happen since we just saved credentials, but handle it
+                    await message.answer(
+                        f"⚠️ Credentials сохранены, но не удалось переключить режим:\n{mode_error}",
+                        reply_markup=Keyboards.account_menu(
+                            current_mode=AuthMode.ZAI_API.value,
+                            has_credentials=True,
+                        )
+                    )
+                    await state.clear()
+                    return
 
                 creds_info = self.account_service.get_credentials_info()
 
@@ -770,7 +855,20 @@ class AccountHandlers:
 
         if success:
             # Switch to Claude Account mode
-            await self.account_service.set_auth_mode(user_id, AuthMode.CLAUDE_ACCOUNT)
+            mode_success, _, mode_error = await self.account_service.set_auth_mode(user_id, AuthMode.CLAUDE_ACCOUNT)
+
+            if not mode_success:
+                # This shouldn't happen since OAuth just saved credentials, but handle it
+                await processing_msg.edit_text(
+                    f"⚠️ OAuth успешен, но не удалось переключить режим:\n{mode_error}",
+                    parse_mode="HTML",
+                    reply_markup=Keyboards.account_menu(
+                        current_mode=AuthMode.ZAI_API.value,
+                        has_credentials=True,
+                    )
+                )
+                await state.clear()
+                return
 
             creds_info = self.account_service.get_credentials_info()
 

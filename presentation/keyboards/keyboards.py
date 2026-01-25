@@ -1017,6 +1017,7 @@ class Keyboards:
         current_mode: str = "zai_api",
         has_credentials: bool = False,
         subscription_type: str = None,
+        current_model: str = None,
         show_back: bool = False,
         back_to: str = "menu:settings"
     ) -> InlineKeyboardMarkup:
@@ -1027,6 +1028,7 @@ class Keyboards:
             current_mode: Current auth mode ("zai_api" or "claude_account")
             has_credentials: Whether credentials file exists
             subscription_type: Subscription type from credentials
+            current_model: Currently selected model (e.g., "claude-sonnet-4-5")
             show_back: Show back button instead of close button
             back_to: Callback data for back button
         """
@@ -1053,6 +1055,20 @@ class Keyboards:
             InlineKeyboardButton(
                 text=f"{claude_emoji} Claude Account{sub_info}",
                 callback_data="account:mode:claude_account"
+            )
+        ])
+
+        # Model selection button (show model name if set)
+        from application.services.account_service import ClaudeModel
+        model_text = "🤖 Модель"
+        if current_model:
+            model_name = ClaudeModel.get_display_name(current_model)
+            model_text = f"🤖 Модель: {model_name}"
+
+        buttons.append([
+            InlineKeyboardButton(
+                text=model_text,
+                callback_data="account:select_model"
             )
         ])
 
@@ -1123,6 +1139,64 @@ class Keyboards:
                 )
             ]
         ])
+
+    @staticmethod
+    def model_select(current_model: str = None) -> InlineKeyboardMarkup:
+        """
+        Model selection keyboard.
+
+        Args:
+            current_model: Currently selected model
+        """
+        from application.services.account_service import ClaudeModel
+
+        buttons = []
+
+        # Opus button
+        opus_emoji = "✅" if current_model == ClaudeModel.OPUS else "💎"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{opus_emoji} Opus 4.5",
+                callback_data=f"account:model:{ClaudeModel.OPUS}"
+            )
+        ])
+
+        # Sonnet button
+        sonnet_emoji = "✅" if current_model == ClaudeModel.SONNET else "⚡"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{sonnet_emoji} Sonnet 4.5 (рекомендуется)",
+                callback_data=f"account:model:{ClaudeModel.SONNET}"
+            )
+        ])
+
+        # Haiku button
+        haiku_emoji = "✅" if current_model == ClaudeModel.HAIKU else "🚀"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{haiku_emoji} Haiku 4",
+                callback_data=f"account:model:{ClaudeModel.HAIKU}"
+            )
+        ])
+
+        # Default (auto) button
+        default_emoji = "✅" if not current_model else "🔄"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{default_emoji} По умолчанию (авто)",
+                callback_data="account:model:default"
+            )
+        ])
+
+        # Back button
+        buttons.append([
+            InlineKeyboardButton(
+                text="🔙 Назад",
+                callback_data="account:menu"
+            )
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
     def account_confirm_mode_switch(mode: str) -> InlineKeyboardMarkup:
