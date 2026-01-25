@@ -20,7 +20,7 @@ from aiogram.types import Message
 from aiogram.enums import ParseMode
 
 from presentation.keyboards.keyboards import Keyboards
-from presentation.handlers.streaming import StreamingHandler
+from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService, TaskResult
 from domain.entities.claude_code_session import ClaudeCodeSession, SessionStatus
 
@@ -313,6 +313,10 @@ class MessageHandlers:
         self._permission_events[user_id] = asyncio.Event()
         self._question_events[user_id] = asyncio.Event()
 
+        # Start heartbeat for progress indication
+        heartbeat = HeartbeatTracker(streaming, interval=5.0)
+        await heartbeat.start()
+
         try:
             # Choose backend: SDK (preferred) or CLI (fallback)
             if self.use_sdk and self.sdk_service:
@@ -366,6 +370,8 @@ class MessageHandlers:
             session.fail(str(e))
 
         finally:
+            # Stop heartbeat
+            await heartbeat.stop()
             # Cleanup
             self._permission_events.pop(user_id, None)
             self._question_events.pop(user_id, None)

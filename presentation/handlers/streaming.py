@@ -368,3 +368,59 @@ class ProgressTracker:
 
         progress_text = "\n".join(progress_lines)
         await self.handler.set_status(f"Progress ({self.current_step}/{self.total_steps})")
+
+
+class HeartbeatTracker:
+    """Periodic status updates during long operations.
+
+    Shows elapsed time and animated spinner to indicate the bot is still working.
+    """
+
+    SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self, streaming: StreamingHandler, interval: float = 5.0):
+        self.streaming = streaming
+        self.interval = interval
+        self.start_time = time.time()
+        self.is_running = False
+        self._task: Optional[asyncio.Task] = None
+        self._spinner_idx = 0
+
+    async def start(self):
+        """Start heartbeat updates"""
+        self.is_running = True
+        self._task = asyncio.create_task(self._loop())
+
+    async def stop(self):
+        """Stop heartbeat updates"""
+        self.is_running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+    async def _loop(self):
+        """Periodic status update loop"""
+        while self.is_running:
+            try:
+                elapsed = int(time.time() - self.start_time)
+                spinner = self.SPINNERS[self._spinner_idx % len(self.SPINNERS)]
+                self._spinner_idx += 1
+
+                # Format time nicely
+                if elapsed < 60:
+                    time_str = f"{elapsed} сек"
+                else:
+                    mins = elapsed // 60
+                    secs = elapsed % 60
+                    time_str = f"{mins}:{secs:02d}"
+
+                await self.streaming.set_status(f"Работаю... {spinner} ({time_str})")
+                await asyncio.sleep(self.interval)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"Heartbeat error: {e}")
+                break
