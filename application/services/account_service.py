@@ -305,15 +305,18 @@ class AccountService:
         elif mode == AuthMode.CLAUDE_ACCOUNT:
             # Claude Account mode - use credentials file with proxy
 
+            # CRITICAL: Remove ALL API configuration to prevent mixing with z.ai API
+            env["_REMOVE_ANTHROPIC_API_KEY"] = "1"
+            env["_REMOVE_ANTHROPIC_AUTH_TOKEN"] = "1"
+            env["_REMOVE_ANTHROPIC_BASE_URL"] = "1"
+
             # Extract access token from credentials file
             access_token = self.get_access_token_from_credentials()
             if access_token:
                 env["ANTHROPIC_API_KEY"] = access_token
                 logger.debug("Using access token from credentials file")
             else:
-                # Explicitly remove API key to prevent using old value
-                env["_REMOVE_ANTHROPIC_API_KEY"] = "1"
-                logger.warning("No access token found in credentials file - API key removed from env")
+                logger.warning("No access token found in credentials file - Claude Account requires credentials.json")
 
             # Set proxy for accessing claude.ai
             env["HTTP_PROXY"] = CLAUDE_PROXY
@@ -321,14 +324,13 @@ class AccountService:
             env["http_proxy"] = CLAUDE_PROXY
             env["https_proxy"] = CLAUDE_PROXY
 
-            # Remove ZhipuAI configuration (use official Claude API with SDK defaults)
-            env["_REMOVE_ANTHROPIC_BASE_URL"] = "1"
+            # Remove ZhipuAI/model configuration (use official Claude API with SDK defaults)
             env["_REMOVE_ANTHROPIC_MODEL"] = "1"
             env["_REMOVE_ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "1"
             env["_REMOVE_ANTHROPIC_DEFAULT_SONNET_MODEL"] = "1"
             env["_REMOVE_ANTHROPIC_DEFAULT_OPUS_MODEL"] = "1"
 
-            logger.debug(f"Claude Account mode: using SDK default models, proxy={CLAUDE_PROXY[:30]}...")
+            logger.debug(f"Claude Account mode: using SDK defaults, proxy={CLAUDE_PROXY[:30]}...")
 
         return env
 
@@ -383,6 +385,26 @@ class AccountService:
         base_env.update(mode_env)
 
         return base_env
+
+    def delete_credentials(self) -> tuple[bool, str]:
+        """
+        Delete the credentials file.
+
+        Useful for re-authentication or switching accounts.
+
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            if os.path.exists(CREDENTIALS_PATH):
+                os.remove(CREDENTIALS_PATH)
+                logger.info(f"Deleted credentials file: {CREDENTIALS_PATH}")
+                return True, "✅ Файл credentials.json удалён"
+            else:
+                return False, "❌ Файл credentials.json не найден"
+        except Exception as e:
+            logger.error(f"Error deleting credentials: {e}")
+            return False, f"❌ Ошибка удаления: {str(e)}"
 
 
 # Import repository here to avoid circular imports

@@ -1072,6 +1072,15 @@ class Keyboards:
             )
         ])
 
+        # Delete account button (only if credentials exist)
+        if has_credentials:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🗑️ Удалить аккаунт Claude",
+                    callback_data="account:delete_account"
+                )
+            ])
+
         # Info/status button
         buttons.append([
             InlineKeyboardButton(

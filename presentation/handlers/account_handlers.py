@@ -372,6 +372,10 @@ class AccountHandlers:
             model_value = data.get("value", "")
             await self._handle_model_selection(callback, state, model_value)
 
+        elif action == "delete_account":
+            # Delete Claude Account credentials
+            await self._handle_delete_account(callback, state)
+
         else:
             await callback.answer(f"Неизвестное действие: {action}")
 
@@ -618,6 +622,30 @@ class AccountHandlers:
         # Return to menu with success message
         await self._show_menu(callback, state)
         await callback.answer(f"✅ Модель: {model_name}")
+
+    async def _handle_delete_account(self, callback: CallbackQuery, state: FSMContext):
+        """Handle Claude Account deletion (credentials file)"""
+        user_id = callback.from_user.id
+
+        try:
+            # Delete credentials file
+            success, message = self.account_service.delete_credentials()
+
+            if success:
+                # If was in Claude Account mode, switch to z.ai API
+                settings = await self.account_service.get_settings(user_id)
+                if settings.auth_mode.value == "claude_account":
+                    await self.account_service.set_auth_mode(user_id, "zai_api")
+
+                # Return to menu
+                await self._show_menu(callback, state)
+                await callback.answer("✅ Аккаунт Claude удалён")
+            else:
+                await callback.answer(message, show_alert=True)
+
+        except Exception as e:
+            logger.error(f"[{user_id}] Error deleting account: {e}", exc_info=True)
+            await callback.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
     async def handle_credentials_upload(self, message: Message, state: FSMContext):
         """Handle credentials file upload"""
