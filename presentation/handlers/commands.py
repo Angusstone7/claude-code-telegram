@@ -122,22 +122,25 @@ class CommandHandlers:
         """Handle /stats command"""
         stats = await self.bot_service.get_user_stats(message.from_user.id)
 
-        text = f"""
-📊 **Ваша статистика**
+        # Build command stats safely
+        by_status = stats.get('commands', {}).get('by_status', {})
+        status_lines = [f"  • {k}: {v}" for k, v in by_status.items() if k != 'total']
+        status_text = "\n".join(status_lines) if status_lines else "  Нет данных"
 
-**Пользователь:** {stats.get('user', {}).get('username', 'Неизвестно')}
-**Роль:** {stats.get('user', {}).get('role', 'user')}
-**Статус:** {'✅ Активен' if stats.get('user', {}).get('is_active') else '❌ Неактивен'}
+        text = f"""📊 <b>Ваша статистика</b>
 
-**Команды:**
+<b>Пользователь:</b> {stats.get('user', {}).get('username', 'Неизвестно')}
+<b>Роль:</b> {stats.get('user', {}).get('role', 'user')}
+<b>Статус:</b> {'✅ Активен' if stats.get('user', {}).get('is_active') else '❌ Неактивен'}
+
+<b>Команды:</b>
 • Всего: {stats.get('commands', {}).get('total', 0)}
-{chr(10).join(f"  • {k}: {v}" for k, v in stats.get('commands', {}).get('by_status', {}).items() if k != 'total')}
+{status_text}
 
-**Сессии:**
+<b>Сессии:</b>
 • Всего: {stats.get('sessions', {}).get('total', 0)}
-• Активных: {stats.get('sessions', {}).get('active', 0)}
-        """
-        await message.answer(text, parse_mode="Markdown")
+• Активных: {stats.get('sessions', {}).get('active', 0)}"""
+        await message.answer(text, parse_mode="HTML")
 
     async def menu_chat(self, message: Message) -> None:
         """Handle chat menu button"""

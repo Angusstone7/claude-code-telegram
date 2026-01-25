@@ -708,8 +708,29 @@ class ClaudeAgentSDKService:
                     session_id=result_session_id,
                 )
 
+        except asyncio.CancelledError:
+            # Task was cancelled - this is expected behavior
+            logger.info(f"[{user_id}] Task was cancelled")
+            return SDKTaskResult(
+                success=False,
+                output="\n".join(output_buffer),
+                session_id=result_session_id,
+                cancelled=True
+            )
+
         except Exception as e:
             error_msg = str(e)
+
+            # Check if this was actually a cancellation (SDK may throw generic exception)
+            if self._cancel_events.get(user_id) and self._cancel_events[user_id].is_set():
+                logger.info(f"[{user_id}] Task interrupted by user")
+                return SDKTaskResult(
+                    success=False,
+                    output="\n".join(output_buffer),
+                    session_id=result_session_id,
+                    cancelled=True
+                )
+
             logger.error(f"[{user_id}] SDK task error: {error_msg}")
 
             if on_error:

@@ -753,9 +753,10 @@ class MessageHandlers:
             if streaming:
                 await streaming.send_completion(success=False)
             if session:
-                session.fail(result.error or "Unknown error")
+                session.fail(result.error or "Cancelled" if result.cancelled else "Unknown error")
 
-            if result.error:
+            # Don't show error message if task was cancelled by user
+            if result.error and not result.cancelled:
                 await message.answer(f"⚠️ **Завершено с ошибкой:**\n```\n{result.error[:1000]}\n```")
 
     async def _handle_answer_input(self, message: Message):
