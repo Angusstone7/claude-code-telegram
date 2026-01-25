@@ -611,7 +611,8 @@ class ClaudeAgentSDKService:
                 plugins=plugins if plugins else None,
             )
 
-            logger.info(f"[{user_id}] Starting SDK task in {work_dir}")
+            resume_info = f"resume={session_id[:16]}..." if session_id and not _retry_without_resume else "new session"
+            logger.info(f"[{user_id}] Starting SDK task in {work_dir} ({resume_info})")
             logger.debug(f"[{user_id}] Prompt: {prompt[:200]}")
 
             # Use context manager for proper cleanup
@@ -656,26 +657,30 @@ class ClaudeAgentSDKService:
                         if message.result:
                             output_buffer.append(message.result)
 
+                        session_info = f"session={result_session_id[:16]}..." if result_session_id else "no session"
                         logger.info(
                             f"[{user_id}] Task completed: "
                             f"turns={message.num_turns}, "
-                            f"cost=${message.total_cost_usd or 0:.4f}"
+                            f"cost=${message.total_cost_usd or 0:.4f}, "
+                            f"{session_info}"
                         )
 
                         # Handle 0 turns - retry without resume if session was used
                         if message.num_turns == 0 and session_id and not _retry_without_resume:
                             logger.warning(
-                                f"[{user_id}] Task completed with 0 turns with session {session_id[:8]}... "
-                                f"Retrying without resume..."
+                                f"[{user_id}] Session {session_id[:16]}... is invalid (0 turns). "
+                                f"This usually means session files in ~/.claude/ were lost. "
+                                f"Retrying with fresh session..."
                             )
                             # Cleanup before retry
                             self._clients.pop(user_id, None)
-                            # Recursive retry without resume
+                            # Recursive retry without resume - DO NOT pass old session_id
+                            # so that the new session_id will be returned
                             return await self.run_task(
                                 user_id=user_id,
                                 prompt=prompt,
                                 working_dir=working_dir,
-                                session_id=session_id,  # Keep for return value
+                                session_id=None,  # Clear invalid session - new one will be created
                                 on_text=on_text,
                                 on_tool_use=on_tool_use,
                                 on_tool_result=on_tool_result,
@@ -689,7 +694,7 @@ class ClaudeAgentSDKService:
                             )
                         elif message.num_turns == 0:
                             logger.warning(
-                                f"[{user_id}] Task completed with 0 turns! "
+                                f"[{user_id}] Task completed with 0 turns (no session). "
                                 f"Prompt was: {prompt[:100]}..."
                             )
 

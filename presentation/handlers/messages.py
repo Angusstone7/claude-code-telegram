@@ -262,7 +262,14 @@ class MessageHandlers:
                     # Auto-continue: use context's claude_session_id
                     if not session_id and context.claude_session_id:
                         session_id = context.claude_session_id
-                        logger.info(f"Auto-continuing session {session_id} for context {context.name}")
+                        logger.info(
+                            f"[{user_id}] Auto-continue: loaded session {session_id[:16]}... "
+                            f"from context '{context.name}' (messages: {context.message_count})"
+                        )
+                    elif session_id:
+                        logger.info(f"[{user_id}] Using in-memory session {session_id[:16]}...")
+                    else:
+                        logger.info(f"[{user_id}] Starting new session (no previous session_id)")
 
                     # Enrich prompt with context variables
                     new_prompt = await self.context_service.get_enriched_prompt(
@@ -711,6 +718,10 @@ class MessageHandlers:
                 try:
                     # Save claude_session_id for next auto-continue
                     await self.context_service.set_claude_session_id(context_id, result.session_id)
+                    logger.info(
+                        f"[{user_id}] Saved claude_session_id {result.session_id[:16]}... "
+                        f"to context {context_id[:16]}..."
+                    )
 
                     # Save messages to context
                     if session and session.current_prompt:
@@ -718,7 +729,7 @@ class MessageHandlers:
                     if result.output:
                         await self.context_service.save_message(context_id, "assistant", result.output[:5000])
 
-                    logger.info(f"Saved session to context {context_id}")
+                    logger.info(f"[{user_id}] Saved messages to context")
                 except Exception as e:
                     logger.warning(f"Error saving to context: {e}")
 
