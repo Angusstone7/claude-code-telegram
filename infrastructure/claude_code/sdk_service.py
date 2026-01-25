@@ -305,11 +305,20 @@ class ClaudeAgentSDKService:
         """Cancel the active task for a user"""
         cancelled = False
 
-        # Set cancel event to signal the running task
+        # Set all events to signal the running task (it may be waiting on any of these)
+        # This ensures the task wakes up from any wait_for() call
         cancel_event = self._cancel_events.get(user_id)
         if cancel_event:
             cancel_event.set()
             cancelled = True
+
+        permission_event = self._permission_events.get(user_id)
+        if permission_event:
+            permission_event.set()
+
+        question_event = self._question_events.get(user_id)
+        if question_event:
+            question_event.set()
 
         # Try to interrupt the SDK client
         client = self._clients.get(user_id)
@@ -390,10 +399,15 @@ class ClaudeAgentSDKService:
         # Cancel any existing task
         await self.cancel_task(user_id)
 
-        # Initialize state
-        self._cancel_events[user_id] = asyncio.Event()
-        self._permission_events[user_id] = asyncio.Event()
-        self._question_events[user_id] = asyncio.Event()
+        # Initialize state - store local references to avoid race conditions
+        # when another message arrives and creates new events
+        cancel_event = asyncio.Event()
+        permission_event = asyncio.Event()
+        question_event = asyncio.Event()
+
+        self._cancel_events[user_id] = cancel_event
+        self._permission_events[user_id] = permission_event
+        self._question_events[user_id] = question_event
         self._task_status[user_id] = TaskStatus.RUNNING
 
         work_dir = working_dir or self.default_working_dir
@@ -431,8 +445,8 @@ class ClaudeAgentSDKService:
             """
             nonlocal user_id
 
-            # Check if cancelled
-            if self._cancel_events[user_id].is_set():
+            # Check if cancelled (use local reference to avoid race condition)
+            if cancel_event.is_set():
                 return PermissionResultDeny(
                     message="Task cancelled by user",
                     interrupt=True
@@ -466,12 +480,17 @@ class ClaudeAgentSDKService:
                     if on_question:
                         await on_question(question_text, options)
 
-                    # Wait for user response
-                    event = self._question_events[user_id]
-                    event.clear()
+                    # Wait for user response (use local reference)
+                    question_event.clear()
 
                     try:
-                        await asyncio.wait_for(event.wait(), timeout=300)  # 5 min timeout
+                        await asyncio.wait_for(question_event.wait(), timeout=300)  # 5 min timeout
+                        # Check if woken up due to cancellation
+                        if cancel_event.is_set():
+                            return PermissionResultDeny(
+                                message="Task cancelled by user",
+                                interrupt=True
+                            )
                         answer = self._question_responses.get(user_id, "")
                     except asyncio.TimeoutError:
                         answer = ""
@@ -527,12 +546,17 @@ class ClaudeAgentSDKService:
                 if on_permission_request:
                     await on_permission_request(tool_name, details, tool_input)
 
-                # Wait for user response
-                event = self._permission_events[user_id]
-                event.clear()
+                # Wait for user response (use local reference)
+                permission_event.clear()
 
                 try:
-                    await asyncio.wait_for(event.wait(), timeout=300)  # 5 min timeout
+                    await asyncio.wait_for(permission_event.wait(), timeout=300)  # 5 min timeout
+                    # Check if woken up due to cancellation
+                    if cancel_event.is_set():
+                        return PermissionResultDeny(
+                            message="Task cancelled by user",
+                            interrupt=True
+                        )
                     approved = self._permission_responses.get(user_id, False)
                 except asyncio.TimeoutError:
                     approved = False
@@ -626,8 +650,8 @@ class ClaudeAgentSDKService:
 
                 # Process messages
                 async for message in client.receive_response():
-                    # Check for cancellation
-                    if self._cancel_events[user_id].is_set():
+                    # Check for cancellation (use local reference to avoid race condition)
+                    if cancel_event.is_set():
                         logger.info(f"[{user_id}] Task cancelled")
                         break
 
@@ -698,8 +722,8 @@ class ClaudeAgentSDKService:
                                 f"Prompt was: {prompt[:100]}..."
                             )
 
-                # Check final status
-                if self._cancel_events[user_id].is_set():
+                # Check final status (use local reference)
+                if cancel_event.is_set():
                     return SDKTaskResult(
                         success=False,
                         output="\n".join(output_buffer),
@@ -726,8 +750,8 @@ class ClaudeAgentSDKService:
         except Exception as e:
             error_msg = str(e)
 
-            # Check if this was actually a cancellation (SDK may throw generic exception)
-            if self._cancel_events.get(user_id) and self._cancel_events[user_id].is_set():
+            # Check if this was actually a cancellation (use local reference to avoid race condition)
+            if cancel_event.is_set():
                 logger.info(f"[{user_id}] Task interrupted by user")
                 return SDKTaskResult(
                     success=False,
