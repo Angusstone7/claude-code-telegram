@@ -10,7 +10,7 @@ import logging
 from typing import List, Optional, Dict
 from datetime import datetime
 
-from domain.entities.project_context import ProjectContext, ContextMessage
+from domain.entities.project_context import ProjectContext, ContextMessage, ContextVariable
 from domain.value_objects.user_id import UserId
 from domain.repositories.project_context_repository import IProjectContextRepository
 from shared.config.settings import settings
@@ -64,11 +64,22 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                     context_id TEXT NOT NULL,
                     name TEXT NOT NULL,
                     value TEXT NOT NULL,
+                    description TEXT DEFAULT '',
                     created_at TEXT,
                     FOREIGN KEY (context_id) REFERENCES project_contexts(id),
                     UNIQUE(context_id, name)
                 )
             """)
+
+            # Migration: add description column if not exists
+            try:
+                await db.execute("""
+                    ALTER TABLE context_variables ADD COLUMN description TEXT DEFAULT ''
+                """)
+                logger.info("Added description column to context_variables table")
+            except Exception:
+                # Column already exists
+                pass
 
             # Create indexes
             await db.execute("""
@@ -371,7 +382,7 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
 
     # ==================== Variable Operations ====================
 
-    async def _save_variables(self, db, context_id: str, variables: Dict[str, str]) -> None:
+    async def _save_variables(self, db, context_id: str, variables: Dict[str, ContextVariable]) -> None:
         """Save context variables (replaces existing)"""
         # Delete existing variables
         await db.execute(
@@ -381,32 +392,35 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
 
         # Insert new variables
         now = datetime.now().isoformat()
-        for name, value in variables.items():
+        for var in variables.values():
             await db.execute("""
-                INSERT INTO context_variables (context_id, name, value, created_at)
-                VALUES (?, ?, ?, ?)
-            """, (context_id, name, value, now))
+                INSERT INTO context_variables (context_id, name, value, description, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (context_id, var.name, var.value, var.description, now))
 
-    async def _load_variables(self, db, context_id: str) -> Dict[str, str]:
+    async def _load_variables(self, db, context_id: str) -> Dict[str, ContextVariable]:
         """Load context variables"""
         variables = {}
         async with db.execute(
-            "SELECT name, value FROM context_variables WHERE context_id = ?",
+            "SELECT name, value, description FROM context_variables WHERE context_id = ?",
             (context_id,)
         ) as cursor:
             rows = await cursor.fetchall()
             for row in rows:
-                variables[row[0]] = row[1]
+                name = row[0]
+                value = row[1]
+                description = row[2] if len(row) > 2 and row[2] else ""
+                variables[name] = ContextVariable(name=name, value=value, description=description)
         return variables
 
-    async def set_variable(self, context_id: str, name: str, value: str) -> None:
+    async def set_variable(self, context_id: str, name: str, value: str, description: str = "") -> None:
         """Set a single context variable"""
         async with aiosqlite.connect(self.db_path) as db:
             now = datetime.now().isoformat()
             await db.execute("""
-                INSERT OR REPLACE INTO context_variables (context_id, name, value, created_at)
-                VALUES (?, ?, ?, ?)
-            """, (context_id, name, value, now))
+                INSERT OR REPLACE INTO context_variables (context_id, name, value, description, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (context_id, name, value, description, now))
 
             # Update context updated_at
             await db.execute("""
@@ -433,7 +447,19 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             await db.commit()
             return deleted
 
-    async def get_variables(self, context_id: str) -> Dict[str, str]:
+    async def get_variables(self, context_id: str) -> Dict[str, ContextVariable]:
         """Get all variables for a context"""
         async with aiosqlite.connect(self.db_path) as db:
             return await self._load_variables(db, context_id)
+
+    async def get_variable(self, context_id: str, name: str) -> Optional[ContextVariable]:
+        """Get a single variable by name"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT name, value, description FROM context_variables WHERE context_id = ? AND name = ?",
+                (context_id, name)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return ContextVariable(name=row[0], value=row[1], description=row[2] or "")
+        return None

@@ -622,14 +622,15 @@ class CommandHandlers:
 
     async def vars(self, message: Message, command: CommandObject) -> None:
         """
-        Handle /vars command - manage context variables.
+        Handle /vars command - manage context variables with interactive menu.
 
         Usage:
-            /vars              - list all variables
-            /vars set NAME val - set a variable
-            /vars del NAME     - delete a variable
+            /vars                          - show interactive menu
+            /vars set NAME value [desc]    - set a variable (legacy)
+            /vars del NAME                 - delete a variable (legacy)
 
         Variables are automatically included in Claude's context.
+        Description helps Claude understand how to use the variable.
         """
         user_id = message.from_user.id
 
@@ -638,6 +639,7 @@ class CommandHandlers:
             return
 
         from domain.value_objects.user_id import UserId
+        from presentation.keyboards.keyboards import Keyboards
         uid = UserId.from_int(user_id)
 
         # Get current project and context
@@ -661,61 +663,62 @@ class CommandHandlers:
 
         args = command.args.strip() if command.args else ""
 
-        # No args - list variables
+        # No args - show interactive menu
         if not args:
             variables = await self.context_service.get_variables(context.id)
-            if not variables:
-                await message.answer(
-                    f"📭 **Нет переменных контекста**\n\n"
-                    f"📂 Проект: {project.name}\n"
-                    f"💬 Контекст: {context.name}\n\n"
-                    f"Добавьте переменные:\n"
-                    f"`/vars set GITLAB_TOKEN glpat-xxx`\n"
-                    f"`/vars set PROJECT_STACK Python/FastAPI`",
-                    parse_mode="Markdown"
+
+            if variables:
+                lines = [f"📋 Переменные контекста\n"]
+                lines.append(f"📂 {project.name} / {context.name}\n")
+                for name in sorted(variables.keys()):
+                    var = variables[name]
+                    # Mask long values
+                    display = var.value[:8] + "***" if len(var.value) > 8 else var.value
+                    lines.append(f"• {name} = {display}")
+                    if var.description:
+                        lines.append(f"  ↳ {var.description[:50]}")
+                text = "\n".join(lines)
+            else:
+                text = (
+                    f"📋 Переменные контекста\n\n"
+                    f"📂 {project.name} / {context.name}\n\n"
+                    f"Переменных пока нет.\n"
+                    f"Нажмите ➕ Добавить для создания."
                 )
-                return
 
-            lines = [f"📋 **Переменные контекста**\n"]
-            lines.append(f"📂 Проект: {project.name}")
-            lines.append(f"💬 Контекст: {context.name}\n")
-            for name, value in sorted(variables.items()):
-                # Mask long values
-                display = value[:8] + "***" if len(value) > 12 else value
-                lines.append(f"• `{name}` = `{display}`")
-
-            lines.append(f"\n*Claude автоматически использует эти переменные*")
-            await message.answer("\n".join(lines), parse_mode="Markdown")
+            keyboard = Keyboards.variables_menu(variables, project.name, context.name)
+            await message.answer(text, parse_mode=None, reply_markup=keyboard)
             return
 
-        # Parse action
-        parts = args.split(maxsplit=2)
+        # Parse action (legacy text commands)
+        parts = args.split(maxsplit=3)
         action = parts[0].lower()
 
         if action == "set":
             if len(parts) < 3:
                 await message.answer(
-                    "❌ Использование: `/vars set NAME value`",
-                    parse_mode="Markdown"
+                    "❌ Использование: /vars set NAME value [description]",
+                    parse_mode=None
                 )
                 return
 
             name = parts[1].upper()  # Variable names are uppercase
             value = parts[2]
+            description = parts[3] if len(parts) > 3 else ""
 
-            await self.context_service.set_variable(context.id, name, value)
-            await message.answer(
-                f"✅ Установлена переменная `{name}`\n\n"
-                f"Claude будет использовать её автоматически.",
-                parse_mode="Markdown"
-            )
+            await self.context_service.set_variable(context.id, name, value, description)
+            resp = f"✅ Установлена переменная: {name}\n"
+            if description:
+                resp += f"Описание: {description}\n"
+            resp += f"\nClaude будет использовать её автоматически."
+            await message.answer(resp, parse_mode=None)
             return
 
         if action == "del" or action == "delete":
             if len(parts) < 2:
                 await message.answer(
-                    "❌ Использование: `/vars del NAME`",
-                    parse_mode="Markdown"
+                    "❌ Использование: /vars del NAME",
+                    parse_mode=None
                 )
                 return
 
@@ -724,24 +727,24 @@ class CommandHandlers:
 
             if deleted:
                 await message.answer(
-                    f"🗑 Удалена переменная `{name}`",
-                    parse_mode="Markdown"
+                    f"🗑 Удалена переменная: {name}",
+                    parse_mode=None
                 )
             else:
                 await message.answer(
-                    f"⚠️ Переменная `{name}` не найдена",
-                    parse_mode="Markdown"
+                    f"⚠️ Переменная {name} не найдена",
+                    parse_mode=None
                 )
             return
 
         # Unknown action
         await message.answer(
             "❌ Неизвестная команда\n\n"
-            "Использование:\n"
-            "`/vars` - список переменных\n"
-            "`/vars set NAME value` - установить\n"
-            "`/vars del NAME` - удалить",
-            parse_mode="Markdown"
+            "Используйте /vars для интерактивного меню\n"
+            "или legacy команды:\n"
+            "/vars set NAME value [desc] - установить\n"
+            "/vars del NAME - удалить",
+            parse_mode=None
         )
 
 

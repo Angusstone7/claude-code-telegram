@@ -504,6 +504,88 @@ class Keyboards:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+    # ============== Context Variables Keyboards ==============
+
+    @staticmethod
+    def variables_menu(
+        variables: Dict,  # Dict[str, ContextVariable]
+        project_name: str = "",
+        context_name: str = ""
+    ) -> InlineKeyboardMarkup:
+        """
+        Main variables menu with list of existing variables.
+
+        Args:
+            variables: Dict of name -> ContextVariable
+            project_name: Current project name for display
+            context_name: Current context name for display
+
+        Returns:
+            InlineKeyboardMarkup with:
+            - List of variables with view/edit/delete buttons
+            - "Add new" button
+            - "Close" button
+        """
+        buttons = []
+
+        # List variables (max 10)
+        for name in sorted(variables.keys())[:10]:
+            var = variables[name]
+
+            # Mask value for display
+            value = var.value if hasattr(var, 'value') else str(var)
+            display_val = value[:8] + "***" if len(value) > 8 else value
+
+            # Truncate name for callback (max 20 chars)
+            callback_name = name[:20]
+
+            # Variable row: name=value [edit] [delete]
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"📝 {name}",
+                    callback_data=f"var:show:{callback_name}"
+                ),
+                InlineKeyboardButton(text="✏️", callback_data=f"var:e:{callback_name}"),
+                InlineKeyboardButton(text="🗑️", callback_data=f"var:d:{callback_name}")
+            ])
+
+        # Add and Close buttons
+        buttons.append([
+            InlineKeyboardButton(text="➕ Добавить", callback_data="var:add"),
+            InlineKeyboardButton(text="❌ Закрыть", callback_data="var:close")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def variable_delete_confirm(name: str) -> InlineKeyboardMarkup:
+        """Confirmation keyboard for variable deletion"""
+        callback_name = name[:20]
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"var:dc:{callback_name}"),
+                InlineKeyboardButton(text="⬅️ Отмена", callback_data="var:list")
+            ]
+        ])
+
+    @staticmethod
+    def variable_cancel() -> InlineKeyboardMarkup:
+        """Cancel button for variable input flows"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="var:list")]
+        ])
+
+    @staticmethod
+    def variable_skip_description() -> InlineKeyboardMarkup:
+        """Skip description button during variable creation"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏭️ Пропустить описание", callback_data="var:skip_desc"),
+                InlineKeyboardButton(text="❌ Отмена", callback_data="var:list")
+            ]
+        ])
+
+
 class CallbackData:
     """Helper for parsing callback data"""
 

@@ -1017,6 +1017,261 @@ class CallbackHandlers:
             logger.error(f"Error closing file browser: {e}")
             await callback.answer("Закрыто")
 
+    # ============== Variable Management Callbacks ==============
+
+    async def _get_var_context(self, callback: CallbackQuery):
+        """Helper to get project and context for variable operations"""
+        user_id = callback.from_user.id
+
+        if not self.project_service or not self.context_service:
+            await callback.answer("⚠️ Сервисы недоступны")
+            return None, None
+
+        from domain.value_objects.user_id import UserId
+        uid = UserId.from_int(user_id)
+
+        project = await self.project_service.get_current(uid)
+        if not project:
+            await callback.answer("❌ Нет активного проекта")
+            return None, None
+
+        context = await self.context_service.get_current(project.id)
+        if not context:
+            await callback.answer("❌ Нет активного контекста")
+            return None, None
+
+        return project, context
+
+    async def handle_vars_list(self, callback: CallbackQuery) -> None:
+        """Show variables list menu"""
+        try:
+            project, context = await self._get_var_context(callback)
+            if not project or not context:
+                return
+
+            from presentation.keyboards.keyboards import Keyboards
+
+            variables = await self.context_service.get_variables(context.id)
+
+            if variables:
+                lines = [f"📋 Переменные контекста\n"]
+                lines.append(f"📂 {project.name} / {context.name}\n")
+                for name in sorted(variables.keys()):
+                    var = variables[name]
+                    # Mask value for security
+                    display_val = var.value[:8] + "***" if len(var.value) > 8 else var.value
+                    lines.append(f"• {name} = {display_val}")
+                    if var.description:
+                        lines.append(f"  ↳ {var.description[:50]}")
+                text = "\n".join(lines)
+            else:
+                text = (
+                    f"📋 Переменные контекста\n\n"
+                    f"📂 {project.name} / {context.name}\n\n"
+                    f"Переменных пока нет.\n"
+                    f"Нажмите ➕ Добавить для создания."
+                )
+
+            keyboard = Keyboards.variables_menu(variables, project.name, context.name)
+            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error showing variables list: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_vars_add(self, callback: CallbackQuery) -> None:
+        """Start variable add flow - ask for name"""
+        try:
+            project, context = await self._get_var_context(callback)
+            if not project or not context:
+                return
+
+            from presentation.keyboards.keyboards import Keyboards
+
+            # Set state in message handlers to expect variable name
+            user_id = callback.from_user.id
+            if hasattr(self.message_handlers, 'start_var_input'):
+                self.message_handlers.start_var_input(user_id, callback.message)
+
+            text = (
+                "📝 Добавление переменной\n\n"
+                "Введите имя переменной:\n"
+                "(например: GITLAB_TOKEN, API_KEY)"
+            )
+            keyboard = Keyboards.variable_cancel()
+            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
+            await callback.answer("Введите имя")
+
+        except Exception as e:
+            logger.error(f"Error starting var add: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_vars_show(self, callback: CallbackQuery) -> None:
+        """Show full variable info"""
+        var_name = callback.data.split(":")[-1]
+
+        try:
+            project, context = await self._get_var_context(callback)
+            if not project or not context:
+                return
+
+            from presentation.keyboards.keyboards import Keyboards
+
+            var = await self.context_service.get_variable(context.id, var_name)
+            if not var:
+                await callback.answer("❌ Переменная не найдена")
+                return
+
+            text = (
+                f"📋 Переменная: {var.name}\n\n"
+                f"📂 {project.name} / {context.name}\n\n"
+                f"Значение:\n{var.value}\n"
+            )
+            if var.description:
+                text += f"\nОписание:\n{var.description}"
+
+            # Back button
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"var:e:{var_name[:20]}"),
+                    InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"var:d:{var_name[:20]}")
+                ],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="var:list")]
+            ])
+            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error showing variable: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_vars_edit(self, callback: CallbackQuery) -> None:
+        """Start variable edit flow"""
+        var_name = callback.data.split(":")[-1]
+
+        try:
+            project, context = await self._get_var_context(callback)
+            if not project or not context:
+                return
+
+            from presentation.keyboards.keyboards import Keyboards
+
+            var = await self.context_service.get_variable(context.id, var_name)
+            if not var:
+                await callback.answer("❌ Переменная не найдена")
+                return
+
+            # Set state in message handlers to expect new value
+            user_id = callback.from_user.id
+            if hasattr(self.message_handlers, 'start_var_edit'):
+                self.message_handlers.start_var_edit(user_id, var_name, callback.message)
+
+            text = (
+                f"✏️ Редактирование: {var.name}\n\n"
+                f"Текущее значение:\n{var.value}\n\n"
+                f"Введите новое значение:"
+            )
+            keyboard = Keyboards.variable_cancel()
+            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
+            await callback.answer("Введите новое значение")
+
+        except Exception as e:
+            logger.error(f"Error starting var edit: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_vars_delete(self, callback: CallbackQuery) -> None:
+        """Show delete confirmation"""
+        var_name = callback.data.split(":")[-1]
+
+        try:
+            project, context = await self._get_var_context(callback)
+            if not project or not context:
+                return
+
+            from presentation.keyboards.keyboards import Keyboards
+
+            var = await self.context_service.get_variable(context.id, var_name)
+            if not var:
+                await callback.answer("❌ Переменная не найдена")
+                return
+
+            text = (
+                f"🗑️ Удалить переменную?\n\n"
+                f"📋 {var.name}\n"
+                f"📂 {project.name} / {context.name}\n\n"
+                f"⚠️ Это действие нельзя отменить!"
+            )
+            keyboard = Keyboards.variable_delete_confirm(var_name)
+            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error showing delete confirm: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_vars_delete_confirm(self, callback: CallbackQuery) -> None:
+        """Confirm and delete variable"""
+        var_name = callback.data.split(":")[-1]
+
+        try:
+            project, context = await self._get_var_context(callback)
+            if not project or not context:
+                return
+
+            deleted = await self.context_service.delete_variable(context.id, var_name)
+
+            if deleted:
+                await callback.answer(f"✅ {var_name} удалена")
+                # Show updated list
+                await self.handle_vars_list(callback)
+            else:
+                await callback.answer("❌ Переменная не найдена")
+
+        except Exception as e:
+            logger.error(f"Error deleting variable: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_vars_close(self, callback: CallbackQuery) -> None:
+        """Close variables menu"""
+        try:
+            await callback.message.delete()
+            await callback.answer()
+        except Exception as e:
+            logger.debug(f"Error closing vars menu: {e}")
+            await callback.answer()
+
+    async def handle_vars_cancel(self, callback: CallbackQuery) -> None:
+        """Cancel variable input and return to list"""
+        user_id = callback.from_user.id
+
+        # Clear input state
+        if hasattr(self.message_handlers, 'cancel_var_input'):
+            self.message_handlers.cancel_var_input(user_id)
+
+        await callback.answer("Отменено")
+        # Show list again
+        await self.handle_vars_list(callback)
+
+    async def handle_vars_skip_desc(self, callback: CallbackQuery) -> None:
+        """Skip description input and save variable"""
+        user_id = callback.from_user.id
+
+        try:
+            # Get pending variable data and save without description
+            if hasattr(self.message_handlers, 'save_variable_skip_desc'):
+                await self.message_handlers.save_variable_skip_desc(user_id, callback.message)
+                await callback.answer("✅ Переменная сохранена")
+                # Show updated list
+                await self.handle_vars_list(callback)
+            else:
+                await callback.answer("❌ Нет данных для сохранения")
+
+        except Exception as e:
+            logger.error(f"Error saving variable: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
 
 def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     """Register callback handlers"""
@@ -1115,6 +1370,44 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     router.callback_query.register(
         handlers.handle_context_close,
         F.data == "ctx:close"
+    )
+
+    # Variable management handlers (var: prefix)
+    router.callback_query.register(
+        handlers.handle_vars_list,
+        F.data == "var:list"
+    )
+    router.callback_query.register(
+        handlers.handle_vars_add,
+        F.data == "var:add"
+    )
+    router.callback_query.register(
+        handlers.handle_vars_close,
+        F.data == "var:close"
+    )
+    router.callback_query.register(
+        handlers.handle_vars_cancel,
+        F.data == "var:cancel"
+    )
+    router.callback_query.register(
+        handlers.handle_vars_skip_desc,
+        F.data == "var:skip_desc"
+    )
+    router.callback_query.register(
+        handlers.handle_vars_show,
+        F.data.startswith("var:show:")
+    )
+    router.callback_query.register(
+        handlers.handle_vars_edit,
+        F.data.startswith("var:e:")
+    )
+    router.callback_query.register(
+        handlers.handle_vars_delete,
+        F.data.startswith("var:d:")
+    )
+    router.callback_query.register(
+        handlers.handle_vars_delete_confirm,
+        F.data.startswith("var:dc:")
     )
 
     # File browser handlers (/cd command)

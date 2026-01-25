@@ -8,7 +8,7 @@ Like Cursor IDE's context/conversation management.
 import logging
 from typing import List, Optional, Dict
 
-from domain.entities.project_context import ProjectContext, ContextMessage
+from domain.entities.project_context import ProjectContext, ContextMessage, ContextVariable
 from domain.value_objects.user_id import UserId
 from domain.repositories.project_context_repository import IProjectContextRepository
 
@@ -253,7 +253,13 @@ class ContextService:
 
     # ==================== Context Variables ====================
 
-    async def set_variable(self, context_id: str, name: str, value: str) -> None:
+    async def set_variable(
+        self,
+        context_id: str,
+        name: str,
+        value: str,
+        description: str = ""
+    ) -> None:
         """
         Set a context variable that will be included in Claude's context.
 
@@ -261,8 +267,9 @@ class ContextService:
             context_id: Context ID
             name: Variable name (e.g., 'GITLAB_TOKEN')
             value: Variable value
+            description: Description for AI to understand how to use this variable
         """
-        await self.context_repository.set_variable(context_id, name, value)
+        await self.context_repository.set_variable(context_id, name, value, description)
         logger.info(f"Set variable '{name}' for context {context_id}")
 
     async def delete_variable(self, context_id: str, name: str) -> bool:
@@ -281,7 +288,7 @@ class ContextService:
             logger.info(f"Deleted variable '{name}' from context {context_id}")
         return result
 
-    async def get_variables(self, context_id: str) -> Dict[str, str]:
+    async def get_variables(self, context_id: str) -> Dict[str, ContextVariable]:
         """
         Get all context variables.
 
@@ -289,9 +296,22 @@ class ContextService:
             context_id: Context ID
 
         Returns:
-            Dict of variable name -> value
+            Dict of variable name -> ContextVariable
         """
         return await self.context_repository.get_variables(context_id)
+
+    async def get_variable(self, context_id: str, name: str) -> Optional[ContextVariable]:
+        """
+        Get a single context variable.
+
+        Args:
+            context_id: Context ID
+            name: Variable name
+
+        Returns:
+            ContextVariable or None if not found
+        """
+        return await self.context_repository.get_variable(context_id, name)
 
     async def get_enriched_prompt(
         self,

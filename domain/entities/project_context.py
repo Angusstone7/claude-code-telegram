@@ -14,6 +14,21 @@ from domain.value_objects.user_id import UserId
 
 
 @dataclass
+class ContextVariable:
+    """
+    Context variable with description for AI understanding.
+
+    The description helps Claude understand:
+    - What the variable is for
+    - How and when to use it
+    - Any special considerations
+    """
+    name: str
+    value: str
+    description: str = ""
+
+
+@dataclass
 class ContextMessage:
     """A message within a project context"""
     id: int
@@ -48,7 +63,7 @@ class ProjectContext:
     claude_session_id: Optional[str] = None
     is_current: bool = False
     message_count: int = 0
-    variables: Dict[str, str] = field(default_factory=dict)
+    variables: Dict[str, ContextVariable] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -151,9 +166,15 @@ class ProjectContext:
 
     # ==================== Context Variables ====================
 
-    def set_variable(self, name: str, value: str) -> None:
-        """Set a context variable that will be included in Claude's context"""
-        self.variables[name] = value
+    def set_variable(self, name: str, value: str, description: str = "") -> None:
+        """Set a context variable that will be included in Claude's context.
+
+        Args:
+            name: Variable name (e.g., GITLAB_TOKEN)
+            value: Variable value
+            description: Description for AI to understand how to use this variable
+        """
+        self.variables[name] = ContextVariable(name=name, value=value, description=description)
         self.updated_at = datetime.now()
 
     def delete_variable(self, name: str) -> bool:
@@ -164,22 +185,31 @@ class ProjectContext:
             return True
         return False
 
-    def get_variable(self, name: str) -> Optional[str]:
-        """Get a context variable value"""
+    def get_variable(self, name: str) -> Optional[ContextVariable]:
+        """Get a context variable"""
         return self.variables.get(name)
+
+    def get_variable_value(self, name: str) -> Optional[str]:
+        """Get just the value of a context variable"""
+        var = self.variables.get(name)
+        return var.value if var else None
 
     def build_variables_prompt(self) -> str:
         """Build a prompt block with all context variables for Claude.
 
+        Includes descriptions to help Claude understand how to use each variable.
+
         Returns:
-            Formatted string with variables, or empty string if no variables set.
+            Formatted string with variables and descriptions, or empty string if no variables set.
         """
         if not self.variables:
             return ""
 
         lines = ["📋 Context Variables (use these in your responses when relevant):"]
-        for name, value in sorted(self.variables.items()):
-            lines.append(f"  {name}={value}")
+        for var in sorted(self.variables.values(), key=lambda v: v.name):
+            lines.append(f"  {var.name}={var.value}")
+            if var.description:
+                lines.append(f"    ↳ {var.description}")
 
         return "\n".join(lines)
 

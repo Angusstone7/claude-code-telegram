@@ -89,6 +89,13 @@ class MessageHandlers:
         # YOLO mode (auto-approve all operations)
         self._yolo_mode: dict[int, bool] = {}
 
+        # Variable input state (for interactive /vars menu)
+        self._expecting_var_name: dict[int, bool] = {}      # user_id -> expecting name
+        self._expecting_var_value: dict[int, str] = {}      # user_id -> var_name being set
+        self._expecting_var_desc: dict[int, tuple] = {}     # user_id -> (var_name, var_value)
+        self._pending_var_message: dict[int, Message] = {}  # user_id -> menu message to update
+        self._editing_var_name: dict[int, str] = {}         # user_id -> var being edited
+
     def is_yolo_mode(self, user_id: int) -> bool:
         """Check if YOLO mode is enabled for user"""
         return self._yolo_mode.get(user_id, False)
@@ -112,6 +119,63 @@ class MessageHandlers:
     def set_expecting_path(self, user_id: int, expecting: bool):
         """Set whether we're expecting a path from user"""
         self._expecting_path[user_id] = expecting
+
+    # ============== Variable Input State Management ==============
+
+    def set_expecting_var_name(self, user_id: int, expecting: bool, menu_msg: Message = None):
+        """Set whether we're expecting a variable name"""
+        self._expecting_var_name[user_id] = expecting
+        if menu_msg:
+            self._pending_var_message[user_id] = menu_msg
+
+    def set_expecting_var_value(self, user_id: int, var_name: str, menu_msg: Message = None):
+        """Set that we're expecting a value for the given variable name"""
+        self._expecting_var_name.pop(user_id, None)
+        self._expecting_var_value[user_id] = var_name
+        if menu_msg:
+            self._pending_var_message[user_id] = menu_msg
+
+    def set_expecting_var_desc(self, user_id: int, var_name: str, var_value: str, menu_msg: Message = None):
+        """Set that we're expecting a description for the variable"""
+        self._expecting_var_value.pop(user_id, None)
+        self._expecting_var_desc[user_id] = (var_name, var_value)
+        if menu_msg:
+            self._pending_var_message[user_id] = menu_msg
+
+    def clear_var_state(self, user_id: int):
+        """Clear all variable input state"""
+        self._expecting_var_name.pop(user_id, None)
+        self._expecting_var_value.pop(user_id, None)
+        self._expecting_var_desc.pop(user_id, None)
+        self._pending_var_message.pop(user_id, None)
+
+    def get_pending_var_message(self, user_id: int) -> Optional[Message]:
+        """Get the pending menu message to update"""
+        return self._pending_var_message.get(user_id)
+
+    def is_expecting_var_input(self, user_id: int) -> bool:
+        """Check if we're expecting any variable input"""
+        return (
+            self._expecting_var_name.get(user_id, False) or
+            user_id in self._expecting_var_value or
+            user_id in self._expecting_var_desc
+        )
+
+    def start_var_input(self, user_id: int, menu_msg: Message = None):
+        """Start variable input flow - expect name first"""
+        self.set_expecting_var_name(user_id, True, menu_msg)
+
+    def start_var_edit(self, user_id: int, var_name: str, menu_msg: Message = None):
+        """Start variable edit flow - expect new value"""
+        self._editing_var_name[user_id] = var_name
+        self._expecting_var_value[user_id] = var_name
+        if menu_msg:
+            self._pending_var_message[user_id] = menu_msg
+
+    def cancel_var_input(self, user_id: int):
+        """Cancel variable input and clear state"""
+        self.clear_var_state(user_id)
+        self._editing_var_name.pop(user_id, None)
 
     def set_continue_session(self, user_id: int, session_id: str):
         """Set session to continue on next message"""
@@ -216,6 +280,19 @@ class MessageHandlers:
 
         if self._expecting_path.get(user_id):
             await self._handle_path_input(message)
+            return
+
+        # Handle variable input modes (for /vars interactive menu)
+        if self._expecting_var_name.get(user_id):
+            await self._handle_var_name_input(message)
+            return
+
+        if user_id in self._expecting_var_value:
+            await self._handle_var_value_input(message)
+            return
+
+        if user_id in self._expecting_var_desc:
+            await self._handle_var_desc_input(message)
             return
 
         # Check if already running (check both backends)
@@ -793,6 +870,168 @@ class MessageHandlers:
             f"📁 **Рабочая папка установлена:**\n`{path}`",
             parse_mode=ParseMode.MARKDOWN
         )
+
+    # ============== Variable Input Handlers ==============
+
+    async def _handle_var_name_input(self, message: Message):
+        """Handle variable name input during add flow"""
+        user_id = message.from_user.id
+        var_name = message.text.strip().upper()  # Uppercase convention
+
+        # Validate name (alphanumeric + underscore, starts with letter)
+        if not re.match(r'^[A-Z][A-Z0-9_]*$', var_name):
+            await message.answer(
+                "❌ **Неверное имя переменной**\n\n"
+                "Имя должно:\n"
+                "• Начинаться с буквы\n"
+                "• Содержать только буквы, цифры и `_`\n\n"
+                "Например: `GITLAB_TOKEN`, `API_KEY`, `PROJECT_STACK`",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=Keyboards.variable_cancel()
+            )
+            return
+
+        # Move to value input state
+        menu_msg = self._pending_var_message.get(user_id)
+        self.set_expecting_var_value(user_id, var_name, menu_msg)
+
+        await message.answer(
+            f"✏️ **Введите значение для `{var_name}`:**\n\n"
+            f"Например: `glpat-xxxx` или `Python/FastAPI`",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.variable_cancel()
+        )
+
+    async def _handle_var_value_input(self, message: Message):
+        """Handle variable value input during add/edit flow"""
+        user_id = message.from_user.id
+        var_name = self._expecting_var_value.get(user_id)
+        var_value = message.text.strip()
+
+        if not var_name:
+            self.clear_var_state(user_id)
+            return
+
+        if not var_value:
+            await message.answer(
+                "❌ Значение не может быть пустым",
+                reply_markup=Keyboards.variable_cancel()
+            )
+            return
+
+        # Check if editing an existing variable - keep old description
+        is_editing = user_id in self._editing_var_name
+
+        if is_editing:
+            # Save directly with existing description
+            old_desc = ""
+            try:
+                if self.context_service and self.project_service:
+                    from domain.value_objects.user_id import UserId
+                    uid = UserId.from_int(user_id)
+                    project = await self.project_service.get_current(uid)
+                    if project:
+                        context = await self.context_service.get_current(project.id)
+                        if context:
+                            old_var = await self.context_service.get_variable(context.id, var_name)
+                            if old_var:
+                                old_desc = old_var.description
+            except Exception:
+                pass
+
+            await self._save_variable(message, var_name, var_value, old_desc)
+            self._editing_var_name.pop(user_id, None)
+            return
+
+        # Move to description input state (new variable)
+        menu_msg = self._pending_var_message.get(user_id)
+        self.set_expecting_var_desc(user_id, var_name, var_value, menu_msg)
+
+        await message.answer(
+            f"📝 **Введите описание для `{var_name}`:**\n\n"
+            f"Опишите, для чего эта переменная и как её использовать.\n"
+            f"Например: _Токен GitLab для git push/pull_\n\n"
+            f"Или нажмите кнопку, чтобы пропустить.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.variable_skip_description()
+        )
+
+    async def _handle_var_desc_input(self, message: Message):
+        """Handle variable description input and save the variable"""
+        user_id = message.from_user.id
+        var_data = self._expecting_var_desc.get(user_id)
+
+        if not var_data:
+            self.clear_var_state(user_id)
+            return
+
+        var_name, var_value = var_data
+        var_desc = message.text.strip()
+
+        await self._save_variable(message, var_name, var_value, var_desc)
+
+    async def save_variable_skip_desc(self, user_id: int, message: Message):
+        """Save variable without description (called from callback)"""
+        var_data = self._expecting_var_desc.get(user_id)
+
+        if not var_data:
+            self.clear_var_state(user_id)
+            return
+
+        var_name, var_value = var_data
+        await self._save_variable(message, var_name, var_value, "")
+
+    async def _save_variable(self, message: Message, var_name: str, var_value: str, var_desc: str):
+        """Save variable to context and show updated menu"""
+        user_id = message.from_user.id
+
+        if not self.project_service or not self.context_service:
+            await message.answer("⚠️ Сервисы не инициализированы")
+            self.clear_var_state(user_id)
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+            uid = UserId.from_int(user_id)
+
+            project = await self.project_service.get_current(uid)
+            if not project:
+                await message.answer("❌ Нет активного проекта. Используйте /change")
+                self.clear_var_state(user_id)
+                return
+
+            context = await self.context_service.get_current(project.id)
+            if not context:
+                await message.answer("❌ Нет активного контекста")
+                self.clear_var_state(user_id)
+                return
+
+            # Save the variable
+            await self.context_service.set_variable(context.id, var_name, var_value, var_desc)
+
+            # Clear state
+            self.clear_var_state(user_id)
+
+            # Show success and updated list
+            variables = await self.context_service.get_variables(context.id)
+
+            # Truncate value for display
+            display_val = var_value[:20] + "..." if len(var_value) > 20 else var_value
+            desc_info = f"\n📝 {var_desc}" if var_desc else ""
+
+            await message.answer(
+                f"✅ Переменная создана\n\n"
+                f"{var_name} = {display_val}"
+                f"{desc_info}\n\n"
+                f"📋 Всего переменных: {len(variables)}",
+                parse_mode=None,
+                reply_markup=Keyboards.variables_menu(variables, project.name, context.name)
+            )
+
+        except Exception as e:
+            logger.error(f"Error saving variable: {e}")
+            await message.answer(f"❌ Ошибка: {e}")
+            self.clear_var_state(user_id)
 
 
 def register_handlers(router: Router, handlers: MessageHandlers) -> None:
