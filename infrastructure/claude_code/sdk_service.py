@@ -363,6 +363,7 @@ class ClaudeAgentSDKService:
         on_question_completed: Optional[Callable[[str], Awaitable[None]]] = None,
         on_thinking: Optional[Callable[[str], Awaitable[None]]] = None,
         on_error: Optional[Callable[[str], Awaitable[None]]] = None,
+        _retry_without_resume: bool = False,  # Internal: retry flag for 0-turns issue
     ) -> SDKTaskResult:
         """
         Run a Claude Code task using the Agent SDK.
@@ -605,8 +606,8 @@ class ClaudeAgentSDKService:
                     "PreToolUse": [HookMatcher(hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(hooks=[post_tool_hook])],
                 },
-                # NOTE: resume disabled - causes 0 turns issue with some session IDs
-                # resume=session_id,
+                # Enable session continuity for context memory (disable on retry)
+                resume=None if _retry_without_resume else session_id,
                 plugins=plugins if plugins else None,
             )
 
@@ -661,11 +662,34 @@ class ClaudeAgentSDKService:
                             f"cost=${message.total_cost_usd or 0:.4f}"
                         )
 
-                        # Warn if no turns were executed - indicates potential issue
-                        if message.num_turns == 0:
+                        # Handle 0 turns - retry without resume if session was used
+                        if message.num_turns == 0 and session_id and not _retry_without_resume:
+                            logger.warning(
+                                f"[{user_id}] Task completed with 0 turns with session {session_id[:8]}... "
+                                f"Retrying without resume..."
+                            )
+                            # Cleanup before retry
+                            self._clients.pop(user_id, None)
+                            # Recursive retry without resume
+                            return await self.run_task(
+                                user_id=user_id,
+                                prompt=prompt,
+                                working_dir=working_dir,
+                                session_id=session_id,  # Keep for return value
+                                on_text=on_text,
+                                on_tool_use=on_tool_use,
+                                on_tool_result=on_tool_result,
+                                on_permission_request=on_permission_request,
+                                on_permission_completed=on_permission_completed,
+                                on_question=on_question,
+                                on_question_completed=on_question_completed,
+                                on_thinking=on_thinking,
+                                on_error=on_error,
+                                _retry_without_resume=True,
+                            )
+                        elif message.num_turns == 0:
                             logger.warning(
                                 f"[{user_id}] Task completed with 0 turns! "
-                                f"This usually means the prompt was not processed. "
                                 f"Prompt was: {prompt[:100]}..."
                             )
 
