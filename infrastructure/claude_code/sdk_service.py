@@ -771,6 +771,16 @@ class ClaudeAgentSDKService:
         original_env = dict(os.environ)
         user_env = await self.get_env_for_user(user_id)
 
+        # Get user's preferred model (if AccountService is available)
+        user_model: Optional[str] = None
+        if self.account_service:
+            try:
+                user_model = await self.account_service.get_model(user_id)
+                if user_model:
+                    logger.info(f"[{user_id}] Using selected model: {user_model}")
+            except Exception as e:
+                logger.warning(f"[{user_id}] Error getting user model, using default: {e}")
+
         # Apply user environment
         env_changes = []
         for key, value in user_env.items():
@@ -805,6 +815,7 @@ class ClaudeAgentSDKService:
             options = ClaudeAgentOptions(
                 cwd=work_dir,
                 max_turns=self.max_turns,
+                model=user_model,  # Use user's selected model if set
                 permission_mode=self.permission_mode if self.permission_mode != "default" else None,
                 can_use_tool=can_use_tool,
                 hooks={

@@ -878,6 +878,7 @@ class AccountHandlers:
                 return
 
             creds_info = self.account_service.get_credentials_info()
+            settings = await self.account_service.get_settings(user_id)
 
             await processing_msg.edit_text(
                 f"✅ <b>Авторизация успешна!</b>\n\n"
@@ -890,6 +891,7 @@ class AccountHandlers:
                     current_mode=AuthMode.CLAUDE_ACCOUNT.value,
                     has_credentials=True,
                     subscription_type=creds_info.subscription_type,
+                    current_model=settings.model,
                 )
             )
             await state.clear()
