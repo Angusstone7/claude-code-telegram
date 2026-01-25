@@ -37,6 +37,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Build Telegram MCP server
+WORKDIR /app/telegram-mcp
+RUN npm install && npm run build
+
+WORKDIR /app
+
 # Create directories for logs and data
 RUN mkdir -p logs data
 

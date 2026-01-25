@@ -178,6 +178,7 @@ class ClaudeAgentSDKService:
         permission_mode: str = "default",  # "default", "acceptEdits", "bypassPermissions"
         plugins_dir: str = "/plugins",  # For custom plugins only
         enabled_plugins: list[str] = None,  # For custom plugins only
+        telegram_mcp_path: str = "/app/telegram-mcp/build/index.js",  # Path to telegram MCP server
     ):
         if not SDK_AVAILABLE:
             raise RuntimeError(
@@ -190,6 +191,7 @@ class ClaudeAgentSDKService:
         self.permission_mode = permission_mode
         self.plugins_dir = plugins_dir
         self.enabled_plugins = enabled_plugins or []
+        self.telegram_mcp_path = telegram_mcp_path
 
         # Active clients by user_id
         self._clients: dict[int, ClaudeSDKClient] = {}
@@ -213,6 +215,40 @@ class ClaudeAgentSDKService:
         if not SDK_AVAILABLE:
             return False, "claude-agent-sdk not installed. Install with: pip install claude-agent-sdk"
         return True, "Claude Agent SDK is available"
+
+    def _get_mcp_servers_config(self, user_id: int) -> dict:
+        """
+        Build MCP servers configuration for ClaudeAgentOptions.
+
+        Includes telegram MCP server with dynamic chat_id for the current user.
+
+        Args:
+            user_id: Telegram user ID to send files/messages to
+
+        Returns:
+            Dict of MCP server configurations
+        """
+        mcp_servers = {}
+
+        # Check if telegram MCP server exists
+        if os.path.isfile(self.telegram_mcp_path):
+            telegram_token = os.environ.get("TELEGRAM_TOKEN", "")
+            if telegram_token:
+                mcp_servers["telegram"] = {
+                    "command": "node",
+                    "args": [self.telegram_mcp_path],
+                    "env": {
+                        "TELEGRAM_TOKEN": telegram_token,
+                        "TELEGRAM_CHAT_ID": str(user_id),
+                    }
+                }
+                logger.debug(f"[{user_id}] Telegram MCP server configured")
+            else:
+                logger.warning("TELEGRAM_TOKEN not set, telegram MCP server disabled")
+        else:
+            logger.debug(f"Telegram MCP server not found at {self.telegram_mcp_path}")
+
+        return mcp_servers
 
     def _get_plugin_configs(self) -> list[dict]:
         """
@@ -712,6 +748,11 @@ class ClaudeAgentSDKService:
             if plugins:
                 logger.info(f"[{user_id}] Using {len(plugins)} plugins: {[p['path'] for p in plugins]}")
 
+            # Build MCP servers configuration (with dynamic chat_id)
+            mcp_servers = self._get_mcp_servers_config(user_id)
+            if mcp_servers:
+                logger.info(f"[{user_id}] MCP servers enabled: {list(mcp_servers.keys())}")
+
             # Build options
             options = ClaudeAgentOptions(
                 cwd=work_dir,
@@ -725,6 +766,8 @@ class ClaudeAgentSDKService:
                 # Enable session continuity for context memory (disable on retry)
                 resume=None if _retry_without_resume else session_id,
                 plugins=plugins if plugins else None,
+                # MCP servers for custom tools (telegram file sending, etc.)
+                mcp_servers=mcp_servers if mcp_servers else None,
             )
 
             resume_info = f"resume={session_id[:16]}..." if session_id and not _retry_without_resume else "new session"
