@@ -50,11 +50,18 @@ class StreamingHandler:
     async def start(self, initial_text: str = "🤖 Запускаю...") -> Message:
         """Start streaming with an initial message"""
         if not self.current_message:
-            self.current_message = await self.bot.send_message(
-                self.chat_id,
-                initial_text,
-                parse_mode="Markdown"
-            )
+            try:
+                self.current_message = await self.bot.send_message(
+                    self.chat_id,
+                    initial_text,
+                    parse_mode="Markdown"
+                )
+            except TelegramBadRequest:
+                # Fallback without markdown if parsing fails
+                self.current_message = await self.bot.send_message(
+                    self.chat_id,
+                    initial_text
+                )
             self.messages.append(self.current_message)
         self.buffer = initial_text
         self.last_update_time = time.time()
