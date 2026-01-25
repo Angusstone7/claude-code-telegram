@@ -601,6 +601,55 @@ class CommandHandlers:
         except Exception as e:
             await message.answer(f"❌ Diagnostics failed: {e}")
 
+    async def plugins(self, message: Message) -> None:
+        """
+        Handle /plugins command - show and manage Claude Code plugins.
+
+        Displays list of enabled plugins with ability to:
+        - View plugin info
+        - Enable/disable plugins
+        - Browse marketplace for new plugins
+        """
+        if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
+            await message.answer("⚠️ SDK сервис не инициализирован")
+            return
+
+        sdk_service = self.message_handlers.sdk_service
+        if not sdk_service:
+            await message.answer("⚠️ SDK сервис не доступен")
+            return
+
+        # Get enabled plugins info
+        plugins = sdk_service.get_enabled_plugins_info()
+
+        if not plugins:
+            text = (
+                "🔌 <b>Плагины Claude Code</b>\n\n"
+                "Нет активных плагинов.\n\n"
+                "Нажмите 🛒 <b>Магазин</b> чтобы добавить плагины."
+            )
+        else:
+            text = "🔌 <b>Плагины Claude Code</b>\n\n"
+            for p in plugins:
+                name = p.get("name", "unknown")
+                desc = p.get("description", "")
+                source = p.get("source", "official")
+                available = p.get("available", True)
+
+                status = "✅" if available else "⚠️"
+                source_icon = "🌐" if source == "official" else "📁"
+                text += f"{status} {source_icon} <b>{name}</b>\n"
+                if desc:
+                    text += f"   <i>{desc}</i>\n"
+
+            text += f"\n<i>Всего: {len(plugins)} плагинов</i>"
+
+        await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=Keyboards.plugins_menu(plugins)
+        )
+
     async def vars(self, message: Message, command: CommandObject) -> None:
         """
         Handle /vars command - manage context variables with interactive menu.
@@ -742,6 +791,7 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.cancel, Command("cancel"))
     router.message.register(handlers.status, Command("status"))
     router.message.register(handlers.diagnose, Command("diagnose"))
+    router.message.register(handlers.plugins, Command("plugins"))
 
     # Project/Context management commands
     router.message.register(handlers.change, Command("change"))

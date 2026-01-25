@@ -622,6 +622,129 @@ class Keyboards:
             ]
         ])
 
+    # ============== Plugin Management Keyboards ==============
+
+    @staticmethod
+    def plugins_menu(
+        plugins: List[Dict],
+        show_marketplace: bool = True
+    ) -> InlineKeyboardMarkup:
+        """
+        Main plugins menu with list of enabled plugins.
+
+        Args:
+            plugins: List of plugin info dicts with name, description, available, source
+            show_marketplace: Whether to show marketplace button
+
+        Returns:
+            InlineKeyboardMarkup with:
+            - List of plugins with toggle buttons
+            - "Add from marketplace" button
+            - "Close" button
+        """
+        buttons = []
+
+        # List plugins (max 10)
+        for plugin in plugins[:10]:
+            name = plugin.get("name", "unknown")
+            source = plugin.get("source", "official")
+            available = plugin.get("available", True)
+
+            # Status indicator
+            status_emoji = "✅" if available else "⚠️"
+            source_emoji = "🌐" if source == "official" else "📁"
+
+            # Plugin row: status + name [toggle off]
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{status_emoji} {source_emoji} {name}",
+                    callback_data=f"plugin:info:{name[:20]}"
+                ),
+                InlineKeyboardButton(
+                    text="❌",
+                    callback_data=f"plugin:disable:{name[:20]}"
+                )
+            ])
+
+        # Action buttons
+        action_row = []
+        if show_marketplace:
+            action_row.append(
+                InlineKeyboardButton(text="🛒 Магазин", callback_data="plugin:marketplace")
+            )
+        action_row.append(
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="plugin:refresh")
+        )
+        buttons.append(action_row)
+
+        buttons.append([
+            InlineKeyboardButton(text="❌ Закрыть", callback_data="plugin:close")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def plugins_marketplace(
+        available_plugins: List[Dict],
+        enabled_names: List[str]
+    ) -> InlineKeyboardMarkup:
+        """
+        Marketplace view with available plugins to enable.
+
+        Args:
+            available_plugins: List of all available plugins from marketplace
+            enabled_names: List of currently enabled plugin names
+        """
+        buttons = []
+
+        for plugin in available_plugins[:12]:  # Max 12 in marketplace
+            name = plugin.get("name", "unknown")
+            is_enabled = name in enabled_names
+
+            # Show enable button only for disabled plugins
+            if is_enabled:
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"✅ {name}",
+                        callback_data=f"plugin:info:{name[:20]}"
+                    )
+                ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"➕ {name}",
+                        callback_data=f"plugin:enable:{name[:20]}"
+                    ),
+                    InlineKeyboardButton(
+                        text="ℹ️",
+                        callback_data=f"plugin:info:{name[:20]}"
+                    )
+                ])
+
+        # Back button
+        buttons.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="plugin:list")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def plugin_confirm_action(name: str, action: str) -> InlineKeyboardMarkup:
+        """Confirmation for plugin enable/disable"""
+        if action == "enable":
+            confirm_text = "✅ Да, включить"
+            callback = f"plugin:enable_confirm:{name[:20]}"
+        else:
+            confirm_text = "❌ Да, отключить"
+            callback = f"plugin:disable_confirm:{name[:20]}"
+
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=confirm_text, callback_data=callback),
+                InlineKeyboardButton(text="⬅️ Отмена", callback_data="plugin:list")
+            ]
+        ])
+
 
 class CallbackData:
     """Helper for parsing callback data"""

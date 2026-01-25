@@ -316,6 +316,48 @@ class ClaudeAgentSDKService:
 
         return plugins_info
 
+    def add_plugin(self, plugin_name: str) -> bool:
+        """
+        Dynamically add a plugin to enabled list.
+
+        Args:
+            plugin_name: Name of the plugin to enable
+
+        Returns:
+            True if added, False if already enabled
+        """
+        # Normalize name (remove prefix if any)
+        if plugin_name.startswith("official:") or plugin_name.startswith("local:"):
+            plugin_name = plugin_name.split(":", 1)[1]
+
+        if plugin_name in self.enabled_plugins:
+            return False
+
+        self.enabled_plugins.append(plugin_name)
+        logger.info(f"Plugin enabled: {plugin_name}")
+        return True
+
+    def remove_plugin(self, plugin_name: str) -> bool:
+        """
+        Dynamically remove a plugin from enabled list.
+
+        Args:
+            plugin_name: Name of the plugin to disable
+
+        Returns:
+            True if removed, False if not found
+        """
+        # Normalize name (remove prefix if any)
+        if plugin_name.startswith("official:") or plugin_name.startswith("local:"):
+            plugin_name = plugin_name.split(":", 1)[1]
+
+        if plugin_name not in self.enabled_plugins:
+            return False
+
+        self.enabled_plugins.remove(plugin_name)
+        logger.info(f"Plugin disabled: {plugin_name}")
+        return True
+
     def is_task_running(self, user_id: int) -> bool:
         """Check if a task is currently running for a user"""
         status = self._task_status.get(user_id, TaskStatus.IDLE)
