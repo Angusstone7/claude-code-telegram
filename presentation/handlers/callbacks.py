@@ -643,7 +643,7 @@ class CallbackHandlers:
             try:
                 await callback.message.edit_text(
                     text,
-                    parse_mode=None,
+                    parse_mode="HTML",
                     reply_markup=Keyboards.folder_browser(folders, root_path)
                 )
             except Exception as edit_err:
