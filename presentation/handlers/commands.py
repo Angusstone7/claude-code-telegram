@@ -217,7 +217,7 @@ class CommandHandlers:
             lines.append("\n⚠️ <b>Предупреждения:</b>")
             lines.extend(info["alerts"])
 
-        await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=Keyboards.system_metrics())
+        await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=Keyboards.system_metrics(show_back=True, back_to="menu:system"))
 
     async def docker(self, message: Message) -> None:
         """Handle /docker command and 🐳 Docker button"""
@@ -249,7 +249,7 @@ class CommandHandlers:
             await message.answer(
                 text,
                 parse_mode="HTML",
-                reply_markup=Keyboards.docker_list(containers)
+                reply_markup=Keyboards.docker_list(containers, show_back=True, back_to="menu:system")
             )
 
         except Exception as e:
@@ -326,14 +326,14 @@ class CommandHandlers:
                 f"Текущий: <b>{current_name}</b>\n\n"
                 f"Выберите проект:"
             )
-            keyboard = Keyboards.project_list(projects, current_id)
+            keyboard = Keyboards.project_list(projects, current_id, show_back=True, back_to="menu:projects")
         else:
             text = (
                 f"📂 <b>Нет проектов</b>\n\n"
                 f"У вас пока нет проектов.\n"
                 f"Создайте новый или откройте `/root/projects`"
             )
-            keyboard = Keyboards.project_list([], None, show_create=True)
+            keyboard = Keyboards.project_list([], None, show_create=True, show_back=True, back_to="menu:projects")
 
         await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
@@ -374,7 +374,7 @@ class CommandHandlers:
             f"📌 Статус: {session_status}"
         )
 
-        keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count)
+        keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count, show_back=True, back_to="menu:context")
         await message.answer(text, parse_mode=None, reply_markup=keyboard)
 
     async def fresh(self, message: Message) -> None:
@@ -748,7 +748,7 @@ class CommandHandlers:
                     f"Нажмите ➕ Добавить для создания."
                 )
 
-            keyboard = Keyboards.variables_menu(variables, project.name, context.name)
+            keyboard = Keyboards.variables_menu(variables, project.name, context.name, show_back=True, back_to="menu:context")
             await message.answer(text, parse_mode=None, reply_markup=keyboard)
             return
 

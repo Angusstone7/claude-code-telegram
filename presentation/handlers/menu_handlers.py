@@ -327,14 +327,14 @@ class MenuHandlers:
                 f"Текущий: <b>{current.name if current else 'Нет'}</b>\n\n"
                 f"Выберите проект:"
             )
-            keyboard = Keyboards.project_list(projects, current_id)
+            keyboard = Keyboards.project_list(projects, current_id, show_back=True, back_to="menu:projects")
         else:
             text = (
                 f"📂 <b>Нет проектов</b>\n\n"
                 f"У вас пока нет проектов.\n"
                 f"Создайте новый или откройте <code>/root/projects</code>"
             )
-            keyboard = Keyboards.project_list([], None, show_create=True)
+            keyboard = Keyboards.project_list([], None, show_create=True, show_back=True, back_to="menu:projects")
 
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         await callback.answer()
@@ -454,7 +454,7 @@ class MenuHandlers:
             f"📌 Статус: {session_status}"
         )
 
-        keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count)
+        keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count, show_back=True, back_to="menu:context")
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         await callback.answer()
 
@@ -509,7 +509,7 @@ class MenuHandlers:
                 f"Нажмите ➕ Добавить для создания."
             )
 
-        keyboard = Keyboards.variables_menu(variables, project.name, context.name)
+        keyboard = Keyboards.variables_menu(variables, project.name, context.name, show_back=True, back_to="menu:context")
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         await callback.answer()
 
@@ -841,7 +841,7 @@ class MenuHandlers:
                 })
 
             text = "\n".join(lines)
-            keyboard = Keyboards.docker_list(container_list)
+            keyboard = Keyboards.docker_list(container_list, show_back=True, back_to="menu:system")
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 

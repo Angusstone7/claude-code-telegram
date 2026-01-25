@@ -205,8 +205,21 @@ class Keyboards:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def container_actions(container_id: str, status: str) -> InlineKeyboardMarkup:
-        """Keyboard for container actions"""
+    def container_actions(
+        container_id: str,
+        status: str,
+        show_back: bool = True,
+        back_to: str = "docker:list"
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard for container actions
+
+        Args:
+            container_id: Docker container ID
+            status: Container status (running, exited, etc.)
+            show_back: Whether to show back button
+            back_to: Callback data for back button
+        """
         buttons = []
 
         row = []
@@ -223,6 +236,12 @@ class Keyboards:
             InlineKeyboardButton(text="📋 Логи", callback_data=f"docker:logs:{container_id}"),
             InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"docker:rm:{container_id}")
         ])
+
+        # Back button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="🔙 К списку", callback_data=back_to)
+            ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -270,8 +289,17 @@ class Keyboards:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def system_metrics() -> InlineKeyboardMarkup:
-        """Keyboard for system metrics"""
+    def system_metrics(
+        show_back: bool = True,
+        back_to: str = "menu:system"
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard for system metrics
+
+        Args:
+            show_back: Whether to show back button
+            back_to: Callback data for back button
+        """
         buttons = [
             [
                 InlineKeyboardButton(text="🔄 Обновить", callback_data="metrics:refresh"),
@@ -282,6 +310,13 @@ class Keyboards:
                 InlineKeyboardButton(text="📝 История", callback_data="commands:history")
             ]
         ]
+
+        # Back button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+            ])
+
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
@@ -292,8 +327,19 @@ class Keyboards:
         ])
 
     @staticmethod
-    def docker_list(containers: List[Dict]) -> InlineKeyboardMarkup:
-        """Keyboard with list of containers and their action buttons"""
+    def docker_list(
+        containers: List[Dict],
+        show_back: bool = True,
+        back_to: str = "menu:system"
+    ) -> InlineKeyboardMarkup:
+        """
+        Keyboard with list of containers and their action buttons
+
+        Args:
+            containers: List of container dictionaries
+            show_back: Whether to show back button
+            back_to: Callback data for back button
+        """
         buttons = []
         for c in containers[:10]:  # Max 10 containers
             container_id = c.get("id", "")
@@ -320,10 +366,15 @@ class Keyboards:
                 InlineKeyboardButton(text="📋", callback_data=f"docker:logs:{container_id}"),
             ])
 
-        # Refresh button
-        buttons.append([
+        # Refresh and back buttons
+        action_buttons = [
             InlineKeyboardButton(text="🔄 Обновить", callback_data="docker:list")
-        ])
+        ]
+        if show_back:
+            action_buttons.append(
+                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+            )
+        buttons.append(action_buttons)
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -428,7 +479,9 @@ class Keyboards:
     def project_list(
         projects: List,
         current_project_id: Optional[str] = None,
-        show_create: bool = True
+        show_create: bool = True,
+        show_back: bool = True,
+        back_to: str = "menu:projects"
     ) -> InlineKeyboardMarkup:
         """
         Keyboard with list of projects for /change command.
@@ -437,6 +490,8 @@ class Keyboards:
             projects: List of Project entities
             current_project_id: ID of currently active project
             show_create: Whether to show create button
+            show_back: Whether to show back button
+            back_to: Callback data for back button
         """
         buttons = []
 
@@ -469,13 +524,21 @@ class Keyboards:
         )
         buttons.append(action_row)
 
+        # Back button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+            ])
+
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
     def context_menu(
         current_context_name: str = "",
         project_name: str = "",
-        message_count: int = 0
+        message_count: int = 0,
+        show_back: bool = True,
+        back_to: str = "menu:context"
     ) -> InlineKeyboardMarkup:
         """
         Main context menu with action buttons.
@@ -484,6 +547,8 @@ class Keyboards:
             current_context_name: Name of current context
             project_name: Name of current project
             message_count: Number of messages in current context
+            show_back: Whether to show back button
+            back_to: Callback data for back button
         """
         buttons = [
             [
@@ -492,9 +557,15 @@ class Keyboards:
             ],
             [
                 InlineKeyboardButton(text="🗑️ Очистить", callback_data="ctx:clear"),
-                InlineKeyboardButton(text="❌ Закрыть", callback_data="ctx:close")
             ]
         ]
+
+        # Add back button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+            ])
+
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
@@ -720,7 +791,9 @@ class Keyboards:
     def variables_menu(
         variables: Dict,  # Dict[str, ContextVariable]
         project_name: str = "",
-        context_name: str = ""
+        context_name: str = "",
+        show_back: bool = True,
+        back_to: str = "menu:context"
     ) -> InlineKeyboardMarkup:
         """
         Main variables menu with list of existing variables.
@@ -729,12 +802,14 @@ class Keyboards:
             variables: Dict of name -> ContextVariable
             project_name: Current project name for display
             context_name: Current context name for display
+            show_back: Whether to show back button
+            back_to: Callback data for back button
 
         Returns:
             InlineKeyboardMarkup with:
             - List of variables with view/edit/delete buttons
             - "Add new" button
-            - "Close" button
+            - "Back" button
         """
         buttons = []
 
@@ -759,11 +834,16 @@ class Keyboards:
                 InlineKeyboardButton(text="🗑️", callback_data=f"var:d:{callback_name}")
             ])
 
-        # Add and Close buttons
+        # Add button
         buttons.append([
-            InlineKeyboardButton(text="➕ Добавить", callback_data="var:add"),
-            InlineKeyboardButton(text="❌ Закрыть", callback_data="var:close")
+            InlineKeyboardButton(text="➕ Добавить", callback_data="var:add")
         ])
+
+        # Back button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+            ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 

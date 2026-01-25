@@ -1062,7 +1062,7 @@ class MessageHandlers:
                 f"{desc_info}\n\n"
                 f"📋 Всего переменных: {len(variables)}",
                 parse_mode=None,
-                reply_markup=Keyboards.variables_menu(variables, project.name, context.name)
+                reply_markup=Keyboards.variables_menu(variables, project.name, context.name, show_back=True, back_to="menu:context")
             )
 
         except Exception as e:

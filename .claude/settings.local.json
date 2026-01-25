@@ -10,7 +10,10 @@
       "mcp__*",
       "Bash(grep:*)",
       "WebFetch(domain:github.com)",
-      "Bash(dir \"%APPDATA%\\\\claude-code\"\" 2>nul || echo \"Not found in AppData/Roaming \")"
+      "Bash(dir \"%APPDATA%\\\\claude-code\"\" 2>nul || echo \"Not found in AppData/Roaming \")",
+      "Bash(python3:*)",
+      "Bash(\"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\.venv\\\\Scripts\\\\python.exe\" -c \"\nfrom anthropic import AsyncAnthropic\nimport inspect\nsig = inspect.signature\\(AsyncAnthropic.__init__\\)\nprint\\(''AsyncAnthropic.__init__ parameters:''\\)\nfor param_name, param in sig.parameters.items\\(\\):\n    if param_name != ''self'':\n        print\\(f''  {param_name}: {param.annotation if param.annotation != inspect.Parameter.empty else \"\"Any\"\"}''\\)\n\")",
+      "Bash(find:*)"
     ]
   }
 }

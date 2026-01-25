@@ -146,7 +146,7 @@ class CallbackHandlers:
                 await callback.message.edit_text(
                     text,
                     parse_mode="HTML",
-                    reply_markup=Keyboards.docker_list(containers)
+                    reply_markup=Keyboards.docker_list(containers, show_back=True, back_to="menu:system")
                 )
 
         except Exception as e:
@@ -272,7 +272,7 @@ class CallbackHandlers:
                 await callback.message.edit_text(
                     text,
                     parse_mode="HTML",
-                    reply_markup=Keyboards.container_actions(container_id, container["status"])
+                    reply_markup=Keyboards.container_actions(container_id, container["status"], show_back=True, back_to="docker:list")
                 )
             else:
                 await callback.answer("Контейнер не найден")
@@ -817,7 +817,7 @@ class CallbackHandlers:
             await callback.message.edit_text(
                 result_text + "\n\n📁 Ваши проекты:",
                 parse_mode=None,
-                reply_markup=Keyboards.project_list(projects, current_id)
+                reply_markup=Keyboards.project_list(projects, current_id, show_back=True, back_to="menu:projects")
             )
             await callback.answer(f"✅ Проект {project_name} удален")
 
@@ -850,7 +850,7 @@ class CallbackHandlers:
             await callback.message.edit_text(
                 text,
                 parse_mode=None,
-                reply_markup=Keyboards.project_list(projects, current_id)
+                reply_markup=Keyboards.project_list(projects, current_id, show_back=True, back_to="menu:projects")
             )
             await callback.answer()
 
@@ -899,7 +899,7 @@ class CallbackHandlers:
                 f"📌 Статус: {session_status}"
             )
 
-            keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count)
+            keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count, show_back=True, back_to="menu:context")
             await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
             await callback.answer()
 
@@ -924,7 +924,7 @@ class CallbackHandlers:
                 # Create default context if none exist
                 context = await ctx_service.create_new(project.id, uid, "main", set_as_current=True)
                 text = f"✨ Создан контекст: {context.name}"
-                keyboard = Keyboards.context_menu(context.name, project.name, 0)
+                keyboard = Keyboards.context_menu(context.name, project.name, 0, show_back=True, back_to="menu:context")
 
             await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
             await callback.answer()
@@ -953,7 +953,7 @@ class CallbackHandlers:
                     f"📂 Проект: {project.name}\n"
                     f"📌 Статус: {session_status}"
                 )
-                keyboard = Keyboards.context_menu(context.name, project.name, context.message_count)
+                keyboard = Keyboards.context_menu(context.name, project.name, context.message_count, show_back=True, back_to="menu:context")
                 await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
                 await callback.answer(f"Контекст: {context.name}")
             else:
@@ -979,7 +979,7 @@ class CallbackHandlers:
                 f"Чистый старт — без истории!\n"
                 f"Отправьте первое сообщение."
             )
-            keyboard = Keyboards.context_menu(context.name, project.name, 0)
+            keyboard = Keyboards.context_menu(context.name, project.name, 0, show_back=True, back_to="menu:context")
             await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
             await callback.answer(f"Создан {context.name}")
 
@@ -1042,7 +1042,7 @@ class CallbackHandlers:
                 f"📂 Проект: {project.name}\n\n"
                 f"Начните новый диалог."
             )
-            keyboard = Keyboards.context_menu(new_context.name, project.name, 0)
+            keyboard = Keyboards.context_menu(new_context.name, project.name, 0, show_back=True, back_to="menu:context")
             await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
             await callback.answer("Новый контекст создан")
 
@@ -1245,7 +1245,7 @@ class CallbackHandlers:
                     f"Нажмите ➕ Добавить для создания."
                 )
 
-            keyboard = Keyboards.variables_menu(variables, project.name, context.name)
+            keyboard = Keyboards.variables_menu(variables, project.name, context.name, show_back=True, back_to="menu:context")
             await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
             await callback.answer()
 
