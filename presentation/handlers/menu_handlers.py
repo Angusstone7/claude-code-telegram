@@ -671,7 +671,11 @@ class MenuHandlers:
 
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.plugins_menu(plugins),
+            reply_markup=Keyboards.plugins_menu(
+                plugins,
+                show_back=True,
+                back_to="menu:main"
+            ),
             parse_mode="HTML"
         )
         await callback.answer()

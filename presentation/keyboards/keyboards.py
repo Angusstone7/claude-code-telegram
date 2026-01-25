@@ -800,7 +800,9 @@ class Keyboards:
     @staticmethod
     def plugins_menu(
         plugins: List[Dict],
-        show_marketplace: bool = True
+        show_marketplace: bool = True,
+        show_back: bool = True,
+        back_to: str = "menu:main"
     ) -> InlineKeyboardMarkup:
         """
         Main plugins menu with list of enabled plugins.
@@ -808,12 +810,14 @@ class Keyboards:
         Args:
             plugins: List of plugin info dicts with name, description, available, source
             show_marketplace: Whether to show marketplace button
+            show_back: Show back button instead of close button
+            back_to: Callback data for back button
 
         Returns:
             InlineKeyboardMarkup with:
             - List of plugins with toggle buttons
             - "Add from marketplace" button
-            - "Close" button
+            - "Back" or "Close" button
         """
         buttons = []
 
@@ -850,9 +854,15 @@ class Keyboards:
         )
         buttons.append(action_row)
 
-        buttons.append([
-            InlineKeyboardButton(text="❌ Закрыть", callback_data="plugin:close")
-        ])
+        # Back or close button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="◀️ Назад", callback_data=back_to)
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="❌ Закрыть", callback_data="plugin:close")
+            ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
