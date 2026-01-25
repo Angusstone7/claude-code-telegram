@@ -10,8 +10,8 @@
  * - send_plan: Create a .md file with plan and send it to Telegram
  *
  * Environment variables:
- * - TELEGRAM_TOKEN: Bot token from @BotFather
- * - TELEGRAM_CHAT_ID: Target chat ID
+ * - TELEGRAM_TOKEN: Bot token from @BotFather (required)
+ * - TELEGRAM_CHAT_ID: Default chat ID (optional, can be overridden per-call)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -24,22 +24,26 @@ import * as fs from "fs";
 import * as path from "path";
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const DEFAULT_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// Validate environment
+// Validate environment - only token is required
 if (!TELEGRAM_TOKEN) {
   console.error("Error: TELEGRAM_TOKEN environment variable is required");
   process.exit(1);
 }
-if (!TELEGRAM_CHAT_ID) {
-  console.error("Error: TELEGRAM_CHAT_ID environment variable is required");
-  process.exit(1);
+
+/**
+ * Resolve chat_id from parameter or environment
+ */
+function resolveChatId(paramChatId?: string): string | null {
+  return paramChatId || DEFAULT_CHAT_ID || null;
 }
 
 /**
  * Send a document to Telegram using multipart/form-data
  */
 async function sendDocument(
+  chatId: string,
   filePath: string,
   caption?: string
 ): Promise<{ ok: boolean; description?: string }> {
@@ -47,7 +51,7 @@ async function sendDocument(
   const fileName = path.basename(filePath);
 
   const formData = new FormData();
-  formData.append("chat_id", TELEGRAM_CHAT_ID!);
+  formData.append("chat_id", chatId);
   formData.append("document", new Blob([fileBuffer]), fileName);
   if (caption) {
     formData.append("caption", caption);
@@ -65,6 +69,7 @@ async function sendDocument(
  * Send a text message to Telegram
  */
 async function sendMessage(
+  chatId: string,
   text: string,
   parseMode: string = "HTML"
 ): Promise<{ ok: boolean; description?: string }> {
@@ -74,7 +79,7 @@ async function sendMessage(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
+        chat_id: chatId,
         text: text,
         parse_mode: parseMode,
       }),
@@ -104,7 +109,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "send_file",
         description:
-          "Send a file to the user's Telegram chat. Use this when the user asks you to send them a file, export something, or share a document.",
+          "Send a file to Telegram chat. Use this when the user asks you to send them a file, export something, or share a document.",
         inputSchema: {
           type: "object",
           properties: {
@@ -116,6 +121,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Optional caption for the file (supports HTML)",
             },
+            chat_id: {
+              type: "string",
+              description:
+                "Telegram chat ID to send to. If not specified, uses default from environment.",
+            },
           },
           required: ["file_path"],
         },
@@ -123,7 +133,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "send_message",
         description:
-          "Send a text message to the user's Telegram chat. Use this for notifications, summaries, or when the user asks to be notified about something.",
+          "Send a text message to Telegram chat. Use this for notifications, summaries, or when the user asks to be notified about something.",
         inputSchema: {
           type: "object",
           properties: {
@@ -136,6 +146,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: ["HTML", "Markdown", "MarkdownV2"],
               description: "Parse mode for formatting (default: HTML)",
             },
+            chat_id: {
+              type: "string",
+              description:
+                "Telegram chat ID to send to. If not specified, uses default from environment.",
+            },
           },
           required: ["text"],
         },
@@ -143,7 +158,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "send_plan",
         description:
-          "Create a plan document and send it as a .md file to the user's Telegram. Use this when the user asks you to create a plan, roadmap, or detailed specification and send it to them.",
+          "Create a plan document and send it as a .md file to Telegram. Use this when the user asks you to create a plan, roadmap, or detailed specification and send it to them.",
         inputSchema: {
           type: "object",
           properties: {
@@ -154,6 +169,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             content: {
               type: "string",
               description: "Plan content in Markdown format",
+            },
+            chat_id: {
+              type: "string",
+              description:
+                "Telegram chat ID to send to. If not specified, uses default from environment.",
             },
           },
           required: ["title", "content"],
@@ -172,10 +192,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "send_file": {
         const filePath = args?.file_path as string;
         const caption = args?.caption as string | undefined;
+        const chatId = resolveChatId(args?.chat_id as string | undefined);
 
         if (!filePath) {
           return {
             content: [{ type: "text", text: "Error: file_path is required" }],
+            isError: true,
+          };
+        }
+
+        if (!chatId) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: chat_id is required (not provided and no default set)",
+              },
+            ],
             isError: true,
           };
         }
@@ -189,7 +222,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
-        const result = await sendDocument(filePath, caption);
+        const result = await sendDocument(chatId, filePath, caption);
 
         return {
           content: [
@@ -207,6 +240,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "send_message": {
         const text = args?.text as string;
         const parseMode = (args?.parse_mode as string) || "HTML";
+        const chatId = resolveChatId(args?.chat_id as string | undefined);
 
         if (!text) {
           return {
@@ -215,7 +249,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
-        const result = await sendMessage(text, parseMode);
+        if (!chatId) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: chat_id is required (not provided and no default set)",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const result = await sendMessage(chatId, text, parseMode);
 
         return {
           content: [
@@ -233,11 +279,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "send_plan": {
         const title = args?.title as string;
         const content = args?.content as string;
+        const chatId = resolveChatId(args?.chat_id as string | undefined);
 
         if (!title || !content) {
           return {
             content: [
               { type: "text", text: "Error: title and content are required" },
+            ],
+            isError: true,
+          };
+        }
+
+        if (!chatId) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: chat_id is required (not provided and no default set)",
+              },
             ],
             isError: true,
           };
@@ -254,7 +313,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         try {
           // Send to Telegram
-          const result = await sendDocument(tempPath, `📋 План: ${title}`);
+          const result = await sendDocument(
+            chatId,
+            tempPath,
+            `📋 План: ${title}`
+          );
 
           return {
             content: [
@@ -298,7 +361,9 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // Log to stderr to not interfere with JSON-RPC on stdout
-  console.error("Telegram MCP server started");
+  console.error(
+    `Telegram MCP server started (default chat_id: ${DEFAULT_CHAT_ID || "not set"})`
+  );
 }
 
 main().catch((error) => {
