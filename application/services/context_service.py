@@ -6,7 +6,7 @@ Like Cursor IDE's context/conversation management.
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from domain.entities.project_context import ProjectContext, ContextMessage
 from domain.value_objects.user_id import UserId
@@ -250,3 +250,73 @@ class ContextService:
         await self.clear_messages(context_id)
         await self.clear_claude_session(context_id)
         logger.info(f"Started fresh for context {context_id}")
+
+    # ==================== Context Variables ====================
+
+    async def set_variable(self, context_id: str, name: str, value: str) -> None:
+        """
+        Set a context variable that will be included in Claude's context.
+
+        Args:
+            context_id: Context ID
+            name: Variable name (e.g., 'GITLAB_TOKEN')
+            value: Variable value
+        """
+        await self.context_repository.set_variable(context_id, name, value)
+        logger.info(f"Set variable '{name}' for context {context_id}")
+
+    async def delete_variable(self, context_id: str, name: str) -> bool:
+        """
+        Delete a context variable.
+
+        Args:
+            context_id: Context ID
+            name: Variable name to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        result = await self.context_repository.delete_variable(context_id, name)
+        if result:
+            logger.info(f"Deleted variable '{name}' from context {context_id}")
+        return result
+
+    async def get_variables(self, context_id: str) -> Dict[str, str]:
+        """
+        Get all context variables.
+
+        Args:
+            context_id: Context ID
+
+        Returns:
+            Dict of variable name -> value
+        """
+        return await self.context_repository.get_variables(context_id)
+
+    async def get_enriched_prompt(
+        self,
+        context_id: str,
+        user_prompt: str
+    ) -> str:
+        """
+        Enrich a user prompt with context variables.
+
+        This builds a prompt that includes all context variables
+        so Claude can use them automatically.
+
+        Args:
+            context_id: Context ID
+            user_prompt: Original user prompt
+
+        Returns:
+            Enriched prompt with context variables prepended
+        """
+        context = await self.context_repository.find_by_id(context_id)
+        if not context:
+            return user_prompt
+
+        variables_block = context.build_variables_prompt()
+        if variables_block:
+            return f"{variables_block}\n\n---\n\n{user_prompt}"
+
+        return user_prompt

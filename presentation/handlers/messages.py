@@ -237,6 +237,7 @@ class MessageHandlers:
         working_dir = self.get_working_dir(user_id)
         session_id = self._continue_sessions.get(user_id)  # Don't pop - keep for next message
         context_id = None
+        enriched_prompt = message.text  # May be enriched with context variables
 
         # Use project/context services if available (for auto-continue)
         if self.project_service and self.context_service:
@@ -262,6 +263,14 @@ class MessageHandlers:
                     if not session_id and context.claude_session_id:
                         session_id = context.claude_session_id
                         logger.info(f"Auto-continuing session {session_id} for context {context.name}")
+
+                    # Enrich prompt with context variables
+                    new_prompt = await self.context_service.get_enriched_prompt(
+                        context_id, message.text
+                    )
+                    if new_prompt != message.text:
+                        enriched_prompt = new_prompt
+                        logger.info(f"Enriched prompt with {len(context.variables)} context variables")
 
                     # Update local working dir cache
                     self._user_working_dirs[user_id] = working_dir
@@ -324,7 +333,7 @@ class MessageHandlers:
                 # Use SDK with proper HITL via can_use_tool callback
                 result = await self.sdk_service.run_task(
                     user_id=user_id,
-                    prompt=message.text,
+                    prompt=enriched_prompt,
                     working_dir=working_dir,
                     session_id=session_id,
                     on_text=lambda text: self._on_text(user_id, text),
@@ -353,7 +362,7 @@ class MessageHandlers:
                 # Use CLI subprocess with stream-json
                 result = await self.claude_proxy.run_task(
                     user_id=user_id,
-                    prompt=message.text,
+                    prompt=enriched_prompt,
                     working_dir=working_dir,
                     session_id=session_id,
                     on_text=lambda text: self._on_text(user_id, text),

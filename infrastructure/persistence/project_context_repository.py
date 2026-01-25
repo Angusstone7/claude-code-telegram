@@ -5,8 +5,9 @@ Handles project context and message persistence.
 """
 
 import aiosqlite
+import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 from domain.entities.project_context import ProjectContext, ContextMessage
@@ -56,6 +57,19 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                 )
             """)
 
+            # Context variables table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS context_variables (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    context_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    created_at TEXT,
+                    FOREIGN KEY (context_id) REFERENCES project_contexts(id),
+                    UNIQUE(context_id, name)
+                )
+            """)
+
             # Create indexes
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_contexts_project_id
@@ -65,6 +79,10 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                 CREATE INDEX IF NOT EXISTS idx_messages_context_id
                 ON context_messages(context_id)
             """)
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_variables_context_id
+                ON context_variables(context_id)
+            """)
 
             await db.commit()
             logger.info("Project context tables initialized")
@@ -72,7 +90,7 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
     # ==================== Context CRUD ====================
 
     async def save(self, context: ProjectContext) -> None:
-        """Save or update a context"""
+        """Save or update a context (including variables)"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO project_contexts
@@ -89,6 +107,10 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                 context.created_at.isoformat(),
                 context.updated_at.isoformat()
             ))
+
+            # Save variables
+            await self._save_variables(db, context.id, context.variables)
+
             await db.commit()
 
     async def find_by_id(self, context_id: str) -> Optional[ProjectContext]:
@@ -101,7 +123,8 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
-                    return self._row_to_context(row)
+                    variables = await self._load_variables(db, context_id)
+                    return self._row_to_context(row, variables)
         return None
 
     async def find_by_project(self, project_id: str) -> List[ProjectContext]:
@@ -113,7 +136,11 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                 (project_id,)
             ) as cursor:
                 rows = await cursor.fetchall()
-                return [self._row_to_context(row) for row in rows]
+                contexts = []
+                for row in rows:
+                    variables = await self._load_variables(db, row["id"])
+                    contexts.append(self._row_to_context(row, variables))
+                return contexts
 
     async def get_current(self, project_id: str) -> Optional[ProjectContext]:
         """Get the current context for a project"""
@@ -125,7 +152,8 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
-                    return self._row_to_context(row)
+                    variables = await self._load_variables(db, row["id"])
+                    return self._row_to_context(row, variables)
         return None
 
     async def set_current(self, project_id: str, context_id: str) -> None:
@@ -178,7 +206,7 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
         return context
 
     async def delete(self, context_id: str) -> bool:
-        """Delete a context and all its messages"""
+        """Delete a context and all its messages and variables"""
         async with aiosqlite.connect(self.db_path) as db:
             # Check if exists
             async with db.execute(
@@ -187,6 +215,12 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             ) as cursor:
                 if not await cursor.fetchone():
                     return False
+
+            # Delete variables
+            await db.execute(
+                "DELETE FROM context_variables WHERE context_id = ?",
+                (context_id,)
+            )
 
             # Delete messages
             await db.execute(
@@ -308,7 +342,7 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
 
     # ==================== Helpers ====================
 
-    def _row_to_context(self, row) -> ProjectContext:
+    def _row_to_context(self, row, variables: Dict[str, str] = None) -> ProjectContext:
         """Convert database row to ProjectContext entity"""
         return ProjectContext(
             id=row["id"],
@@ -318,6 +352,7 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             claude_session_id=row["claude_session_id"],
             is_current=bool(row["is_current"]),
             message_count=row["message_count"] or 0,
+            variables=variables or {},
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else datetime.now(),
             updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else datetime.now()
         )
@@ -333,3 +368,72 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             tool_result=row["tool_result"],
             timestamp=datetime.fromisoformat(row["timestamp"]) if row["timestamp"] else datetime.now()
         )
+
+    # ==================== Variable Operations ====================
+
+    async def _save_variables(self, db, context_id: str, variables: Dict[str, str]) -> None:
+        """Save context variables (replaces existing)"""
+        # Delete existing variables
+        await db.execute(
+            "DELETE FROM context_variables WHERE context_id = ?",
+            (context_id,)
+        )
+
+        # Insert new variables
+        now = datetime.now().isoformat()
+        for name, value in variables.items():
+            await db.execute("""
+                INSERT INTO context_variables (context_id, name, value, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (context_id, name, value, now))
+
+    async def _load_variables(self, db, context_id: str) -> Dict[str, str]:
+        """Load context variables"""
+        variables = {}
+        async with db.execute(
+            "SELECT name, value FROM context_variables WHERE context_id = ?",
+            (context_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            for row in rows:
+                variables[row[0]] = row[1]
+        return variables
+
+    async def set_variable(self, context_id: str, name: str, value: str) -> None:
+        """Set a single context variable"""
+        async with aiosqlite.connect(self.db_path) as db:
+            now = datetime.now().isoformat()
+            await db.execute("""
+                INSERT OR REPLACE INTO context_variables (context_id, name, value, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (context_id, name, value, now))
+
+            # Update context updated_at
+            await db.execute("""
+                UPDATE project_contexts SET updated_at = ? WHERE id = ?
+            """, (now, context_id))
+
+            await db.commit()
+
+    async def delete_variable(self, context_id: str, name: str) -> bool:
+        """Delete a single context variable"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM context_variables WHERE context_id = ? AND name = ?",
+                (context_id, name)
+            )
+            deleted = cursor.rowcount > 0
+
+            if deleted:
+                now = datetime.now().isoformat()
+                await db.execute("""
+                    UPDATE project_contexts SET updated_at = ? WHERE id = ?
+                """, (now, context_id))
+
+            await db.commit()
+            return deleted
+
+    async def get_variables(self, context_id: str) -> Dict[str, str]:
+        """Get all variables for a context"""
+        async with aiosqlite.connect(self.db_path) as db:
+            return await self._load_variables(db, context_id)

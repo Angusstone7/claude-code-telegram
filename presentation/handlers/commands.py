@@ -77,6 +77,7 @@ class CommandHandlers:
 /context new - Создать новый контекст
 /context list - Список контекстов
 /context clear - Очистить текущий контекст
+/vars - Управление переменными контекста
 
 **Claude Code:**
 /yolo - YOLO режим (авто-подтверждение)
@@ -616,6 +617,130 @@ class CommandHandlers:
         except Exception as e:
             await message.answer(f"❌ Diagnostics failed: {e}")
 
+    async def vars(self, message: Message, command: CommandObject) -> None:
+        """
+        Handle /vars command - manage context variables.
+
+        Usage:
+            /vars              - list all variables
+            /vars set NAME val - set a variable
+            /vars del NAME     - delete a variable
+
+        Variables are automatically included in Claude's context.
+        """
+        user_id = message.from_user.id
+
+        if not self.project_service or not self.context_service:
+            await message.answer("⚠️ Сервисы не инициализированы")
+            return
+
+        from domain.value_objects.user_id import UserId
+        uid = UserId.from_int(user_id)
+
+        # Get current project and context
+        project = await self.project_service.get_current(uid)
+        if not project:
+            await message.answer(
+                "❌ Нет активного проекта\n\n"
+                "Используйте /change для выбора проекта.",
+                parse_mode=None
+            )
+            return
+
+        context = await self.context_service.get_current(project.id)
+        if not context:
+            await message.answer(
+                "❌ Нет активного контекста\n\n"
+                "Используйте /context для создания контекста.",
+                parse_mode=None
+            )
+            return
+
+        args = command.args.strip() if command.args else ""
+
+        # No args - list variables
+        if not args:
+            variables = await self.context_service.get_variables(context.id)
+            if not variables:
+                await message.answer(
+                    f"📭 **Нет переменных контекста**\n\n"
+                    f"📂 Проект: {project.name}\n"
+                    f"💬 Контекст: {context.name}\n\n"
+                    f"Добавьте переменные:\n"
+                    f"`/vars set GITLAB_TOKEN glpat-xxx`\n"
+                    f"`/vars set PROJECT_STACK Python/FastAPI`",
+                    parse_mode="Markdown"
+                )
+                return
+
+            lines = [f"📋 **Переменные контекста**\n"]
+            lines.append(f"📂 Проект: {project.name}")
+            lines.append(f"💬 Контекст: {context.name}\n")
+            for name, value in sorted(variables.items()):
+                # Mask long values
+                display = value[:8] + "***" if len(value) > 12 else value
+                lines.append(f"• `{name}` = `{display}`")
+
+            lines.append(f"\n*Claude автоматически использует эти переменные*")
+            await message.answer("\n".join(lines), parse_mode="Markdown")
+            return
+
+        # Parse action
+        parts = args.split(maxsplit=2)
+        action = parts[0].lower()
+
+        if action == "set":
+            if len(parts) < 3:
+                await message.answer(
+                    "❌ Использование: `/vars set NAME value`",
+                    parse_mode="Markdown"
+                )
+                return
+
+            name = parts[1].upper()  # Variable names are uppercase
+            value = parts[2]
+
+            await self.context_service.set_variable(context.id, name, value)
+            await message.answer(
+                f"✅ Установлена переменная `{name}`\n\n"
+                f"Claude будет использовать её автоматически.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if action == "del" or action == "delete":
+            if len(parts) < 2:
+                await message.answer(
+                    "❌ Использование: `/vars del NAME`",
+                    parse_mode="Markdown"
+                )
+                return
+
+            name = parts[1].upper()
+            deleted = await self.context_service.delete_variable(context.id, name)
+
+            if deleted:
+                await message.answer(
+                    f"🗑 Удалена переменная `{name}`",
+                    parse_mode="Markdown"
+                )
+            else:
+                await message.answer(
+                    f"⚠️ Переменная `{name}` не найдена",
+                    parse_mode="Markdown"
+                )
+            return
+
+        # Unknown action
+        await message.answer(
+            "❌ Неизвестная команда\n\n"
+            "Использование:\n"
+            "`/vars` - список переменных\n"
+            "`/vars set NAME value` - установить\n"
+            "`/vars del NAME` - удалить",
+            parse_mode="Markdown"
+        )
+
 
 def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     """Register command handlers"""
@@ -634,6 +759,7 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     # Project/Context management commands
     router.message.register(handlers.change, Command("change"))
     router.message.register(handlers.context, Command("context"))
+    router.message.register(handlers.vars, Command("vars"))
     router.message.register(handlers.fresh, Command("fresh"))
     router.message.register(handlers.yolo, Command("yolo"))
     router.message.register(handlers.plugins, Command("plugins"))

@@ -7,7 +7,7 @@ Each project can have multiple contexts for different conversations.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 import uuid
 
 from domain.value_objects.user_id import UserId
@@ -48,6 +48,7 @@ class ProjectContext:
     claude_session_id: Optional[str] = None
     is_current: bool = False
     message_count: int = 0
+    variables: Dict[str, str] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -147,6 +148,40 @@ class ProjectContext:
     def is_empty(self) -> bool:
         """Check if context has no messages"""
         return self.message_count == 0
+
+    # ==================== Context Variables ====================
+
+    def set_variable(self, name: str, value: str) -> None:
+        """Set a context variable that will be included in Claude's context"""
+        self.variables[name] = value
+        self.updated_at = datetime.now()
+
+    def delete_variable(self, name: str) -> bool:
+        """Delete a context variable. Returns True if deleted, False if not found."""
+        if name in self.variables:
+            del self.variables[name]
+            self.updated_at = datetime.now()
+            return True
+        return False
+
+    def get_variable(self, name: str) -> Optional[str]:
+        """Get a context variable value"""
+        return self.variables.get(name)
+
+    def build_variables_prompt(self) -> str:
+        """Build a prompt block with all context variables for Claude.
+
+        Returns:
+            Formatted string with variables, or empty string if no variables set.
+        """
+        if not self.variables:
+            return ""
+
+        lines = ["📋 Context Variables (use these in your responses when relevant):"]
+        for name, value in sorted(self.variables.items()):
+            lines.append(f"  {name}={value}")
+
+        return "\n".join(lines)
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, ProjectContext):
