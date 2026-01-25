@@ -309,8 +309,11 @@ class AccountService:
             access_token = self.get_access_token_from_credentials()
             if access_token:
                 env["ANTHROPIC_API_KEY"] = access_token
+                logger.debug("Using access token from credentials file")
             else:
-                logger.warning("No access token found in credentials file")
+                # Explicitly remove API key to prevent using old value
+                env["_REMOVE_ANTHROPIC_API_KEY"] = "1"
+                logger.warning("No access token found in credentials file - API key removed from env")
 
             # Set proxy for accessing claude.ai
             env["HTTP_PROXY"] = CLAUDE_PROXY
