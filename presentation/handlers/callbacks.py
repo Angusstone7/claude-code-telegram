@@ -1011,7 +1011,7 @@ class CallbackHandlers:
             await callback.answer(f"❌ Ошибка: {e}")
 
     async def handle_context_clear_confirm(self, callback: CallbackQuery) -> None:
-        """Confirm and clear context"""
+        """Confirm and clear context - creates NEW context for fresh start"""
         try:
             uid, project, current_ctx, ctx_service = await self._get_context_data(callback)
             if not project:
@@ -1021,17 +1021,28 @@ class CallbackHandlers:
                 await callback.answer("❌ Нет активного контекста")
                 return
 
-            await ctx_service.start_fresh(current_ctx.id)
+            # 1. Create new context (auto-generated name, set as current)
+            new_context = await ctx_service.create_new(
+                project_id=project.id,
+                user_id=uid,
+                name=None,  # Auto-generate name
+                set_as_current=True
+            )
+
+            # 2. Clear in-memory session cache to ensure fresh start
+            user_id = callback.from_user.id
+            if self.message_handlers:
+                self.message_handlers.clear_session_cache(user_id)
 
             text = (
-                f"✅ Контекст очищен\n\n"
-                f"📝 {current_ctx.name}\n"
+                f"✅ Новый контекст создан\n\n"
+                f"📝 {new_context.name}\n"
                 f"📂 Проект: {project.name}\n\n"
-                f"История удалена. Начните новый диалог."
+                f"Начните новый диалог."
             )
-            keyboard = Keyboards.context_menu(current_ctx.name, project.name, 0)
+            keyboard = Keyboards.context_menu(new_context.name, project.name, 0)
             await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer("Контекст очищен")
+            await callback.answer("Новый контекст создан")
 
         except Exception as e:
             logger.error(f"Error clearing context: {e}")

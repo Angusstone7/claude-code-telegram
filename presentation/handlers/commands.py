@@ -329,38 +329,42 @@ class CommandHandlers:
 
     async def fresh(self, message: Message) -> None:
         """
-        Handle /fresh command - clear context and start fresh conversation.
+        Handle /fresh command - create new context for fresh conversation.
 
-        Clears:
-        - Claude session ID (stops auto-continue)
-        - Context messages
-        - Internal session state
+        Creates a new context and switches to it, ensuring:
+        - New Claude session (no memory of previous conversation)
+        - Clean message history
+        - Old contexts remain available for switching back
         """
         user_id = message.from_user.id
 
-        # Clear internal session state
+        # Clear internal session cache
         if self.message_handlers:
-            self.message_handlers._continue_sessions.pop(user_id, None)
+            self.message_handlers.clear_session_cache(user_id)
 
-        # Clear context in project
+        # Create new context in project
         if self.project_service and self.context_service:
             from domain.value_objects.user_id import UserId
             uid = UserId.from_int(user_id)
 
             project = await self.project_service.get_current(uid)
             if project:
-                context = await self.context_service.get_current(project.id)
-                if context:
-                    await self.context_service.start_fresh(context.id)
+                # Create new context (auto-generated name, set as current)
+                new_context = await self.context_service.create_new(
+                    project_id=project.id,
+                    user_id=uid,
+                    name=None,  # Auto-generate name
+                    set_as_current=True
+                )
 
-                    await message.answer(
-                        f"🧹 Контекст очищен!\n\n"
-                        f"📂 Проект: {project.name}\n"
-                        f"💬 Контекст: {context.name}\n\n"
-                        f"История сессии очищена. Следующее сообщение начнёт новый диалог.",
-                        parse_mode=None
-                    )
-                    return
+                await message.answer(
+                    f"✅ Новый контекст создан!\n\n"
+                    f"📂 Проект: {project.name}\n"
+                    f"💬 Контекст: {new_context.name}\n\n"
+                    f"Начните новый диалог.",
+                    parse_mode=None
+                )
+                return
 
         # No project/context - just clear bot service session
         await self.bot_service.clear_session(user_id)

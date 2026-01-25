@@ -104,6 +104,15 @@ class MessageHandlers:
         """Set YOLO mode for user"""
         self._yolo_mode[user_id] = enabled
 
+    def clear_session_cache(self, user_id: int) -> None:
+        """Clear in-memory session cache for user.
+
+        Call this when context is reset to ensure fresh start.
+        Without this, the next message would use the cached session_id
+        and Claude would continue the old context.
+        """
+        self._continue_sessions.pop(user_id, None)
+
     def get_working_dir(self, user_id: int) -> str:
         """Get user's working directory"""
         return self._user_working_dirs.get(user_id, self.default_working_dir)
