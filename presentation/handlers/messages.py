@@ -391,12 +391,12 @@ class MessageHandlers:
                 uid = UserId.from_int(user_id)
                 project = await self.project_service.get_current(uid)
                 if project:
-                    header = f"📂 <b>{project.name}</b>{yolo_indicator}\n"
-                    header += f"📁 <code>{working_dir}</code>\n"
+                    header = f"📂 **{project.name}**{yolo_indicator}\n"
+                    header += f"📁 `{working_dir}`\n"
                 else:
-                    header = f"📁 <code>{working_dir}</code>{yolo_indicator}\n"
+                    header = f"📁 `{working_dir}`{yolo_indicator}\n"
             except Exception:
-                header = f"📁 <code>{working_dir}</code>{yolo_indicator}\n"
+                header = f"📁 `{working_dir}`{yolo_indicator}\n"
         else:
             header = f"📁 `{working_dir}`{yolo_indicator}\n"
 
