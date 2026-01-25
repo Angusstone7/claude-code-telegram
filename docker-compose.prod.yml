@@ -30,5 +30,7 @@ services:
       - ./logs:/app/logs
       # Projects directory - persists across container rebuilds
       - ./projects:/root/projects
+      # Claude Code sessions - preserves conversation history and context compression
+      - ./claude_sessions:/root/.claude
     extra_hosts:
       - "host.docker.internal:host-gateway"
