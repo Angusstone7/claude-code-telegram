@@ -391,12 +391,12 @@ class MessageHandlers:
                 uid = UserId.from_int(user_id)
                 project = await self.project_service.get_current(uid)
                 if project:
-                    header = f"📂 **{project.name}**{yolo_indicator}\n"
-                    header += f"📁 `{working_dir}`\n"
+                    header = f"📂 <b>{project.name}</b>{yolo_indicator}\n"
+                    header += f"📁 <code>{working_dir}</code>\n"
                 else:
-                    header = f"📁 `{working_dir}`{yolo_indicator}\n"
+                    header = f"📁 <code>{working_dir}</code>{yolo_indicator}\n"
             except Exception:
-                header = f"📁 `{working_dir}`{yolo_indicator}\n"
+                header = f"📁 <code>{working_dir}</code>{yolo_indicator}\n"
         else:
             header = f"📁 `{working_dir}`{yolo_indicator}\n"
 
@@ -525,7 +525,7 @@ class MessageHandlers:
             streaming = self._streaming_handlers.get(user_id)
             if streaming:
                 truncated_details = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n⚡ **Авто-одобрено:** `{tool_name}`\n`{truncated_details}`\n")
+                await streaming.append(f"\n⚡ <b>Авто-одобрено:</b> <code>{tool_name}</code>\n<code>{truncated_details}</code>\n")
             return True
 
         # Normal mode: show buttons and wait for approval
@@ -536,16 +536,16 @@ class MessageHandlers:
             session.set_waiting_approval(request_id, tool_name, details)
 
         # Send permission request message
-        text = f"🔐 **Запрос разрешения**\n\n"
-        text += f"**Инструмент:** `{tool_name}`\n"
+        text = f"🔐 <b>Запрос разрешения</b>\n\n"
+        text += f"<b>Инструмент:</b> <code>{tool_name}</code>\n"
         if details:
             # Truncate long details
             display_details = details if len(details) < 500 else details[:500] + "..."
-            text += f"**Детали:**\n```\n{display_details}\n```"
+            text += f"<b>Детали:</b>\n<pre>{display_details}</pre>"
 
         await message.answer(
             text,
-            parse_mode=None,
+            parse_mode="HTML",
             reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
         )
 
@@ -579,12 +579,12 @@ class MessageHandlers:
         self._pending_questions[user_id] = options
 
         # Send question message
-        text = f"❓ **Вопрос**\n\n{question}"
+        text = f"❓ <b>Вопрос</b>\n\n{question}"
 
         if options:
             await message.answer(
                 text,
-                parse_mode=None,
+                parse_mode="HTML",
                 reply_markup=Keyboards.claude_question(user_id, options, request_id)
             )
         else:
@@ -654,7 +654,7 @@ class MessageHandlers:
             streaming = self._streaming_handlers.get(user_id)
             if streaming:
                 truncated_details = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n⚡ **Авто-одобрено:** `{tool_name}`\n`{truncated_details}`\n")
+                await streaming.append(f"\n⚡ <b>Авто-одобрено:</b> <code>{tool_name}</code>\n<code>{truncated_details}</code>\n")
 
             # Auto-approve via SDK
             if self.sdk_service:
@@ -669,15 +669,15 @@ class MessageHandlers:
             session.set_waiting_approval(request_id, tool_name, details)
 
         # Send permission request message with inline buttons
-        text = f"🔐 **Запрос разрешения**\n\n"
-        text += f"**Инструмент:** `{tool_name}`\n"
+        text = f"🔐 <b>Запрос разрешения</b>\n\n"
+        text += f"<b>Инструмент:</b> <code>{tool_name}</code>\n"
         if details:
             display_details = details if len(details) < 500 else details[:500] + "..."
-            text += f"**Детали:**\n```\n{display_details}\n```"
+            text += f"<b>Детали:</b>\n<pre>{display_details}</pre>"
 
         perm_msg = await message.answer(
             text,
-            parse_mode=None,
+            parse_mode="HTML",
             reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
         )
         # Save the message so we can edit it after approval/rejection
@@ -706,12 +706,12 @@ class MessageHandlers:
         self._pending_questions[user_id] = options
 
         # Send question message with inline buttons
-        text = f"❓ **Вопрос**\n\n{question}"
+        text = f"❓ <b>Вопрос</b>\n\n{question}"
 
         if options:
             q_msg = await message.answer(
                 text,
-                parse_mode=None,
+                parse_mode="HTML",
                 reply_markup=Keyboards.claude_question(user_id, options, request_id)
             )
             # Save the message so we can edit it after answer
@@ -778,7 +778,7 @@ class MessageHandlers:
 
         if result.cancelled:
             if streaming:
-                await streaming.finalize("🛑 **Задача отменена**")
+                await streaming.finalize("🛑 <b>Задача отменена</b>")
             if session:
                 session.cancel()
             return
