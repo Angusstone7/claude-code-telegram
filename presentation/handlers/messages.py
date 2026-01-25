@@ -442,6 +442,15 @@ class MessageHandlers:
                     on_error=lambda err: self._on_error(user_id, err),
                 )
 
+                # Show cost summary if available
+                if result.total_cost_usd and not result.cancelled:
+                    streaming = self._streaming_handlers.get(user_id)
+                    if streaming:
+                        tokens, _, _ = streaming.get_context_usage()
+                        tokens_k = tokens // 1000
+                        cost_str = f"${result.total_cost_usd:.4f}"
+                        await streaming.append(f"\n\n💰 {cost_str} | ~{tokens_k}K токенов")
+
                 # Convert SDK result to common format
                 cli_result = TaskResult(
                     success=result.success,
@@ -484,6 +493,7 @@ class MessageHandlers:
         """Handle streaming text output"""
         streaming = self._streaming_handlers.get(user_id)
         if streaming:
+            streaming.add_tokens(text)  # Count output tokens
             await streaming.append(text)
 
     async def _on_tool_use(self, user_id: int, tool_name: str, tool_input: dict, message: Message):
@@ -541,6 +551,7 @@ class MessageHandlers:
         """Handle tool result - show output to user"""
         streaming = self._streaming_handlers.get(user_id)
         if streaming and output:
+            streaming.add_tokens(output, multiplier=0.5)  # Tool results are compressed
             await streaming.show_tool_result(output, success=True)
         logger.debug(f"Tool result for user {user_id}: {output[:100]}...")
 

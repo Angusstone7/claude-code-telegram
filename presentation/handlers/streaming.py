@@ -269,12 +269,17 @@ class StreamingHandler:
     LARGE_TEXT_BYTES = 2500  # >2.5KB → 2.5s interval
     VERY_LARGE_TEXT_BYTES = 6000  # >6KB → 4.0s interval
 
+    # Token estimation constants
+    CHARS_PER_TOKEN = 4  # Approximate: 1 token ≈ 4 characters
+    DEFAULT_CONTEXT_LIMIT = 200_000  # Claude Opus/Sonnet context window
+
     def __init__(
         self,
         bot: Bot,
         chat_id: int,
         initial_message: Optional[Message] = None,
-        reply_markup: Optional[InlineKeyboardMarkup] = None
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
+        context_limit: int = DEFAULT_CONTEXT_LIMIT
     ):
         self.bot = bot
         self.chat_id = chat_id
@@ -292,8 +297,37 @@ class StreamingHandler:
         self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
         self._is_plan_mode: bool = False  # Whether Claude is in plan mode
 
+        # Token tracking for context usage display
+        self._estimated_tokens: int = 0  # Accumulated token estimate
+        self._context_limit: int = context_limit  # Max context window
+
         if initial_message:
             self.messages.append(initial_message)
+
+    def add_tokens(self, text: str, multiplier: float = 1.0) -> int:
+        """Add estimated tokens from text to the running total.
+
+        Args:
+            text: Text to estimate tokens for
+            multiplier: Weight factor (e.g., 0.5 for tool results which are compressed)
+
+        Returns:
+            Number of tokens added
+        """
+        if not text:
+            return 0
+        tokens = int(len(text) / self.CHARS_PER_TOKEN * multiplier)
+        self._estimated_tokens += tokens
+        return tokens
+
+    def get_context_usage(self) -> tuple[int, int, int]:
+        """Get current context usage stats.
+
+        Returns:
+            Tuple of (estimated_tokens, context_limit, percentage)
+        """
+        pct = int(100 * self._estimated_tokens / self._context_limit) if self._context_limit > 0 else 0
+        return self._estimated_tokens, self._context_limit, min(pct, 100)
 
     async def start(self, initial_text: str = "🤖 Запускаю...") -> Message:
         """Start streaming with an initial message"""
@@ -876,7 +910,14 @@ class HeartbeatTracker:
                     secs = elapsed % 60
                     time_str = f"{mins}:{secs:02d}"
 
-                await self.streaming.set_status(f"Работаю... {spinner} ({time_str})")
+                # Get context usage stats
+                tokens, limit, pct = self.streaming.get_context_usage()
+                tokens_k = tokens // 1000
+                limit_k = limit // 1000
+
+                # Format status with context info
+                status = f"Работаю... {spinner} ({time_str}) | ~{tokens_k}K/{limit_k}K ({pct}%)"
+                await self.streaming.set_status(status)
                 await asyncio.sleep(self.interval)
             except asyncio.CancelledError:
                 break

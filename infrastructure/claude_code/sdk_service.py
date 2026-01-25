@@ -160,6 +160,7 @@ class SDKTaskResult:
     error: Optional[str] = None
     cancelled: bool = False
     total_cost_usd: Optional[float] = None
+    num_turns: Optional[int] = None
     duration_ms: Optional[int] = None
 
 
@@ -541,6 +542,8 @@ class ClaudeAgentSDKService:
         work_dir = working_dir or self.default_working_dir
         output_buffer = []
         result_session_id = session_id
+        result_cost_usd: Optional[float] = None
+        result_num_turns: Optional[int] = None
 
         # Validate working directory
         if not os.path.isdir(work_dir):
@@ -813,6 +816,8 @@ class ClaudeAgentSDKService:
 
                     elif isinstance(message, ResultMessage):
                         result_session_id = message.session_id
+                        result_cost_usd = message.total_cost_usd
+                        result_num_turns = message.num_turns
                         if message.result:
                             output_buffer.append(message.result)
 
@@ -863,13 +868,17 @@ class ClaudeAgentSDKService:
                         success=False,
                         output="\n".join(output_buffer),
                         session_id=result_session_id,
-                        cancelled=True
+                        cancelled=True,
+                        total_cost_usd=result_cost_usd,
+                        num_turns=result_num_turns,
                     )
 
                 return SDKTaskResult(
                     success=True,
                     output="\n".join(output_buffer),
                     session_id=result_session_id,
+                    total_cost_usd=result_cost_usd,
+                    num_turns=result_num_turns,
                 )
 
         except asyncio.CancelledError:
@@ -879,7 +888,9 @@ class ClaudeAgentSDKService:
                 success=False,
                 output="\n".join(output_buffer),
                 session_id=result_session_id,
-                cancelled=True
+                cancelled=True,
+                total_cost_usd=result_cost_usd,
+                num_turns=result_num_turns,
             )
 
         except Exception as e:
@@ -892,7 +903,9 @@ class ClaudeAgentSDKService:
                     success=False,
                     output="\n".join(output_buffer),
                     session_id=result_session_id,
-                    cancelled=True
+                    cancelled=True,
+                    total_cost_usd=result_cost_usd,
+                    num_turns=result_num_turns,
                 )
 
             logger.error(f"[{user_id}] SDK task error: {error_msg}")
@@ -904,7 +917,9 @@ class ClaudeAgentSDKService:
                 success=False,
                 output="\n".join(output_buffer),
                 session_id=result_session_id,
-                error=error_msg
+                error=error_msg,
+                total_cost_usd=result_cost_usd,
+                num_turns=result_num_turns,
             )
 
         finally:
