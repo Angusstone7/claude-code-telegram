@@ -288,6 +288,7 @@ class StreamingHandler:
         self.reply_markup = reply_markup  # Cancel button etc.
         self._status_line = ""  # Status line shown at bottom
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
+        self._todo_message: Optional[Message] = None  # Separate message for todo list
 
         if initial_message:
             self.messages.append(initial_message)
@@ -397,6 +398,59 @@ class StreamingHandler:
         status = "✅" if success else "❌"
         result_text = f"{status} **Вывод:**\n```\n{truncated}\n```\n"
         await self.append(result_text)
+
+    async def show_todo_list(self, todos: list[dict]) -> None:
+        """Show/update todo list in a separate message.
+
+        Creates a dedicated message for the task plan that updates
+        in-place as tasks progress. Shows:
+        - ✅ Completed tasks (strikethrough)
+        - ⏳ Current task (bold)
+        - ⬜ Pending tasks
+
+        Args:
+            todos: List of todo items with content, status, activeForm
+        """
+        if not todos:
+            return
+
+        lines = ["📋 <b>План выполнения:</b>\n"]
+
+        for todo in todos:
+            status = todo.get("status", "pending")
+            # Use activeForm for in_progress, content for others
+            if status == "in_progress":
+                text = todo.get("activeForm", todo.get("content", ""))
+            else:
+                text = todo.get("content", "")
+
+            if status == "completed":
+                lines.append(f"  ✅ <s>{text}</s>")
+            elif status == "in_progress":
+                lines.append(f"  ⏳ <b>{text}</b>")
+            else:  # pending
+                lines.append(f"  ⬜ {text}")
+
+        # Count stats
+        completed = sum(1 for t in todos if t.get("status") == "completed")
+        total = len(todos)
+        lines.append(f"\n<i>Прогресс: {completed}/{total}</i>")
+
+        html_text = "\n".join(lines)
+
+        try:
+            if self._todo_message:
+                # Update existing message
+                await self._todo_message.edit_text(html_text, parse_mode="HTML")
+            else:
+                # Create new message
+                self._todo_message = await self.bot.send_message(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            logger.debug(f"Error updating todo message: {e}")
 
     async def _schedule_update(self):
         """Schedule a debounced update with adaptive interval"""

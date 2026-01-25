@@ -507,6 +507,13 @@ class MessageHandlers:
                     session.working_dir = new_dir
 
         if streaming:
+            # Special handling for TodoWrite - show todo list in separate message
+            if tool_name.lower() == "todowrite":
+                todos = tool_input.get("todos", [])
+                if todos:
+                    await streaming.show_todo_list(todos)
+                return  # Don't show generic tool use message
+
             # Format tool details
             details = ""
             if tool_name.lower() == "bash":
