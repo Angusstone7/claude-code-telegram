@@ -354,20 +354,20 @@ class CommandHandlers:
                     await self.context_service.start_fresh(context.id)
 
                     await message.answer(
-                        f"🧹 **Контекст очищен!**\n\n"
-                        f"📂 Проект: **{project.name}**\n"
-                        f"💬 Контекст: **{context.name}**\n\n"
+                        f"🧹 Контекст очищен!\n\n"
+                        f"📂 Проект: {project.name}\n"
+                        f"💬 Контекст: {context.name}\n\n"
                         f"История сессии очищена. Следующее сообщение начнёт новый диалог.",
-                        parse_mode="Markdown"
+                        parse_mode=None
                     )
                     return
 
         # No project/context - just clear bot service session
         await self.bot_service.clear_session(user_id)
         await message.answer(
-            "🧹 **Сессия очищена!**\n\n"
+            "🧹 Сессия очищена!\n\n"
             "Следующее сообщение начнёт новый диалог.",
-            parse_mode="Markdown"
+            parse_mode=None
         )
 
     async def yolo(self, message: Message) -> None:
@@ -752,10 +752,10 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.metrics, Command("metrics"))
     router.message.register(handlers.docker, Command("docker"))
 
-    # Menu buttons (synced with commands)
-    router.message.register(handlers.metrics, F.text == "📊 Метрики")
-    router.message.register(handlers.docker, F.text == "🐳 Docker")
-    router.message.register(handlers.change, F.text == "📂 Проект")
-    router.message.register(handlers.yolo, F.text == "⚡ YOLO")
-    router.message.register(handlers.clear, F.text == "🗑️ Очистить")
-    router.message.register(handlers.help, F.text == "ℹ️ Справка")
+    # Menu buttons (synced with commands) - use startswith for robust emoji matching
+    router.message.register(handlers.metrics, F.text.startswith("📊"))
+    router.message.register(handlers.docker, F.text.startswith("🐳"))
+    router.message.register(handlers.change, F.text.startswith("📂"))
+    router.message.register(handlers.yolo, F.text.startswith("⚡"))
+    router.message.register(handlers.clear, F.text.startswith("🗑"))
+    router.message.register(handlers.help, F.text.startswith("ℹ️"))
