@@ -493,7 +493,8 @@ class AccountHandlers:
 
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.back("account:menu")
+            parse_mode="HTML",
+            reply_markup=Keyboards.menu_back_only("account:menu")
         )
         await callback.answer()
 
@@ -693,7 +694,7 @@ class AccountHandlers:
                 f"Claude CLI вернул:\n<pre>{output[:200]}</pre>\n\n"
                 f"Убедитесь что claude установлен и доступен.",
                 parse_mode="HTML",
-                reply_markup=Keyboards.back("account:menu")
+                reply_markup=Keyboards.menu_back_only("account:menu")
             )
             self._oauth_sessions.pop(user_id, None)
 
@@ -737,7 +738,7 @@ class AccountHandlers:
                 f"Claude CLI вернул:\n<pre>{output[:200]}</pre>\n\n"
                 f"Убедитесь что claude установлен и доступен.",
                 parse_mode="HTML",
-                reply_markup=Keyboards.back("account:menu")
+                reply_markup=Keyboards.menu_back_only("account:menu")
             )
             self._oauth_sessions.pop(user_id, None)
 

@@ -926,7 +926,9 @@ class Keyboards:
     def account_menu(
         current_mode: str = "zai_api",
         has_credentials: bool = False,
-        subscription_type: str = None
+        subscription_type: str = None,
+        show_back: bool = False,
+        back_to: str = "menu:settings"
     ) -> InlineKeyboardMarkup:
         """
         Account settings menu keyboard.
@@ -935,6 +937,8 @@ class Keyboards:
             current_mode: Current auth mode ("zai_api" or "claude_account")
             has_credentials: Whether credentials file exists
             subscription_type: Subscription type from credentials
+            show_back: Show back button instead of close button
+            back_to: Callback data for back button
         """
         buttons = []
 
@@ -970,10 +974,15 @@ class Keyboards:
             )
         ])
 
-        # Close button
-        buttons.append([
-            InlineKeyboardButton(text="❌ Закрыть", callback_data="account:close")
-        ])
+        # Back or close button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="◀️ Назад", callback_data=back_to)
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="❌ Закрыть", callback_data="account:close")
+            ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 

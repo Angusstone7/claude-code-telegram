@@ -572,6 +572,8 @@ class MenuHandlers:
                         current_mode=settings.auth_mode.value,
                         has_credentials=creds_info.exists,
                         subscription_type=creds_info.subscription_type,
+                        show_back=True,
+                        back_to="menu:settings"
                     ),
                     parse_mode="HTML"
                 )
