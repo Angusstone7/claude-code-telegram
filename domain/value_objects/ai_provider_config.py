@@ -14,9 +14,9 @@ class AIProviderType(Enum):
     CUSTOM = "custom"
 
 
-@dataclass
+@dataclass(frozen=True)
 class AIModelConfig:
-    """AI model configuration"""
+    """AI model configuration (immutable value object)"""
 
     haiku: str
     sonnet: str
@@ -28,7 +28,7 @@ class AIModelConfig:
         return getattr(self, tier, self.default)
 
 
-@dataclass
+@dataclass(frozen=True)
 class AIProviderConfig:
     """AI Provider configuration value object
 
@@ -50,9 +50,9 @@ class AIProviderConfig:
         if self.base_url:
             self._validate_url(self.base_url)
 
-        # Set provider-specific defaults
+        # Set provider-specific defaults (use object.__setattr__ for frozen dataclass)
         if self.model_config is None:
-            self.model_config = self._get_default_model_config()
+            object.__setattr__(self, 'model_config', self._get_default_model_config())
 
     @staticmethod
     def _validate_url(url: str) -> None:
@@ -127,12 +127,11 @@ class AIProviderConfig:
 
     def with_model(self, model: str) -> "AIProviderConfig":
         """Return a new config with a different default model (immutable)"""
-        if self.model_config is None:
-            self.model_config = self._get_default_model_config()
+        current_model_config = self.model_config or self._get_default_model_config()
         new_config = AIModelConfig(
-            haiku=self.model_config.haiku,
-            sonnet=self.model_config.sonnet,
-            opus=self.model_config.opus,
+            haiku=current_model_config.haiku,
+            sonnet=current_model_config.sonnet,
+            opus=current_model_config.opus,
             default=model,
         )
         return AIProviderConfig(

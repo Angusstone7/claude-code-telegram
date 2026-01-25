@@ -110,6 +110,22 @@ class TestAIProviderConfig:
         # They should be different objects
         assert original is not modified
 
+    def test_config_is_frozen(self):
+        """Test that AIProviderConfig is immutable (frozen)"""
+        config = AIProviderConfig(
+            provider_type=AIProviderType.ANTHROPIC, api_key="test-key"
+        )
+        with pytest.raises(Exception):  # FrozenInstanceError
+            config.api_key = "new-key"
+
+    def test_model_config_is_frozen(self):
+        """Test that AIModelConfig is immutable (frozen)"""
+        config = AIModelConfig(
+            haiku="h", sonnet="s", opus="o", default="d"
+        )
+        with pytest.raises(Exception):  # FrozenInstanceError
+            config.default = "new-default"
+
 
 class TestAIMessage:
     """Tests for AIMessage value object"""

@@ -196,8 +196,8 @@ class BotService:
         await self.command_repository.save(cmd)
         return cmd
 
-    async def execute_command(self, command_id: str) -> CommandExecutionResult:
-        """Execute approved command"""
+    async def execute_command(self, command_id: str) -> Optional[CommandExecutionResult]:
+        """Execute approved command. Returns None if execution failed."""
         command = await self.command_repository.find_by_id(command_id)
         if not command:
             raise ValueError(f"Command not found: {command_id}")
@@ -205,6 +205,7 @@ class BotService:
         command.start_execution()
         await self.command_repository.save(command)
 
+        result = None
         try:
             result = await self.command_executor.execute(command.command)
             command.complete(

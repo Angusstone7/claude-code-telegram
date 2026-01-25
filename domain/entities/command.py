@@ -90,7 +90,7 @@ class Command:
             "init 0",
             "halt",
             "chmod 000",
-            "chown -R",
+            "chown -r",
             "kill -9",
         ]
         command_lower = self.command.lower()

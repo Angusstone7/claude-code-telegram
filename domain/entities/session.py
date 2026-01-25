@@ -64,4 +64,4 @@ class Session:
 
     def get_conversation_history(self) -> List[Dict]:
         """Get conversation history in Claude API format"""
-        return [{"role": msg.role, "content": msg.content} for msg in self.messages]
+        return [{"role": msg.role.value, "content": msg.content} for msg in self.messages]

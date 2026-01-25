@@ -1,24 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git remote add origin:*)",
-      "Bash(git push:*)",
-      "Bash(ssh-keyscan:*)",
+      "Bash(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Read(*)",
       "WebSearch",
-      "Bash(find:*)",
-      "Bash(dir \"C:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\")",
-      "Bash(python -m pytest:*)",
-      "Bash(pip install:*)",
-      "Bash(black:*)",
-      "Bash(mypy:*)",
-      "Read(//c/**)",
-      "Bash(python -m py_compile:*)",
-      "Bash(python:*)",
-      "Bash(docker-compose up:*)",
-      "Bash(ls -la \"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\"\" | grep -E \"^d \")"
+      "WebFetch(*)",
+      "mcp__*",
+      "Bash(grep:*)",
+      "Bash(if not exist \"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\\\\unit\\\\application\" mkdir \"c:\\\\Users\\\\Admin\\\\Desktop\\\\ubuntu_claude\\\\tests\\\\unit\\\\application\")"
     ]
   }
 }
