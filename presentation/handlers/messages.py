@@ -285,26 +285,27 @@ class MessageHandlers:
         # Store original working dir to detect changes
         session._original_working_dir = working_dir  # type: ignore
 
-        # Start streaming handler with project info
-        streaming = StreamingHandler(bot, message.chat.id)
+        # Start streaming handler with project info and cancel button
+        cancel_keyboard = Keyboards.claude_cancel(user_id)
+        streaming = StreamingHandler(bot, message.chat.id, reply_markup=cancel_keyboard)
 
-        # Build header with project info and YOLO indicator
+        # Build header with project info (status will be at bottom via HeartbeatTracker)
         yolo_indicator = " ⚡YOLO" if self.is_yolo_mode(user_id) else ""
-        header = f"🤖 **Работаю...**{yolo_indicator}\n"
+        header = ""
         if self.project_service:
             try:
                 from domain.value_objects.user_id import UserId
                 uid = UserId.from_int(user_id)
                 project = await self.project_service.get_current(uid)
                 if project:
-                    header += f"📂 **{project.name}**\n"
-                    header += f"📁 `{working_dir}`\n\n"
+                    header = f"📂 **{project.name}**{yolo_indicator}\n"
+                    header += f"📁 `{working_dir}`\n"
                 else:
-                    header += f"📁 `{working_dir}`\n\n"
+                    header = f"📁 `{working_dir}`{yolo_indicator}\n"
             except Exception:
-                header += f"📁 `{working_dir}`\n\n"
+                header = f"📁 `{working_dir}`{yolo_indicator}\n"
         else:
-            header += f"📁 `{working_dir}`\n\n"
+            header = f"📁 `{working_dir}`{yolo_indicator}\n"
 
         await streaming.start(header)
         self._streaming_handlers[user_id] = streaming

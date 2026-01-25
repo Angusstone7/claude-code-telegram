@@ -13,7 +13,7 @@ import re
 import time
 from typing import Optional
 from aiogram import Bot
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,13 @@ class StreamingHandler:
     DEBOUNCE_INTERVAL = 2.0  # Seconds between updates
     MIN_UPDATE_INTERVAL = 1.0  # Minimum seconds between edits
 
-    def __init__(self, bot: Bot, chat_id: int, initial_message: Optional[Message] = None):
+    def __init__(
+        self,
+        bot: Bot,
+        chat_id: int,
+        initial_message: Optional[Message] = None,
+        reply_markup: Optional[InlineKeyboardMarkup] = None
+    ):
         self.bot = bot
         self.chat_id = chat_id
         self.current_message = initial_message
@@ -77,6 +83,8 @@ class StreamingHandler:
         self.is_finalized = False
         self._update_lock = asyncio.Lock()
         self._pending_update: Optional[asyncio.Task] = None
+        self.reply_markup = reply_markup  # Cancel button etc.
+        self._status_line = ""  # Status line shown at bottom
 
         if initial_message:
             self.messages.append(initial_message)
@@ -89,14 +97,16 @@ class StreamingHandler:
                 self.current_message = await self.bot.send_message(
                     self.chat_id,
                     html_text,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=self.reply_markup
                 )
             except TelegramBadRequest:
                 # Fallback without formatting if parsing fails
                 self.current_message = await self.bot.send_message(
                     self.chat_id,
                     initial_text,
-                    parse_mode=None
+                    parse_mode=None,
+                    reply_markup=self.reply_markup
                 )
             self.messages.append(self.current_message)
         self.buffer = initial_text
@@ -121,17 +131,15 @@ class StreamingHandler:
         await self.append(text + "\n")
 
     async def set_status(self, status: str):
-        """Set a status line at the top of the current message"""
-        lines = self.buffer.split("\n")
-
-        # Replace first line if it's a status line, otherwise prepend
-        if lines and lines[0].startswith("🤖"):
-            lines[0] = f"🤖 {status}"
-        else:
-            lines.insert(0, f"🤖 {status}")
-
-        self.buffer = "\n".join(lines)
+        """Set a status line at the bottom of the current message"""
+        self._status_line = f"🤖 {status}"
         await self._schedule_update()
+
+    def _get_display_buffer(self) -> str:
+        """Get buffer with status line at bottom"""
+        if self._status_line:
+            return f"{self.buffer}\n\n{self._status_line}"
+        return self.buffer
 
     async def show_tool_use(self, tool_name: str, details: str = ""):
         """Show that a tool is being used with nice formatting"""
@@ -202,12 +210,14 @@ class StreamingHandler:
         if not self.buffer or self.is_finalized:
             return
 
+        display_text = self._get_display_buffer()
+
         try:
             # Check if we need to split into multiple messages
-            if len(self.buffer) > self.MAX_MESSAGE_LENGTH:
+            if len(display_text) > self.MAX_MESSAGE_LENGTH:
                 await self._handle_overflow()
             else:
-                await self._edit_current_message(self.buffer)
+                await self._edit_current_message(display_text)
 
             self.last_update_time = time.time()
 
@@ -223,7 +233,7 @@ class StreamingHandler:
                 pass
             elif "message to edit not found" in str(e):
                 # Message deleted, send new one
-                await self._send_new_message(self.buffer)
+                await self._send_new_message(display_text)
             else:
                 logger.error(f"Telegram error: {e}")
 
@@ -237,11 +247,14 @@ class StreamingHandler:
             try:
                 await self.current_message.edit_text(
                     html_text,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=self.reply_markup
                 )
             except TelegramBadRequest:
                 # Fallback without formatting
-                await self.current_message.edit_text(text, parse_mode=None)
+                await self.current_message.edit_text(
+                    text, parse_mode=None, reply_markup=self.reply_markup
+                )
 
     async def _send_new_message(self, text: str) -> Message:
         """Send a new message (converts Markdown to HTML)"""
@@ -250,11 +263,14 @@ class StreamingHandler:
             msg = await self.bot.send_message(
                 self.chat_id,
                 html_text,
-                parse_mode="HTML"
+                parse_mode="HTML",
+                reply_markup=self.reply_markup
             )
         except TelegramBadRequest:
             # Fallback without formatting
-            msg = await self.bot.send_message(self.chat_id, text, parse_mode=None)
+            msg = await self.bot.send_message(
+                self.chat_id, text, parse_mode=None, reply_markup=self.reply_markup
+            )
 
         self.messages.append(msg)
         self.current_message = msg
@@ -311,10 +327,14 @@ class StreamingHandler:
         if self._pending_update and not self._pending_update.done():
             self._pending_update.cancel()
 
+        # Clear status line and cancel button
+        self._status_line = ""
+        self.reply_markup = None
+
         if final_text:
             self.buffer = final_text
 
-        # Force final update
+        # Force final update (without status, without cancel button)
         if self.buffer:
             try:
                 if len(self.buffer) > self.MAX_MESSAGE_LENGTH:
