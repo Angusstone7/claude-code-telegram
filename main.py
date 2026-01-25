@@ -35,9 +35,11 @@ from infrastructure.persistence.sqlite_repository import (
 )
 from infrastructure.persistence.project_repository import SQLiteProjectRepository
 from infrastructure.persistence.project_context_repository import SQLiteProjectContextRepository
+from infrastructure.persistence.sqlite_account_repository import SQLiteAccountRepository
 from application.services.project_service import ProjectService
 from application.services.context_service import ContextService
 from application.services.file_browser_service import FileBrowserService
+from application.services.account_service import AccountService
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 
@@ -52,6 +54,7 @@ from application.services.bot_service import BotService
 from presentation.handlers.commands import CommandHandlers, register_handlers as register_cmd_handlers
 from presentation.handlers.messages import MessageHandlers, register_handlers as register_msg_handlers
 from presentation.handlers.callbacks import CallbackHandlers, register_handlers as register_callback_handlers
+from presentation.handlers.account_handlers import AccountHandlers, register_account_handlers
 from presentation.middleware.auth import AuthMiddleware, CallbackAuthMiddleware
 
 # Configure logging
@@ -79,6 +82,7 @@ class Application:
         self.project_service: ProjectService = None
         self.context_service: ContextService = None
         self.file_browser_service: FileBrowserService = None
+        self.account_service: AccountService = None  # Account mode switching
         self._shutdown_event = asyncio.Event()
 
     async def setup(self):
@@ -97,6 +101,13 @@ class Application:
         user_repo = SQLiteUserRepository()
         session_repo = SQLiteSessionRepository()
         command_repo = SQLiteCommandRepository()
+
+        # Initialize Account Service (for auth mode switching)
+        logger.info("Initializing account service...")
+        account_repo = SQLiteAccountRepository()
+        await account_repo.initialize()
+        self.account_service = AccountService(account_repo)
+        logger.info("✓ Account service initialized")
 
         # Initialize Claude Code proxy
         default_working_dir = os.getenv("CLAUDE_WORKING_DIR", "/root")
@@ -135,6 +146,7 @@ class Application:
                     permission_mode=os.getenv("CLAUDE_PERMISSION_MODE", "default"),
                     plugins_dir=plugins_dir,
                     enabled_plugins=enabled_plugins,
+                    account_service=self.account_service,
                 )
                 sdk_ok, sdk_msg = await self.claude_sdk.check_sdk_available()
                 if sdk_ok:
@@ -199,6 +211,10 @@ class Application:
 
     def _register_handlers(self):
         """Register all handlers"""
+        # Account handlers (for /account command and mode switching)
+        account_handlers = AccountHandlers(self.account_service)
+        register_account_handlers(self.dp, account_handlers)
+
         # Message handlers (with SDK service preferred, CLI as fallback)
         msg_handlers = MessageHandlers(
             self.bot_service,
@@ -239,6 +255,7 @@ class Application:
         commands = [
             BotCommand(command="start", description="Запустить бота"),
             BotCommand(command="help", description="Показать справку"),
+            BotCommand(command="account", description="Настройки аккаунта (z.ai/Claude)"),
             BotCommand(command="cd", description="Навигация по папкам"),
             BotCommand(command="change", description="Сменить проект"),
             BotCommand(command="fresh", description="Очистить контекст"),
@@ -266,10 +283,18 @@ class Application:
         cli_ok, _ = await self.claude_proxy.check_claude_installed()
         cli_status = "✅ CLI" if cli_ok else "❌ CLI"
 
+        # Get credentials info
+        creds_info = self.account_service.get_credentials_info()
+        creds_status = (
+            f"✅ {creds_info.subscription_type}" if creds_info.exists
+            else "❌ не найден"
+        )
+
         message = (
             f"🚀 <b>Бот запущен!</b>\n\n"
             f"🤖 @{bot_info.username}\n"
             f"📦 {sdk_status} | {cli_status}\n"
+            f"☁️ Claude creds: {creds_status}\n"
             f"📁 {os.getenv('CLAUDE_WORKING_DIR', '/root')}\n\n"
             f"<i>Готов к работе</i>"
         )

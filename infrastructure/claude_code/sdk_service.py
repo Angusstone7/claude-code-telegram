@@ -180,6 +180,7 @@ class ClaudeAgentSDKService:
         plugins_dir: str = "/plugins",  # For custom plugins only
         enabled_plugins: list[str] = None,  # For custom plugins only
         telegram_mcp_path: str = "/app/telegram-mcp/build/index.js",  # Path to telegram MCP server
+        account_service: "AccountService" = None,  # For auth mode switching
     ):
         if not SDK_AVAILABLE:
             raise RuntimeError(
@@ -193,6 +194,7 @@ class ClaudeAgentSDKService:
         self.plugins_dir = plugins_dir
         self.enabled_plugins = enabled_plugins or []
         self.telegram_mcp_path = telegram_mcp_path
+        self.account_service = account_service  # Optional - for auth mode switching
 
         # Active clients by user_id
         self._clients: dict[int, ClaudeSDKClient] = {}
@@ -216,6 +218,26 @@ class ClaudeAgentSDKService:
         if not SDK_AVAILABLE:
             return False, "claude-agent-sdk not installed. Install with: pip install claude-agent-sdk"
         return True, "Claude Agent SDK is available"
+
+    async def get_env_for_user(self, user_id: int) -> dict[str, str]:
+        """
+        Get environment variables for the user based on their auth mode.
+
+        If AccountService is configured, returns env vars based on user's
+        selected auth mode (z.ai API or Claude Account with proxy).
+        Otherwise, returns current environment.
+        """
+        if not self.account_service:
+            return dict(os.environ)
+
+        try:
+            mode = await self.account_service.get_auth_mode(user_id)
+            env = self.account_service.apply_env_for_mode(mode)
+            logger.debug(f"[{user_id}] Using auth mode: {mode.value}")
+            return env
+        except Exception as e:
+            logger.warning(f"[{user_id}] Error getting auth mode, using default env: {e}")
+            return dict(os.environ)
 
     def _get_mcp_servers_config(self, user_id: int) -> dict:
         """
@@ -745,6 +767,29 @@ class ClaudeAgentSDKService:
 
             return {}
 
+        # Get and apply user-specific environment (for auth mode switching)
+        original_env = dict(os.environ)
+        user_env = await self.get_env_for_user(user_id)
+
+        # Apply user environment
+        env_changes = []
+        for key, value in user_env.items():
+            if key.startswith("_"):  # Skip internal markers
+                continue
+            if os.environ.get(key) != value:
+                env_changes.append(key)
+                os.environ[key] = value
+
+        # Remove keys that should be unset for this mode
+        removed_keys = []
+        for key in list(os.environ.keys()):
+            if key not in user_env and key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"):
+                removed_keys.append(key)
+                del os.environ[key]
+
+        if env_changes or removed_keys:
+            logger.info(f"[{user_id}] Applied env: set={env_changes}, removed={removed_keys}")
+
         try:
             # Build plugin configurations
             plugins = self._get_plugin_configs()
@@ -923,6 +968,10 @@ class ClaudeAgentSDKService:
             )
 
         finally:
+            # Restore original environment
+            os.environ.clear()
+            os.environ.update(original_env)
+
             # Cleanup
             self._clients.pop(user_id, None)
             self._tasks.pop(user_id, None)

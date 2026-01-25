@@ -747,6 +747,98 @@ class Keyboards:
 
     # ============== AskUserQuestion Keyboards ==============
 
+    # ============== Account Settings Keyboards ==============
+
+    @staticmethod
+    def account_menu(
+        current_mode: str = "zai_api",
+        has_credentials: bool = False,
+        subscription_type: str = None
+    ) -> InlineKeyboardMarkup:
+        """
+        Account settings menu keyboard.
+
+        Args:
+            current_mode: Current auth mode ("zai_api" or "claude_account")
+            has_credentials: Whether credentials file exists
+            subscription_type: Subscription type from credentials
+        """
+        buttons = []
+
+        # z.ai API button
+        zai_emoji = "✅" if current_mode == "zai_api" else "🌐"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{zai_emoji} z.ai API",
+                callback_data="account:mode:zai_api"
+            )
+        ])
+
+        # Claude Account button
+        if current_mode == "claude_account":
+            claude_emoji = "✅"
+            sub_info = f" ({subscription_type})" if subscription_type else ""
+        else:
+            claude_emoji = "☁️" if has_credentials else "🔓"
+            sub_info = ""
+
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{claude_emoji} Claude Account{sub_info}",
+                callback_data="account:mode:claude_account"
+            )
+        ])
+
+        # Info/status button
+        buttons.append([
+            InlineKeyboardButton(
+                text="ℹ️ Статус авторизации",
+                callback_data="account:status"
+            )
+        ])
+
+        # Close button
+        buttons.append([
+            InlineKeyboardButton(text="❌ Закрыть", callback_data="account:close")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def account_upload_credentials() -> InlineKeyboardMarkup:
+        """Keyboard shown when waiting for credentials file upload"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="account:cancel_upload"
+                )
+            ]
+        ])
+
+    @staticmethod
+    def account_confirm_mode_switch(mode: str) -> InlineKeyboardMarkup:
+        """Confirmation keyboard for mode switch"""
+        if mode == "claude_account":
+            text = "✅ Да, переключить на Claude Account"
+        else:
+            text = "✅ Да, переключить на z.ai API"
+
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"account:confirm:{mode}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="account:menu"
+                )
+            ]
+        ])
+
     @staticmethod
     def question_options(
         questions: List[Dict],
@@ -880,4 +972,20 @@ class CallbackData:
         result = {"action": parts[1] if len(parts) > 1 else ""}
         if len(parts) > 2:
             result["path"] = ":".join(parts[2:])  # Rejoin in case path has colons
+        return result
+
+    # ============== Account Callback Helpers ==============
+
+    @staticmethod
+    def is_account_callback(callback_data: str) -> bool:
+        """Check if this is an account settings callback"""
+        return callback_data.startswith("account:")
+
+    @staticmethod
+    def parse_account_callback(callback_data: str) -> Dict[str, str]:
+        """Parse account callback data"""
+        parts = callback_data.split(":")
+        result = {"action": parts[1] if len(parts) > 1 else ""}
+        if len(parts) > 2:
+            result["value"] = ":".join(parts[2:])
         return result
