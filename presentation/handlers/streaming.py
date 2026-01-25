@@ -224,25 +224,47 @@ class StreamingHandler:
         return msg
 
     async def _handle_overflow(self):
-        """Handle buffer overflow by splitting into multiple messages"""
-        # Find a good split point (newline near the limit)
-        split_point = self.buffer.rfind("\n", 0, self.MAX_MESSAGE_LENGTH)
-        if split_point == -1:
-            split_point = self.MAX_MESSAGE_LENGTH
+        """Handle buffer overflow with sliding window - remove old content, keep newest"""
+        # Extract header (first lines with emoji status)
+        lines = self.buffer.split("\n")
+        header_lines = []
+        content_start = 0
 
-        # Send the completed portion as a new message (finalize previous)
-        completed = self.buffer[:split_point]
-        remaining = self.buffer[split_point:].lstrip("\n")
+        # Keep header lines (status and project info)
+        for i, line in enumerate(lines):
+            if line.startswith("🤖") or line.startswith("📂") or line.startswith("📁"):
+                header_lines.append(line)
+                content_start = i + 1
+            elif header_lines:  # Stop after first non-header line
+                break
 
-        # Update current message with completed text
-        await self._edit_current_message(completed)
+        header = "\n".join(header_lines)
+        content = "\n".join(lines[content_start:])
 
-        # Start a new message with remaining text
-        if remaining:
-            self.buffer = remaining
-            self.current_message = await self._send_new_message(remaining)
+        # Target size - leave room for new content
+        target_size = self.MAX_MESSAGE_LENGTH - 500
+
+        # Remove oldest content blocks until we fit
+        trimmed = False
+        while len(header) + len(content) + 50 > target_size and content:
+            trimmed = True
+            # Find first block separator (double newline or tool result end)
+            block_end = content.find("\n\n")
+            if block_end > 0 and block_end < len(content) - 100:
+                content = content[block_end + 2:]
+            else:
+                # Fallback: remove first 300 chars
+                content = content[300:]
+
+        # Build new buffer with trim indicator
+        if trimmed:
+            trim_indicator = "\n*(...)*\n"
+            self.buffer = header + trim_indicator + content.lstrip("\n")
         else:
-            self.buffer = ""
+            self.buffer = header + "\n" + content if header else content
+
+        # Update message with trimmed content
+        await self._edit_current_message(self.buffer)
 
     async def finalize(self, final_text: Optional[str] = None):
         """Finalize the stream with optional final text"""

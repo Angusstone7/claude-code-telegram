@@ -47,6 +47,70 @@ except ImportError:
     logger.warning("claude-agent-sdk not installed. Install with: pip install claude-agent-sdk")
 
 
+def _format_tool_response(tool_name: str, response: Any, max_length: int = 500) -> str:
+    """Format tool response for display in Telegram.
+
+    Parses different response types and formats them nicely instead of raw dict.
+    """
+    if not response:
+        return ""
+
+    tool_lower = tool_name.lower()
+
+    # Handle dict responses
+    if isinstance(response, dict):
+        # Glob results
+        if tool_lower == "glob" and "filenames" in response:
+            files = response.get("filenames", [])
+            if not files:
+                return "Файлов не найдено"
+            # Show file list
+            file_list = "\n".join(f"  {f}" for f in files[:20])
+            if len(files) > 20:
+                file_list += f"\n  ... и ещё {len(files) - 20} файлов"
+            return f"Найдено {len(files)} файлов:\n{file_list}"
+
+        # Read results
+        if tool_lower == "read" and "file" in response:
+            file_info = response.get("file", {})
+            content = file_info.get("content", "")
+            path = file_info.get("filePath", "")
+            if content:
+                truncated = content[:max_length]
+                if len(content) > max_length:
+                    truncated += "\n... (обрезано)"
+                return truncated
+            return f"Файл прочитан: {path}"
+
+        # Grep results
+        if tool_lower == "grep" and "matches" in response:
+            matches = response.get("matches", [])
+            if not matches:
+                return "Совпадений не найдено"
+            return f"Найдено {len(matches)} совпадений"
+
+        # Generic dict - try to extract useful info
+        if "content" in response:
+            return str(response["content"])[:max_length]
+        if "output" in response:
+            return str(response["output"])[:max_length]
+        if "result" in response:
+            return str(response["result"])[:max_length]
+
+        # Skip technical dicts with only metadata
+        if set(response.keys()) <= {"durationMs", "numFiles", "truncated", "type"}:
+            return ""
+
+        # Fallback: simple representation
+        return str(response)[:max_length]
+
+    # String response
+    response_str = str(response)
+    if len(response_str) > max_length:
+        return response_str[:max_length] + "..."
+    return response_str
+
+
 class TaskStatus(str, Enum):
     """Task execution status"""
     IDLE = "idle"
@@ -507,8 +571,10 @@ class ClaudeAgentSDKService:
             tool_response = input_data.get("tool_response", "")
 
             if on_tool_result:
-                response_str = str(tool_response)[:500] if tool_response else ""
-                await on_tool_result(tool_use_id or "", response_str)
+                # Format response nicely instead of raw dict
+                formatted = _format_tool_response(tool_name, tool_response)
+                if formatted:  # Only show non-empty results
+                    await on_tool_result(tool_use_id or "", formatted)
 
             return {}
 
