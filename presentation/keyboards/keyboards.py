@@ -294,6 +294,42 @@ class Keyboards:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
+    def context_menu(
+        current_context_name: str = "",
+        project_name: str = "",
+        message_count: int = 0
+    ) -> InlineKeyboardMarkup:
+        """
+        Main context menu with action buttons.
+
+        Args:
+            current_context_name: Name of current context
+            project_name: Name of current project
+            message_count: Number of messages in current context
+        """
+        buttons = [
+            [
+                InlineKeyboardButton(text="📋 Список", callback_data="ctx:list"),
+                InlineKeyboardButton(text="✨ Новый", callback_data="ctx:new")
+            ],
+            [
+                InlineKeyboardButton(text="🗑️ Очистить", callback_data="ctx:clear"),
+                InlineKeyboardButton(text="❌ Закрыть", callback_data="ctx:close")
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def context_clear_confirm() -> InlineKeyboardMarkup:
+        """Confirmation keyboard for context clearing"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да, очистить", callback_data="ctx:clear:confirm"),
+                InlineKeyboardButton(text="⬅️ Отмена", callback_data="ctx:menu")
+            ]
+        ])
+
+    @staticmethod
     def context_list(
         contexts: List,
         current_context_id: Optional[str] = None
@@ -319,13 +355,14 @@ class Keyboards:
             buttons.append([
                 InlineKeyboardButton(
                     text=f"{emoji} {ctx.name} {msg_count}{mark}",
-                    callback_data=f"context:switch:{ctx.id}"
+                    callback_data=f"ctx:switch:{ctx.id}"
                 )
             ])
 
-        # New context button
+        # Action buttons at bottom
         buttons.append([
-            InlineKeyboardButton(text="✨ Новый контекст", callback_data="context:new")
+            InlineKeyboardButton(text="✨ Новый", callback_data="ctx:new"),
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="ctx:menu")
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -307,7 +307,7 @@ class CommandHandlers:
         await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
 
     async def context(self, message: Message, command: CommandObject) -> None:
-        """Handle /context command - manage contexts within project"""
+        """Handle /context command - show interactive context menu"""
         user_id = message.from_user.id
 
         if not self.project_service or not self.context_service:
@@ -321,80 +321,30 @@ class CommandHandlers:
         project = await self.project_service.get_current(uid)
         if not project:
             await message.answer(
-                "❌ **Нет активного проекта**\n\n"
-                "Используйте `/change` для выбора проекта.",
-                parse_mode="Markdown"
+                "❌ Нет активного проекта\n\n"
+                "Используйте /change для выбора проекта.",
+                parse_mode=None
             )
             return
 
-        subcommand = command.args.strip().lower() if command.args else ""
+        # Get current context
+        current_ctx = await self.context_service.get_current(project.id)
+        ctx_name = current_ctx.name if current_ctx else "не выбран"
+        msg_count = current_ctx.message_count if current_ctx else 0
+        has_session = current_ctx.has_session if current_ctx else False
 
-        if subcommand == "new":
-            # Create new context
-            context = await self.context_service.create_new(
-                project.id, uid, set_as_current=True
-            )
-            await message.answer(
-                f"✨ **Новый контекст создан**\n\n"
-                f"Контекст: **{context.name}**\n"
-                f"Проект: {project.name}\n\n"
-                f"Чистый старт — без истории!",
-                parse_mode="Markdown"
-            )
+        # Build status text
+        session_status = "📜 Есть сессия" if has_session else "✨ Чистый"
+        text = (
+            f"💬 Управление контекстами\n\n"
+            f"📂 Проект: {project.name}\n"
+            f"💬 Контекст: {ctx_name}\n"
+            f"📝 Сообщений: {msg_count}\n"
+            f"📌 Статус: {session_status}"
+        )
 
-        elif subcommand == "list":
-            # List contexts
-            contexts = await self.context_service.list_contexts(project.id)
-            current_ctx = await self.context_service.get_current(project.id)
-            current_id = current_ctx.id if current_ctx else None
-
-            if contexts:
-                text = (
-                    f"💬 **Контексты проекта {project.name}**\n\n"
-                    f"Выберите контекст:"
-                )
-                keyboard = Keyboards.context_list(contexts, current_id)
-            else:
-                text = "Контексты не найдены. Создаю основной контекст..."
-                context = await self.context_service.create_new(
-                    project.id, uid, "main", set_as_current=True
-                )
-                text = f"✨ Создан контекст: **{context.name}**"
-                keyboard = None
-
-            await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
-
-        elif subcommand == "clear":
-            # Clear current context messages
-            current_ctx = await self.context_service.get_current(project.id)
-            if current_ctx:
-                await self.context_service.start_fresh(current_ctx.id)
-                await message.answer(
-                    f"🗑️ **Контекст очищен**\n\n"
-                    f"Контекст: {current_ctx.name}\n"
-                    f"Сообщения и сессия очищены.",
-                    parse_mode="Markdown"
-                )
-            else:
-                await message.answer("Нет активного контекста для очистки.")
-
-        else:
-            # Show help
-            current_ctx = await self.context_service.get_current(project.id)
-            ctx_name = current_ctx.name if current_ctx else "нет"
-
-            await message.answer(
-                f"💬 **Управление контекстами**\n\n"
-                f"Проект: **{project.name}**\n"
-                f"Контекст: **{ctx_name}**\n\n"
-                f"**Команды:**\n"
-                f"`/context new` - Создать новый контекст\n"
-                f"`/context list` - Список контекстов\n"
-                f"`/context clear` - Очистить текущий контекст\n\n"
-                f"Контексты позволяют вести несколько диалогов\n"
-                f"в рамках одного проекта (как в Cursor IDE).",
-                parse_mode="Markdown"
-            )
+        keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count)
+        await message.answer(text, parse_mode=None, reply_markup=keyboard)
 
     async def fresh(self, message: Message) -> None:
         """
