@@ -102,6 +102,12 @@ deploy:
       git checkout "$CI_COMMIT_BRANCH"
       git reset --hard "origin/$CI_COMMIT_BRANCH"
 
+      echo "--> Ensure data directories exist"
+      mkdir -p "$SERVER_APP_PATH/data"
+      mkdir -p "$SERVER_APP_PATH/logs"
+      mkdir -p "$SERVER_APP_PATH/projects"
+      mkdir -p "$SERVER_APP_PATH/claude_sessions"
+
       echo "--> Generate SSH key for bot if not exists"
       if [ ! -f "$SERVER_APP_PATH/bot_key" ]; then
         ssh-keygen -t ed25519 -f "$SERVER_APP_PATH/bot_key" -N "" -C "claude-bot"
