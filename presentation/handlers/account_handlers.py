@@ -310,6 +310,7 @@ class AccountHandlers:
                 current_mode=settings.auth_mode.value,
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
+                current_model=settings.model,
             )
         )
 
@@ -658,17 +659,20 @@ class AccountHandlers:
 
                 if not mode_success:
                     # This shouldn't happen since we just saved credentials, but handle it
+                    settings = await self.account_service.get_settings(user_id)
                     await message.answer(
                         f"⚠️ Credentials сохранены, но не удалось переключить режим:\n{mode_error}",
                         reply_markup=Keyboards.account_menu(
                             current_mode=AuthMode.ZAI_API.value,
                             has_credentials=True,
+                            current_model=settings.model,
                         )
                     )
                     await state.clear()
                     return
 
                 creds_info = self.account_service.get_credentials_info()
+                settings = await self.account_service.get_settings(user_id)
 
                 await message.answer(
                     f"✅ <b>Авторизация успешна!</b>\n\n"
@@ -680,6 +684,7 @@ class AccountHandlers:
                         current_mode=AuthMode.CLAUDE_ACCOUNT.value,
                         has_credentials=True,
                         subscription_type=creds_info.subscription_type,
+                        current_model=settings.model,
                     )
                 )
                 await state.clear()
@@ -859,12 +864,14 @@ class AccountHandlers:
 
             if not mode_success:
                 # This shouldn't happen since OAuth just saved credentials, but handle it
+                settings = await self.account_service.get_settings(user_id)
                 await processing_msg.edit_text(
                     f"⚠️ OAuth успешен, но не удалось переключить режим:\n{mode_error}",
                     parse_mode="HTML",
                     reply_markup=Keyboards.account_menu(
                         current_mode=AuthMode.ZAI_API.value,
                         has_credentials=True,
+                        current_model=settings.model,
                     )
                 )
                 await state.clear()
