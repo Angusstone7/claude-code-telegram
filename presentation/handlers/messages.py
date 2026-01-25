@@ -867,8 +867,8 @@ class MessageHandlers:
         self.set_working_dir(user_id, path)
 
         await message.answer(
-            f"📁 **Рабочая папка установлена:**\n`{path}`",
-            parse_mode=ParseMode.MARKDOWN
+            f"📁 Рабочая папка установлена:\n{path}",
+            parse_mode=None
         )
 
     # ============== Variable Input Handlers ==============

@@ -74,7 +74,7 @@ class CallbackHandlers:
 
         except Exception as e:
             logger.error(f"Error executing command: {e}")
-            await callback.message.edit_text(f"❌ **Ошибка:** {str(e)}", parse_mode=ParseMode.MARKDOWN)
+            await callback.message.edit_text(f"❌ Ошибка: {str(e)}", parse_mode=None)
 
         await callback.answer()
 

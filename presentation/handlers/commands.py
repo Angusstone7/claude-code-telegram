@@ -214,8 +214,8 @@ class CommandHandlers:
         except Exception as e:
             logger.error(f"Error getting docker containers: {e}")
             await message.answer(
-                f"🐳 **Docker**\n\n❌ Ошибка: {e}",
-                parse_mode="Markdown"
+                f"🐳 Docker\n\n❌ Ошибка: {e}",
+                parse_mode=None
             )
 
     async def menu_commands(self, message: Message) -> None:
