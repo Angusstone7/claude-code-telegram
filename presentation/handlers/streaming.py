@@ -57,10 +57,11 @@ class StreamingHandler:
                     parse_mode="Markdown"
                 )
             except TelegramBadRequest:
-                # Fallback without markdown if parsing fails
+                # Fallback without markdown if parsing fails (explicit None to override default)
                 self.current_message = await self.bot.send_message(
                     self.chat_id,
-                    initial_text
+                    initial_text,
+                    parse_mode=None
                 )
             self.messages.append(self.current_message)
         self.buffer = initial_text
@@ -203,8 +204,8 @@ class StreamingHandler:
                     parse_mode="Markdown"
                 )
             except TelegramBadRequest:
-                # Try without markdown if it fails
-                await self.current_message.edit_text(text)
+                # Try without markdown if it fails (explicit None to override default)
+                await self.current_message.edit_text(text, parse_mode=None)
 
     async def _send_new_message(self, text: str) -> Message:
         """Send a new message"""
@@ -215,8 +216,8 @@ class StreamingHandler:
                 parse_mode="Markdown"
             )
         except TelegramBadRequest:
-            # Try without markdown
-            msg = await self.bot.send_message(self.chat_id, text)
+            # Try without markdown (explicit None to override default)
+            msg = await self.bot.send_message(self.chat_id, text, parse_mode=None)
 
         self.messages.append(msg)
         self.current_message = msg
