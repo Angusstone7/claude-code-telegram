@@ -555,7 +555,16 @@ class MenuHandlers:
 
         elif action == "account":
             # Redirect to account menu
-            if self.account_service:
+            try:
+                logger.info(f"[{user_id}] Opening account menu")
+
+                if not self.account_service:
+                    await callback.answer(
+                        "❌ Сервис аккаунтов не инициализирован",
+                        show_alert=True
+                    )
+                    return
+
                 settings = await self.account_service.get_settings(user_id)
                 creds_info = self.account_service.get_credentials_info()
 
@@ -578,7 +587,15 @@ class MenuHandlers:
                     ),
                     parse_mode="HTML"
                 )
-            await callback.answer()
+                await callback.answer()
+                logger.info(f"[{user_id}] Account menu opened successfully")
+
+            except Exception as e:
+                logger.error(f"[{user_id}] Error opening account menu: {e}", exc_info=True)
+                await callback.answer(
+                    f"❌ Ошибка: {str(e)}",
+                    show_alert=True
+                )
 
         elif action == "yolo":
             # Toggle YOLO mode
