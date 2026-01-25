@@ -51,63 +51,63 @@ class CommandHandlers:
         status = f"✅ {version_info}" if installed else f"⚠️ {version_info}"
 
         await message.answer(
-            f"🤖 **Claude Code Telegram Proxy**\n\n"
+            f"🤖 <b>Claude Code Telegram Proxy</b>\n\n"
             f"Привет, {user.first_name}!\n"
-            f"Ваша роль: **{user.role.name}**\n\n"
-            f"**Claude Code:** {status}\n"
-            f"**Рабочая папка:** `{working_dir}`\n\n"
+            f"Ваша роль: <b>{user.role.name}</b>\n\n"
+            f"<b>Claude Code:</b> {status}\n"
+            f"<b>Рабочая папка:</b> <code>{working_dir}</code>\n\n"
             f"Просто отправьте задачу — Claude Code её выполнит!\n"
             f"Я буду показывать вывод, запрашивать разрешения и передавать вопросы.\n\n"
             f"Используйте /help для списка команд.",
-            parse_mode=None,
+            parse_mode="HTML",
             reply_markup=Keyboards.main_menu()
         )
 
     async def help(self, message: Message) -> None:
         """Handle /help command"""
         help_text = """
-🤖 **Claude Code Telegram Proxy - Справка**
+🤖 <b>Claude Code Telegram Proxy - Справка</b>
 
-**Навигация и проекты:**
+<b>Навигация и проекты:</b>
 /cd - Навигация по папкам
 /change - Сменить проект
 /fresh - Очистить контекст
 
-**Управление контекстом:**
+<b>Управление контекстом:</b>
 /context new - Создать новый контекст
 /context list - Список контекстов
 /context clear - Очистить текущий контекст
 /vars - Управление переменными контекста
 
-**Claude Code:**
+<b>Claude Code:</b>
 /yolo - YOLO режим (авто-подтверждение)
 /plugins - Показать плагины
 /cancel - Отменить задачу
 /status - Статус Claude Code
 
-**Мониторинг:**
+<b>Мониторинг:</b>
 /metrics - Метрики системы (CPU, RAM, диск)
 /docker - Список Docker контейнеров
 
-**Основные команды:**
+<b>Основные команды:</b>
 /start - Запустить бота
 /help - Показать справку
 /stats - Ваша статистика
 /clear - Очистить историю чата
 
-**Как это работает:**
+<b>Как это работает:</b>
 1. Отправьте задачу сообщением
 2. Claude Code начнёт работу
 3. Вы увидите вывод в реальном времени
 4. Подтверждайте/отклоняйте операции
 5. Отвечайте на вопросы Claude
 
-**HITL (Human-in-the-Loop):**
-🔐 **Разрешения** - Подтверждение опасных операций
-❓ **Вопросы** - Ответы на вопросы Claude
-🛑 **Отмена** - Остановить задачу в любой момент
+<b>HITL (Human-in-the-Loop):</b>
+🔐 <b>Разрешения</b> - Подтверждение опасных операций
+❓ <b>Вопросы</b> - Ответы на вопросы Claude
+🛑 <b>Отмена</b> - Остановить задачу в любой момент
 
-**Примеры:**
+<b>Примеры:</b>
 • "Создай Python скрипт, который выводит hello"
 • "Прочитай файл README.md"
 • "Запусти npm install в проекте"
@@ -115,7 +115,7 @@ class CommandHandlers:
 
 Просто опишите что нужно сделать!
         """
-        await message.answer(help_text, parse_mode=None)
+        await message.answer(help_text, parse_mode="HTML")
 
     async def clear(self, message: Message) -> None:
         """Handle /clear command"""
@@ -152,22 +152,22 @@ class CommandHandlers:
 
         metrics = info["metrics"]
         lines = [
-            "📊 **Метрики системы**",
+            "📊 <b>Метрики системы</b>",
             "",
-            f"💻 **CPU:** {metrics['cpu_percent']:.1f}%",
-            f"🧠 **Память:** {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)",
-            f"💾 **Диск:** {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)",
+            f"💻 <b>CPU:</b> {metrics['cpu_percent']:.1f}%",
+            f"🧠 <b>Память:</b> {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)",
+            f"💾 <b>Диск:</b> {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)",
         ]
 
         if metrics.get('load_average', [0])[0] > 0:
-            lines.append(f"📈 **Нагрузка:** {metrics['load_average'][0]:.2f}")
+            lines.append(f"📈 <b>Нагрузка:</b> {metrics['load_average'][0]:.2f}")
 
         # Show alerts
         if info.get("alerts"):
-            lines.append("\n⚠️ **Предупреждения:**")
+            lines.append("\n⚠️ <b>Предупреждения:</b>")
             lines.extend(info["alerts"])
 
-        await message.answer("\n".join(lines), parse_mode=None, reply_markup=Keyboards.system_metrics())
+        await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=Keyboards.system_metrics())
 
     async def docker(self, message: Message) -> None:
         """Handle /docker command and 🐳 Docker button"""
@@ -178,27 +178,27 @@ class CommandHandlers:
 
             if not containers:
                 await message.answer(
-                    "🐳 **Docker контейнеры**\n\n"
+                    "🐳 <b>Docker контейнеры</b>\n\n"
                     "Контейнеры не найдены.\n\n"
                     "Используйте Claude Code для управления Docker:\n"
                     "• 'docker ps -a'\n"
                     "• 'docker run ...'",
-                    parse_mode=None
+                    parse_mode="HTML"
                 )
                 return
 
             # Build container list with action buttons
-            lines = ["🐳 **Docker контейнеры:**\n"]
+            lines = ["🐳 <b>Docker контейнеры:</b>\n"]
             for c in containers:
                 status_emoji = "🟢" if c["status"] == "running" else "🔴"
-                lines.append(f"\n{status_emoji} **{c['name']}**")
+                lines.append(f"\n{status_emoji} <b>{c['name']}</b>")
                 lines.append(f"   Статус: {c['status']}")
-                lines.append(f"   Образ: `{c['image'][:30]}`")
+                lines.append(f"   Образ: <code>{c['image'][:30]}</code>")
 
             text = "\n".join(lines)
             await message.answer(
                 text,
-                parse_mode=None,
+                parse_mode="HTML",
                 reply_markup=Keyboards.docker_list(containers)
             )
 
@@ -224,8 +224,8 @@ class CommandHandlers:
             if self.message_handlers:
                 self.message_handlers.set_working_dir(user_id, path)
                 await message.answer(
-                    f"📁 **Рабочая папка установлена:**\n`{path}`",
-                    parse_mode=None
+                    f"📁 <b>Рабочая папка установлена:</b>\n<code>{path}</code>",
+                    parse_mode="HTML"
                 )
             else:
                 await message.answer(
@@ -245,10 +245,10 @@ class CommandHandlers:
                     projects.append({"name": os.path.basename(dir_path) or dir_path, "path": dir_path})
 
             await message.answer(
-                f"📁 **Текущая рабочая папка:**\n`{current_dir}`\n\n"
+                f"📁 <b>Текущая рабочая папка:</b>\n<code>{current_dir}</code>\n\n"
                 f"Используйте `/project <путь>` для смены.\n\n"
-                f"Пример:\n`/project /home/myproject`",
-                parse_mode=None,
+                f"Пример:\n<code>/project /home/myproject</code>",
+                parse_mode="HTML",
                 reply_markup=Keyboards.project_selection(projects) if projects else None
             )
 
@@ -272,20 +272,20 @@ class CommandHandlers:
 
         if projects:
             text = (
-                f"📂 **Сменить проект**\n\n"
-                f"Текущий: **{current_name}**\n\n"
+                f"📂 <b>Сменить проект</b>\n\n"
+                f"Текущий: <b>{current_name}</b>\n\n"
                 f"Выберите проект:"
             )
             keyboard = Keyboards.project_list(projects, current_id)
         else:
             text = (
-                f"📂 **Нет проектов**\n\n"
+                f"📂 <b>Нет проектов</b>\n\n"
                 f"У вас пока нет проектов.\n"
                 f"Создайте новый или откройте `/root/projects`"
             )
             keyboard = Keyboards.project_list([], None, show_create=True)
 
-        await message.answer(text, parse_mode=None, reply_markup=keyboard)
+        await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
     async def context(self, message: Message, command: CommandObject) -> None:
         """Handle /context command - show interactive context menu"""
@@ -389,17 +389,17 @@ class CommandHandlers:
 
         if new_state:
             await message.answer(
-                "🚀 **YOLO Mode: ON**\n\n"
+                "🚀 <b>YOLO Mode: ON</b>\n\n"
                 "⚡ Все операции будут выполняться автоматически!\n"
                 "⚠️ Будьте осторожны - нет подтверждений!\n\n"
                 "Используйте `/yolo` снова чтобы выключить.",
-                parse_mode=None
+                parse_mode="HTML"
             )
         else:
             await message.answer(
-                "🛡️ **YOLO Mode: OFF**\n\n"
+                "🛡️ <b>YOLO Mode: OFF</b>\n\n"
                 "Операции снова требуют подтверждения.",
-                parse_mode=None
+                parse_mode="HTML"
             )
 
     async def plugins(self, message: Message) -> None:
@@ -410,19 +410,19 @@ class CommandHandlers:
         """
         if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
             await message.answer(
-                "🔌 **Плагины Claude Code**\n\n"
+                "🔌 <b>Плагины Claude Code</b>\n\n"
                 "⚠️ SDK сервис недоступен.\n"
                 "Плагины требуют Claude Agent SDK.",
-                parse_mode=None
+                parse_mode="HTML"
             )
             return
 
         sdk_service = self.message_handlers.sdk_service
         if not sdk_service:
             await message.answer(
-                "🔌 **Плагины Claude Code**\n\n"
+                "🔌 <b>Плагины Claude Code</b>\n\n"
                 "⚠️ SDK сервис не инициализирован.",
-                parse_mode=None
+                parse_mode="HTML"
             )
             return
 
@@ -430,28 +430,28 @@ class CommandHandlers:
 
         if not plugins_info:
             await message.answer(
-                "🔌 **Плагины Claude Code**\n\n"
+                "🔌 <b>Плагины Claude Code</b>\n\n"
                 "Плагины не настроены.",
-                parse_mode=None
+                parse_mode="HTML"
             )
             return
 
-        lines = ["🔌 **Плагины Claude Code:**\n"]
+        lines = ["🔌 <b>Плагины Claude Code:</b>\n"]
         available_count = 0
         for plugin in plugins_info:
             if plugin.get("available"):
-                lines.append(f"✅ `/{plugin['name']}` — {plugin['description']}")
+                lines.append(f"✅ <code>/{plugin['name']}</code> — {plugin['description']}")
                 available_count += 1
             else:
-                lines.append(f"❌ `/{plugin['name']}` — не найден")
+                lines.append(f"❌ <code>/{plugin['name']}</code> — не найден")
 
         if available_count > 0:
-            lines.append("\n**Как использовать:**")
+            lines.append("\n<b>Как использовать:</b>")
             lines.append("Просто скажите Claude что нужно сделать:")
-            lines.append("• _'сделай коммит'_")
-            lines.append("• _'запусти /commit'_")
-            lines.append("• _'создай PR'_")
-            lines.append("• _'проведи код ревью'_")
+            lines.append("• 'сделай коммит'")
+            lines.append("• 'запусти /commit'")
+            lines.append("• 'создай PR'")
+            lines.append("• 'проведи код ревью'")
             lines.append("\nClaude сам определит какой плагин использовать!")
         else:
             lines.append("\n⚠️ Плагины не найдены в директории.")
@@ -571,12 +571,12 @@ class CommandHandlers:
         backend = "SDK" if sdk_running else ("CLI" if cli_running else "Ожидание")
 
         text = f"""
-📊 **Статус Claude Code**
+📊 <b>Статус Claude Code</b>
 
-**CLI:** {cli_emoji} {version_info}
-**SDK:** {sdk_status}
-**Задача:** {task_status} ({backend})
-**Рабочая папка:** `{working_dir}`
+<b>CLI:</b> {cli_emoji} {version_info}
+<b>SDK:</b> {sdk_status}
+<b>Задача:</b> {task_status} ({backend})
+<b>Рабочая папка:</b> <code>{working_dir}</code>
 """
 
         if is_running:
@@ -584,7 +584,7 @@ class CommandHandlers:
 
         text += "\n\nИспользуйте /diagnose для полной диагностики."
 
-        await message.answer(text, parse_mode=None)
+        await message.answer(text, parse_mode="HTML")
 
     async def diagnose(self, message: Message) -> None:
         """Handle /diagnose command - run full Claude Code diagnostics"""
