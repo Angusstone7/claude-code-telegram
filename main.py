@@ -180,7 +180,7 @@ class Application:
         # Initialize bot
         self.bot = Bot(
             token=settings.telegram.token,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         self.dp = Dispatcher()
 

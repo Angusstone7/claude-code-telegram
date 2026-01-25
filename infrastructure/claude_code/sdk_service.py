@@ -605,7 +605,8 @@ class ClaudeAgentSDKService:
                     "PreToolUse": [HookMatcher(hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(hooks=[post_tool_hook])],
                 },
-                resume=session_id,  # Continue from previous session (enables memory)
+                # NOTE: resume disabled - causes 0 turns issue with some session IDs
+                # resume=session_id,
                 plugins=plugins if plugins else None,
             )
 

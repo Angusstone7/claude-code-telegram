@@ -9,6 +9,7 @@ Handles real-time streaming of Claude Code output to Telegram with:
 
 import asyncio
 import logging
+import re
 import time
 from typing import Optional
 from aiogram import Bot
@@ -16,6 +17,39 @@ from aiogram.types import Message
 from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
 
 logger = logging.getLogger(__name__)
+
+
+def markdown_to_html(text: str) -> str:
+    """
+    Convert basic Markdown to Telegram HTML.
+
+    Supports:
+    - **bold** → <b>bold</b>
+    - *italic* → <i>italic</i>
+    - `code` → <code>code</code>
+    - ```code block``` → <pre>code block</pre>
+    """
+    if not text:
+        return text
+
+    # Escape HTML entities first (except for our conversions)
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+
+    # Code blocks (``` ... ```) - must be before inline code
+    text = re.sub(r'```(\w*)\n?(.*?)```', r'<pre>\2</pre>', text, flags=re.DOTALL)
+
+    # Inline code (`code`)
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+
+    # Bold (**text**)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+
+    # Italic (*text*) - be careful not to match **
+    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
+
+    return text
 
 
 class StreamingHandler:
@@ -50,14 +84,15 @@ class StreamingHandler:
     async def start(self, initial_text: str = "🤖 Запускаю...") -> Message:
         """Start streaming with an initial message"""
         if not self.current_message:
+            html_text = markdown_to_html(initial_text)
             try:
                 self.current_message = await self.bot.send_message(
                     self.chat_id,
-                    initial_text,
-                    parse_mode="Markdown"
+                    html_text,
+                    parse_mode="HTML"
                 )
             except TelegramBadRequest:
-                # Fallback without markdown if parsing fails (explicit None to override default)
+                # Fallback without formatting if parsing fails
                 self.current_message = await self.bot.send_message(
                     self.chat_id,
                     initial_text,
@@ -196,27 +231,29 @@ class StreamingHandler:
             logger.error(f"Error updating message: {e}")
 
     async def _edit_current_message(self, text: str):
-        """Edit the current message with new text"""
+        """Edit the current message with new text (converts Markdown to HTML)"""
         if self.current_message:
+            html_text = markdown_to_html(text)
             try:
                 await self.current_message.edit_text(
-                    text,
-                    parse_mode="Markdown"
+                    html_text,
+                    parse_mode="HTML"
                 )
             except TelegramBadRequest:
-                # Try without markdown if it fails (explicit None to override default)
+                # Fallback without formatting
                 await self.current_message.edit_text(text, parse_mode=None)
 
     async def _send_new_message(self, text: str) -> Message:
-        """Send a new message"""
+        """Send a new message (converts Markdown to HTML)"""
+        html_text = markdown_to_html(text)
         try:
             msg = await self.bot.send_message(
                 self.chat_id,
-                text,
-                parse_mode="Markdown"
+                html_text,
+                parse_mode="HTML"
             )
         except TelegramBadRequest:
-            # Try without markdown (explicit None to override default)
+            # Fallback without formatting
             msg = await self.bot.send_message(self.chat_id, text, parse_mode=None)
 
         self.messages.append(msg)
