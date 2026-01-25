@@ -640,11 +640,16 @@ class CallbackHandlers:
                     f"Сначала создайте папку с помощью Claude Code."
                 )
 
-            await callback.message.edit_text(
-                text,
-                parse_mode=None,
-                reply_markup=Keyboards.folder_browser(folders, root_path)
-            )
+            try:
+                await callback.message.edit_text(
+                    text,
+                    parse_mode=None,
+                    reply_markup=Keyboards.folder_browser(folders, root_path)
+                )
+            except Exception as edit_err:
+                # Ignore "message is not modified" error
+                if "message is not modified" not in str(edit_err):
+                    raise edit_err
             await callback.answer()
 
         except Exception as e:
