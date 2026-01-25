@@ -52,8 +52,19 @@ def _format_tool_response(tool_name: str, response: Any, max_length: int = 500) 
 
     Parses different response types and formats them nicely instead of raw dict.
     """
+    import json
+
     if not response:
         return ""
+
+    # Parse JSON string if needed (SDK may return serialized JSON)
+    if isinstance(response, str):
+        try:
+            parsed = json.loads(response)
+            if isinstance(parsed, dict):
+                response = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass  # Keep as string
 
     tool_lower = tool_name.lower()
 
@@ -585,10 +596,6 @@ class ClaudeAgentSDKService:
                 logger.info(f"[{user_id}] Using {len(plugins)} plugins: {[p['path'] for p in plugins]}")
 
             # Build options
-            # Note: Don't pass resume parameter for now - it can cause silent failures
-            # when the session is stale/invalid. The SDK exits with 0 turns instead of
-            # starting a fresh conversation. We'll re-enable once we have proper
-            # session validation.
             options = ClaudeAgentOptions(
                 cwd=work_dir,
                 max_turns=self.max_turns,
@@ -598,7 +605,7 @@ class ClaudeAgentSDKService:
                     "PreToolUse": [HookMatcher(hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(hooks=[post_tool_hook])],
                 },
-                # resume=session_id,  # Disabled: causes silent failures with stale sessions
+                resume=session_id,  # Continue from previous session (enables memory)
                 plugins=plugins if plugins else None,
             )
 

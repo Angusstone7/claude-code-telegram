@@ -235,7 +235,7 @@ class MessageHandlers:
 
         # Get working directory and session from project/context (auto-continue)
         working_dir = self.get_working_dir(user_id)
-        session_id = self._continue_sessions.pop(user_id, None)
+        session_id = self._continue_sessions.get(user_id)  # Don't pop - keep for next message
         context_id = None
 
         # Use project/context services if available (for auto-continue)
@@ -711,6 +711,11 @@ class MessageHandlers:
                     logger.info(f"Saved session to context {context_id}")
                 except Exception as e:
                     logger.warning(f"Error saving to context: {e}")
+
+            # Fallback: save session_id for users without project (enables auto-continue)
+            if result.session_id:
+                self._continue_sessions[user_id] = result.session_id
+                logger.debug(f"Saved session {result.session_id} for user {user_id} (fallback)")
 
             # Check if working directory changed and update project path
             if session and self.project_service:
