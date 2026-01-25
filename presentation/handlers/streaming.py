@@ -289,6 +289,8 @@ class StreamingHandler:
         self._status_line = ""  # Status line shown at bottom
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
         self._todo_message: Optional[Message] = None  # Separate message for todo list
+        self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
+        self._is_plan_mode: bool = False  # Whether Claude is in plan mode
 
         if initial_message:
             self.messages.append(initial_message)
@@ -451,6 +453,119 @@ class StreamingHandler:
                 )
         except Exception as e:
             logger.debug(f"Error updating todo message: {e}")
+
+    async def show_plan_mode_enter(self) -> None:
+        """Show that Claude entered plan mode.
+
+        Displays a visual indicator that Claude is analyzing
+        the task and creating a plan before execution.
+        """
+        self._is_plan_mode = True
+
+        html_text = (
+            "🎯 <b>Режим планирования</b>\n\n"
+            "<i>Claude анализирует задачу и составляет план...</i>"
+        )
+
+        try:
+            if self._plan_mode_message:
+                await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+            else:
+                self._plan_mode_message = await self.bot.send_message(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            logger.debug(f"Error showing plan mode: {e}")
+
+    async def show_plan_mode_exit(self, plan_approved: bool = False) -> None:
+        """Show that Claude exited plan mode.
+
+        Args:
+            plan_approved: Whether the plan was approved (True) or just ready (False)
+        """
+        self._is_plan_mode = False
+
+        if plan_approved:
+            html_text = "✅ <b>План утверждён</b> — начинаю выполнение"
+        else:
+            html_text = "📋 <b>План готов</b> — ожидаю подтверждения"
+
+        try:
+            if self._plan_mode_message:
+                await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                self._plan_mode_message = None
+            else:
+                await self.bot.send_message(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            logger.debug(f"Error showing plan mode exit: {e}")
+
+    async def show_question(
+        self,
+        question_id: str,
+        questions: list[dict],
+        keyboard: Optional[InlineKeyboardMarkup] = None
+    ) -> Optional[Message]:
+        """Show Claude's question with option buttons.
+
+        Displays AskUserQuestion from Claude with inline keyboard
+        for selecting answers.
+
+        Args:
+            question_id: Unique ID for callback matching
+            questions: List of question dicts with question, header, options
+            keyboard: Pre-built keyboard (optional, will be built if not provided)
+
+        Returns:
+            Sent message for later reference
+        """
+        if not questions:
+            return None
+
+        # Build message text
+        lines = ["❓ <b>Вопрос от Claude:</b>\n"]
+
+        for q in questions:
+            header = q.get("header", "")
+            question = q.get("question", "")
+
+            if header:
+                lines.append(f"<b>{header}</b>")
+            lines.append(question)
+
+            # Show option descriptions if available
+            options = q.get("options", [])
+            for opt in options:
+                desc = opt.get("description", "")
+                if desc:
+                    label = opt.get("label", "")
+                    lines.append(f"  • <b>{label}</b>: {desc}")
+
+            lines.append("")  # Empty line between questions
+
+        html_text = "\n".join(lines)
+
+        # Build keyboard if not provided
+        if keyboard is None:
+            from presentation.keyboards.keyboards import Keyboards
+            keyboard = Keyboards.question_options(questions, question_id)
+
+        try:
+            msg = await self.bot.send_message(
+                self.chat_id,
+                html_text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            return msg
+        except Exception as e:
+            logger.error(f"Error showing question: {e}")
+            return None
 
     async def _schedule_update(self):
         """Schedule a debounced update with adaptive interval"""

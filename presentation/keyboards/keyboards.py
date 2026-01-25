@@ -745,6 +745,48 @@ class Keyboards:
             ]
         ])
 
+    # ============== AskUserQuestion Keyboards ==============
+
+    @staticmethod
+    def question_options(
+        questions: List[Dict],
+        question_id: str
+    ) -> InlineKeyboardMarkup:
+        """
+        Build keyboard for AskUserQuestion response from Claude.
+
+        Args:
+            questions: List of question dicts with question, header, options
+            question_id: Unique ID for callback matching (e.g., "q_1234567890")
+
+        Returns:
+            InlineKeyboardMarkup with option buttons and "Other" option
+        """
+        buttons = []
+
+        # Support only first question for now (Claude usually sends one at a time)
+        for q_idx, question in enumerate(questions[:1]):
+            options = question.get("options", [])
+
+            for opt_idx, opt in enumerate(options[:4]):  # Max 4 options
+                label = opt.get("label", f"Вариант {opt_idx + 1}")
+                # Format: question:{question_id}:{question_idx}:{option_idx}
+                # Keep callback data under 64 bytes
+                callback = f"q:{question_id}:{q_idx}:{opt_idx}"
+                buttons.append([
+                    InlineKeyboardButton(text=label, callback_data=callback)
+                ])
+
+        # Add "Other" option for custom text input
+        buttons.append([
+            InlineKeyboardButton(
+                text="💬 Другой ответ",
+                callback_data=f"q:{question_id}:other"
+            )
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 class CallbackData:
     """Helper for parsing callback data"""

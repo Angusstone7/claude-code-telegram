@@ -514,6 +514,16 @@ class MessageHandlers:
                     await streaming.show_todo_list(todos)
                 return  # Don't show generic tool use message
 
+            # Special handling for EnterPlanMode
+            if tool_name.lower() == "enterplanmode":
+                await streaming.show_plan_mode_enter()
+                return
+
+            # Special handling for ExitPlanMode
+            if tool_name.lower() == "exitplanmode":
+                await streaming.show_plan_mode_exit()
+                return
+
             # Format tool details
             details = ""
             if tool_name.lower() == "bash":

@@ -419,8 +419,10 @@ class CallbackHandlers:
                 parse_mode=None
             )
 
-            # Send answer to Claude Code proxy
-            if self.claude_proxy:
+            # Send answer to SDK (preferred) or CLI proxy (fallback)
+            if self.sdk_service:
+                await self.sdk_service.respond_to_question(user_id, answer)
+            elif self.claude_proxy:
                 await self.claude_proxy.respond_to_question(user_id, answer)
 
             # Notify message handler
