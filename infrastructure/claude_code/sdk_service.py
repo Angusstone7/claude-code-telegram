@@ -250,6 +250,7 @@ class ClaudeAgentSDKService:
             "claude-code-setup": "Настройка Claude Code",
             "security-guidance": "Проверка безопасности кода",
             "pr-review-toolkit": "Инструменты ревью PR",
+            "ralph-loop": "RAFL: итеративное решение задач",
         }
 
         for plugin_name in self.enabled_plugins:

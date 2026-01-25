@@ -125,7 +125,7 @@ class Application:
                 plugins_dir = os.getenv("CLAUDE_PLUGINS_DIR", "/plugins")
                 enabled_plugins_str = os.getenv(
                     "CLAUDE_PLUGINS",
-                    "commit-commands,code-review,feature-dev,frontend-design"
+                    "commit-commands,code-review,feature-dev,frontend-design,ralph-loop"
                 )
                 enabled_plugins = [p.strip() for p in enabled_plugins_str.split(",") if p.strip()]
 
