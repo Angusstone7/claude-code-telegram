@@ -257,6 +257,29 @@ class Application:
         except Exception as e:
             logger.warning(f"⚠ Failed to register bot commands: {e}")
 
+    async def _notify_admin_startup(self, bot_info):
+        """Notify admin that bot has started successfully"""
+        admin_id = 664382290
+
+        # Build status message
+        sdk_status = "✅ SDK" if self.claude_sdk else "❌ SDK"
+        cli_ok, _ = await self.claude_proxy.check_claude_installed()
+        cli_status = "✅ CLI" if cli_ok else "❌ CLI"
+
+        message = (
+            f"🚀 <b>Бот запущен!</b>\n\n"
+            f"🤖 @{bot_info.username}\n"
+            f"📦 {sdk_status} | {cli_status}\n"
+            f"📁 {os.getenv('CLAUDE_WORKING_DIR', '/root')}\n\n"
+            f"<i>Готов к работе</i>"
+        )
+
+        try:
+            await self.bot.send_message(admin_id, message)
+            logger.info(f"✓ Admin {admin_id} notified about startup")
+        except Exception as e:
+            logger.warning(f"⚠ Failed to notify admin: {e}")
+
     async def start(self):
         """Start the bot"""
         await self.setup()
@@ -264,6 +287,9 @@ class Application:
         logger.info("Starting bot polling...")
         info = await self.bot.get_me()
         logger.info(f"Bot: @{info.username} (ID: {info.id})")
+
+        # Notify admin that bot started
+        await self._notify_admin_startup(info)
 
         # Set up signal handlers (Unix only)
         if sys.platform != "win32":
