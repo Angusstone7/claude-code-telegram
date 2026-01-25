@@ -8,6 +8,7 @@ Handles real-time streaming of Claude Code output to Telegram with:
 """
 
 import asyncio
+import html as html_module
 import logging
 import re
 import time
@@ -21,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 def markdown_to_html(text: str, is_streaming: bool = False) -> str:
     """
-    Convert Markdown to Telegram HTML.
+    Convert Markdown to Telegram HTML with placeholder protection.
+
+    Uses placeholder system to protect already-formatted blocks from re-processing,
+    preventing flickering during streaming updates.
 
     Supports:
     - **bold** → <b>bold</b>
@@ -35,40 +39,76 @@ def markdown_to_html(text: str, is_streaming: bool = False) -> str:
     if not text:
         return text
 
-    # Escape HTML entities first (except for our conversions)
-    text = text.replace("&", "&amp;")
-    text = text.replace("<", "&lt;")
-    text = text.replace(">", "&gt;")
+    # Placeholder system to protect code blocks from double-processing
+    placeholders = []
 
-    # Handle unclosed code blocks (for streaming)
+    def get_placeholder(index: int) -> str:
+        return f"[--CODE-BLOCK-{index}--]"
+
+    # 1. Handle UNCLOSED code block (for streaming)
     code_fence_count = text.count('```')
+    unclosed_code_placeholder = None
+
     if code_fence_count % 2 != 0 and is_streaming:
         last_fence = text.rfind('```')
         text_before = text[:last_fence]
         unclosed_code = text[last_fence + 3:]
+
         # Extract language hint
         lang_match = re.match(r"(\w*)\n?", unclosed_code)
+        lang = lang_match.group(1) if lang_match else ""
         code_content = unclosed_code[lang_match.end():] if lang_match else unclosed_code
-        # Don't close </pre> - _prepare_html_for_telegram will do it
-        text = text_before + f"<pre>{code_content}"
-    else:
-        # Closed code blocks (``` ... ```) - must be before inline code
-        text = re.sub(r'```(\w*)\n?(.*?)```', r'<pre>\2</pre>', text, flags=re.DOTALL)
 
-    # Inline code (`code`)
-    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+        # Escape code content
+        escaped_code = html_module.escape(code_content)
+        lang_class = f' class="language-{lang}"' if lang else ''
 
-    # Bold (**text**)
+        # WITHOUT closing tags - prepare_html_for_telegram will add them
+        key = get_placeholder(len(placeholders))
+        placeholders.append(f'<pre><code{lang_class}>{escaped_code}')
+        unclosed_code_placeholder = key
+        text = text_before
+
+    # 2. Protect CLOSED code blocks with placeholders
+    def protect_code_block(m: re.Match) -> str:
+        key = get_placeholder(len(placeholders))
+        lang = m.group(1) or ''
+        code = m.group(2)
+        escaped_code = html_module.escape(code)
+        lang_class = f' class="language-{lang}"' if lang else ''
+        placeholders.append(f'<pre><code{lang_class}>{escaped_code}</code></pre>')
+        return key
+
+    text = re.sub(
+        r"```(\w*)\n?([\s\S]*?)```",
+        protect_code_block,
+        text
+    )
+
+    # 3. Protect inline code
+    def protect_inline_code(m: re.Match) -> str:
+        key = get_placeholder(len(placeholders))
+        placeholders.append(f'<code>{html_module.escape(m.group(1))}</code>')
+        return key
+
+    text = re.sub(r'`([^`\n]+)`', protect_inline_code, text)
+
+    # 4. Escape HTML ONLY in unprotected text (outside placeholders)
+    text = html_module.escape(text)
+
+    # 5. Markdown conversions (now safe - code blocks are protected)
     text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
-
-    # Underline (__text__)
     text = re.sub(r'__([^_]+)__', r'<u>\1</u>', text)
-
-    # Strikethrough (~~text~~)
     text = re.sub(r'~~([^~]+)~~', r'<s>\1</s>', text)
-
-    # Italic (*text*) - be careful not to match **
     text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
+
+    # 6. Add unclosed block at the end
+    if unclosed_code_placeholder:
+        text += unclosed_code_placeholder
+
+    # 7. Restore placeholders
+    for i, content in enumerate(placeholders):
+        text = text.replace(get_placeholder(i), content, 1)
 
     return text
 
@@ -117,6 +157,98 @@ def prepare_html_for_telegram(text: str, is_final: bool = False) -> str:
     return text + closing_tags + suffix
 
 
+class IncrementalFormatter:
+    """
+    Incremental formatter with stable block caching.
+
+    Caches HTML for already-processed closed constructs,
+    only re-formats the unstable "tail" of the text.
+
+    This prevents flickering by ensuring stable parts
+    produce identical HTML on every call.
+    """
+
+    def __init__(self):
+        self.stable_html = ""  # Cached HTML for stable parts
+        self.stable_raw_length = 0  # Length of processed raw text
+
+    def format(self, raw_text: str, is_final: bool = False) -> str:
+        """
+        Incremental formatting.
+
+        Args:
+            raw_text: Full raw Markdown text
+            is_final: Whether this is the final format (closes all blocks)
+
+        Returns:
+            stable_html + newly_formatted_unstable_html
+        """
+        if len(raw_text) < self.stable_raw_length:
+            # Text got shorter (rare) - reset cache
+            self.reset()
+
+        # Find stability boundary
+        stable_boundary = self._find_stable_boundary(raw_text)
+
+        if stable_boundary > self.stable_raw_length:
+            # New stable parts appeared - format and cache them
+            new_stable = raw_text[self.stable_raw_length:stable_boundary]
+            new_stable_html = markdown_to_html(new_stable, is_streaming=False)
+            self.stable_html += new_stable_html
+            self.stable_raw_length = stable_boundary
+
+        # Format unstable tail
+        unstable_part = raw_text[stable_boundary:]
+        if unstable_part:
+            unstable_html = markdown_to_html(unstable_part, is_streaming=not is_final)
+        else:
+            unstable_html = ""
+
+        return self.stable_html + unstable_html
+
+    def _find_stable_boundary(self, text: str) -> int:
+        """
+        Find position up to which text is stable.
+
+        Text is stable when:
+        - All ``` are paired (code blocks closed)
+        - After last closed block there's a paragraph separator \\n\\n
+        """
+        # Find all closed code blocks
+        closed_blocks = list(re.finditer(r'```[\s\S]*?```', text))
+
+        if closed_blocks:
+            last_closed_end = closed_blocks[-1].end()
+        else:
+            last_closed_end = 0
+
+        # After last closed block, look for paragraph separator
+        after_blocks = text[last_closed_end:]
+
+        # Find last \n\n (end of paragraph)
+        last_para = after_blocks.rfind('\n\n')
+        if last_para > 0:
+            # Check that paragraph is "stable" (all markers paired)
+            para_text = after_blocks[:last_para]
+            if self._is_paragraph_stable(para_text):
+                return last_closed_end + last_para + 2
+
+        return last_closed_end
+
+    def _is_paragraph_stable(self, text: str) -> bool:
+        """Check that all inline markers are paired."""
+        markers = ['**', '__', '~~', '`']
+        for marker in markers:
+            if text.count(marker) % 2 != 0:
+                return False
+        return True
+
+    def reset(self):
+        """Reset cache for new message."""
+        self.stable_html = ""
+        self.stable_raw_length = 0
+
+
 class StreamingHandler:
     """
     Manages streaming output to Telegram with rate limiting.
@@ -155,6 +287,7 @@ class StreamingHandler:
         self._pending_update: Optional[asyncio.Task] = None
         self.reply_markup = reply_markup  # Cancel button etc.
         self._status_line = ""  # Status line shown at bottom
+        self._formatter = IncrementalFormatter()  # Anti-flicker formatter
 
         if initial_message:
             self.messages.append(initial_message)
@@ -325,10 +458,17 @@ class StreamingHandler:
             logger.error(f"Error updating message: {e}")
 
     async def _edit_current_message(self, text: str, is_final: bool = False):
-        """Edit the current message with new text (converts Markdown to HTML)"""
+        """Edit the current message with new text using incremental formatting"""
         if self.current_message:
-            # Convert Markdown to HTML with streaming support
-            html_text = markdown_to_html(text, is_streaming=not is_final)
+            # Use incremental formatter to prevent flickering
+            if is_final:
+                # Final message - full format for reliability, then reset formatter
+                html_text = markdown_to_html(text, is_streaming=False)
+                self._formatter.reset()
+            else:
+                # Streaming - use incremental formatter (caches stable parts)
+                html_text = self._formatter.format(text, is_final=False)
+
             # Prepare for Telegram - close unclosed tags, add cursor if not final
             html_text = prepare_html_for_telegram(html_text, is_final=is_final)
             try:
@@ -345,6 +485,9 @@ class StreamingHandler:
 
     async def _send_new_message(self, text: str, is_final: bool = False) -> Message:
         """Send a new message (converts Markdown to HTML)"""
+        # Reset formatter for new message
+        self._formatter.reset()
+
         # Convert Markdown to HTML with streaming support
         html_text = markdown_to_html(text, is_streaming=not is_final)
         # Prepare for Telegram - close unclosed tags, add cursor if not final
