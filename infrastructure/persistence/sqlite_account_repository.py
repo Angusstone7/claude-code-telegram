@@ -94,7 +94,7 @@ class SQLiteAccountRepository:
         return AccountSettings(
             user_id=row["user_id"],
             auth_mode=AuthMode(row["auth_mode"]),
-            model=row.get("model"),  # May be None for existing records
+            model=row["model"] if "model" in row.keys() else None,  # May be None for existing records
             proxy_url=row["proxy_url"],
             created_at=(
                 datetime.fromisoformat(row["created_at"])
