@@ -85,6 +85,10 @@ class CommandHandlers:
 /cancel - Отменить задачу
 /status - Статус Claude Code
 
+**Мониторинг:**
+/metrics - Метрики системы (CPU, RAM, диск)
+/docker - Список Docker контейнеров
+
 **Основные команды:**
 /start - Запустить бота
 /help - Показать справку
@@ -142,21 +146,8 @@ class CommandHandlers:
 • Активных: {stats.get('sessions', {}).get('active', 0)}"""
         await message.answer(text, parse_mode="HTML")
 
-    async def menu_chat(self, message: Message) -> None:
-        """Handle chat menu button"""
-        await message.answer(
-            "💬 **Режим чата**\n\n"
-            "Просто опишите что нужно сделать!\n\n"
-            "Примеры:\n"
-            "• 'Проверь использование диска'\n"
-            "• 'Перезапусти контейнер nginx'\n"
-            "• 'Покажи запущенные процессы'\n"
-            "• 'Установи пакет htop'",
-            parse_mode="Markdown"
-        )
-
-    async def menu_metrics(self, message: Message) -> None:
-        """Handle metrics menu button"""
+    async def metrics(self, message: Message) -> None:
+        """Handle /metrics command and 📊 Метрики button"""
         info = await self.bot_service.get_system_info()
 
         metrics = info["metrics"]
@@ -178,8 +169,8 @@ class CommandHandlers:
 
         await message.answer("\n".join(lines), parse_mode="Markdown", reply_markup=Keyboards.system_metrics())
 
-    async def menu_docker(self, message: Message) -> None:
-        """Handle docker menu button - show list of containers"""
+    async def docker(self, message: Message) -> None:
+        """Handle /docker command and 🐳 Docker button"""
         try:
             from infrastructure.monitoring.system_monitor import SystemMonitor
             monitor = SystemMonitor()
@@ -217,20 +208,6 @@ class CommandHandlers:
                 f"🐳 Docker\n\n❌ Ошибка: {e}",
                 parse_mode=None
             )
-
-    async def menu_commands(self, message: Message) -> None:
-        """Handle commands menu button"""
-        await message.answer(
-            "📝 **Команды**\n\n"
-            "Просто напишите задачу на естественном языке!\n\n"
-            "**Примеры:**\n"
-            "• 'Покажи файлы в текущей папке'\n"
-            "• 'Покажи использование памяти'\n"
-            "• 'Создай Python скрипт'\n"
-            "• 'Прочитай файл README.md'\n\n"
-            "Claude Code всё сделает!",
-            parse_mode="Markdown"
-        )
 
     async def project(self, message: Message, command: CommandObject) -> None:
         """Handle /project command - set working directory"""
@@ -771,10 +748,14 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.plugins, Command("plugins"))
     router.message.register(handlers.cd, Command("cd"))
 
-    # Menu buttons
-    router.message.register(handlers.menu_chat, F.text == "💬 Чат")
-    router.message.register(handlers.menu_metrics, F.text == "📊 Метрики")
-    router.message.register(handlers.menu_docker, F.text == "🐳 Docker")
-    router.message.register(handlers.menu_commands, F.text == "📝 Команды")
+    # System monitoring commands
+    router.message.register(handlers.metrics, Command("metrics"))
+    router.message.register(handlers.docker, Command("docker"))
+
+    # Menu buttons (synced with commands)
+    router.message.register(handlers.metrics, F.text == "📊 Метрики")
+    router.message.register(handlers.docker, F.text == "🐳 Docker")
+    router.message.register(handlers.change, F.text == "📂 Проект")
+    router.message.register(handlers.yolo, F.text == "⚡ YOLO")
     router.message.register(handlers.clear, F.text == "🗑️ Очистить")
     router.message.register(handlers.help, F.text == "ℹ️ Справка")

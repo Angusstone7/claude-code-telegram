@@ -81,6 +81,9 @@ class ProjectService:
         """
         Get existing project or create new one.
 
+        If path is a subfolder of an existing project, returns the parent project
+        instead of creating a new one.
+
         Args:
             user_id: User ID
             path: Project path
@@ -89,12 +92,18 @@ class ProjectService:
         Returns:
             Project (existing or newly created)
         """
-        # Check if exists
+        # 1. Check for exact path match
         existing = await self.project_repository.find_by_path(user_id, path)
         if existing:
             return existing
 
-        # Create new
+        # 2. Check if path is inside an existing project (subfolder)
+        parent = await self.project_repository.find_parent_project(user_id, path)
+        if parent:
+            logger.info(f"Path {path} is subfolder of project '{parent.name}'")
+            return parent
+
+        # 3. Create new project only if no parent found
         project_path = ProjectPath.from_path(path)
         project_name = name or project_path.name
 

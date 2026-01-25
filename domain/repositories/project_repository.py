@@ -69,6 +69,23 @@ class IProjectRepository(ABC):
         pass
 
     @abstractmethod
+    async def find_parent_project(self, user_id: UserId, path: str) -> Optional[Project]:
+        """
+        Find project that contains the given path (path is subfolder of project).
+
+        Used to detect if a path like /root/projects/myproject/src belongs
+        to an existing project at /root/projects/myproject.
+
+        Args:
+            user_id: User ID
+            path: Path to check (may be subfolder of a project)
+
+        Returns:
+            Parent project if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
     async def get_current(self, user_id: UserId) -> Optional[Project]:
         """
         Get the currently active project for a user.

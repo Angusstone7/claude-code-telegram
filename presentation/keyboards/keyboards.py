@@ -7,16 +7,16 @@ class Keyboards:
 
     @staticmethod
     def main_menu() -> ReplyKeyboardMarkup:
-        """Main menu keyboard"""
+        """Main menu keyboard - synced with commands"""
         buttons = [
-            [KeyboardButton(text="💬 Чат"), KeyboardButton(text="📊 Метрики")],
-            [KeyboardButton(text="🐳 Docker"), KeyboardButton(text="📝 Команды")],
+            [KeyboardButton(text="📊 Метрики"), KeyboardButton(text="🐳 Docker")],
+            [KeyboardButton(text="📂 Проект"), KeyboardButton(text="⚡ YOLO")],
             [KeyboardButton(text="🗑️ Очистить"), KeyboardButton(text="ℹ️ Справка")]
         ]
         return ReplyKeyboardMarkup(
             keyboard=buttons,
             resize_keyboard=True,
-            input_field_placeholder="Выберите действие..."
+            input_field_placeholder="Напишите задачу..."
         )
 
     @staticmethod

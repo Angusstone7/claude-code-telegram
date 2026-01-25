@@ -122,6 +122,36 @@ class SQLiteProjectRepository(IProjectRepository):
                     return self._row_to_project(row)
         return None
 
+    async def find_parent_project(self, user_id: UserId, path: str) -> Optional[Project]:
+        """Find project that contains the given path (path is subfolder of project).
+
+        Uses SQL prefix matching to find if the given path starts with
+        any stored project path + '/'.
+
+        Example:
+            - Path '/root/projects/myproject/src' matches project at '/root/projects/myproject'
+            - Path '/root/projects/myprojectX' does NOT match '/root/projects/myproject'
+        """
+        normalized_path = ProjectPath.from_path(path).value
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # Find project where stored path is a prefix of given path
+            # The '/%' ensures we only match actual subfolders, not similar names
+            # ORDER BY LENGTH(path) DESC gives us the deepest (most specific) match
+            async with db.execute("""
+                SELECT * FROM projects
+                WHERE user_id = ?
+                  AND ? LIKE (path || '/%')
+                  AND is_active = 1
+                ORDER BY LENGTH(path) DESC
+                LIMIT 1
+            """, (int(user_id), normalized_path)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return self._row_to_project(row)
+        return None
+
     async def get_current(self, user_id: UserId) -> Optional[Project]:
         """Get the currently active project for a user"""
         async with aiosqlite.connect(self.db_path) as db:
