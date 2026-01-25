@@ -218,26 +218,51 @@ class ClaudeAgentSDKService:
         """
         Build plugin configuration list for ClaudeAgentOptions.
 
-        Loads plugins from the official claude-plugins-official repository
-        which is cloned to /plugins in the Docker container.
+        Supports two types of plugins:
+        1. Local plugins: from /plugins directory (custom plugins)
+        2. Official plugins: from Claude plugins marketplace (auto-downloaded)
+
+        Format: "plugin-name" tries local first, falls back to official.
+        Format: "official:plugin-name" forces official marketplace.
+        Format: "local:plugin-name" forces local only.
         """
         plugins = []
         for plugin_name in self.enabled_plugins:
             if not plugin_name:  # Skip empty strings
                 continue
-            plugin_path = os.path.join(self.plugins_dir, plugin_name)
-            if os.path.isdir(plugin_path):
-                plugins.append({"type": "local", "path": plugin_path})
-                logger.info(f"Plugin enabled: {plugin_name} at {plugin_path}")
+
+            # Check for explicit type prefix
+            if plugin_name.startswith("official:"):
+                # Force official marketplace
+                name = plugin_name.replace("official:", "")
+                plugins.append({"type": "official", "name": name})
+                logger.info(f"Plugin enabled (official): {name}")
+            elif plugin_name.startswith("local:"):
+                # Force local only
+                name = plugin_name.replace("local:", "")
+                plugin_path = os.path.join(self.plugins_dir, name)
+                if os.path.isdir(plugin_path):
+                    plugins.append({"type": "local", "path": plugin_path})
+                    logger.info(f"Plugin enabled (local): {name} at {plugin_path}")
+                else:
+                    logger.warning(f"Local plugin not found: {name} at {plugin_path}")
             else:
-                logger.warning(f"Plugin not found: {plugin_name} at {plugin_path}")
+                # Try local first, fall back to official
+                plugin_path = os.path.join(self.plugins_dir, plugin_name)
+                if os.path.isdir(plugin_path):
+                    plugins.append({"type": "local", "path": plugin_path})
+                    logger.info(f"Plugin enabled (local): {plugin_name} at {plugin_path}")
+                else:
+                    # Use official marketplace
+                    plugins.append({"type": "official", "name": plugin_name})
+                    logger.info(f"Plugin enabled (official): {plugin_name}")
         return plugins
 
     def get_enabled_plugins_info(self) -> list[dict]:
         """
         Get info about enabled plugins for display.
 
-        Returns info about plugins from the official claude-plugins-official repo.
+        Returns info about plugins - supports both local and official marketplace plugins.
         """
         plugins_info = []
 
@@ -256,13 +281,37 @@ class ClaudeAgentSDKService:
         for plugin_name in self.enabled_plugins:
             if not plugin_name:
                 continue
-            plugin_path = os.path.join(self.plugins_dir, plugin_name)
-            is_available = os.path.isdir(plugin_path)
+
+            # Parse plugin name (may have prefix)
+            if plugin_name.startswith("official:"):
+                name = plugin_name.replace("official:", "")
+                source = "official"
+                is_available = True  # Official plugins always available
+                path = None
+            elif plugin_name.startswith("local:"):
+                name = plugin_name.replace("local:", "")
+                source = "local"
+                plugin_path = os.path.join(self.plugins_dir, name)
+                is_available = os.path.isdir(plugin_path)
+                path = plugin_path if is_available else None
+            else:
+                name = plugin_name
+                plugin_path = os.path.join(self.plugins_dir, name)
+                if os.path.isdir(plugin_path):
+                    source = "local"
+                    is_available = True
+                    path = plugin_path
+                else:
+                    source = "official"
+                    is_available = True  # Will be downloaded from marketplace
+                    path = None
+
             plugins_info.append({
-                "name": plugin_name,
-                "description": plugin_descriptions.get(plugin_name, "Plugin"),
+                "name": name,
+                "description": plugin_descriptions.get(name, "Plugin"),
                 "available": is_available,
-                "path": plugin_path if is_available else None,
+                "source": source,
+                "path": path,
             })
 
         return plugins_info
