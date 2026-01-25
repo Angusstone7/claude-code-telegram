@@ -55,6 +55,7 @@ from presentation.handlers.commands import CommandHandlers, register_handlers as
 from presentation.handlers.messages import MessageHandlers, register_handlers as register_msg_handlers
 from presentation.handlers.callbacks import CallbackHandlers, register_handlers as register_callback_handlers
 from presentation.handlers.account_handlers import AccountHandlers, register_account_handlers
+from presentation.handlers.menu_handlers import MenuHandlers, register_menu_handlers
 from presentation.middleware.auth import AuthMiddleware, CallbackAuthMiddleware
 
 # Configure logging
@@ -235,6 +236,19 @@ class Application:
         cmd_handlers.message_handlers = msg_handlers  # Link for /project, /status commands
         register_cmd_handlers(self.dp, cmd_handlers)
 
+        # Menu handlers - main inline menu system
+        menu_handlers = MenuHandlers(
+            bot_service=self.bot_service,
+            claude_proxy=self.claude_proxy,
+            sdk_service=self.claude_sdk,
+            project_service=self.project_service,
+            context_service=self.context_service,
+            file_browser_service=self.file_browser_service,
+            account_service=self.account_service,
+            message_handlers=msg_handlers,
+        )
+        register_menu_handlers(self.dp, menu_handlers)
+
         # Register message handlers after commands (commands take priority)
         register_msg_handlers(self.dp, msg_handlers)
 
@@ -252,20 +266,10 @@ class Application:
 
     async def _register_bot_commands(self):
         """Register bot commands in Telegram menu"""
+        # Only register essential commands - all functionality is in inline menu
         commands = [
-            BotCommand(command="start", description="Запустить бота"),
-            BotCommand(command="help", description="Показать справку"),
-            BotCommand(command="account", description="Настройки аккаунта (z.ai/Claude)"),
-            BotCommand(command="cd", description="Навигация по папкам"),
-            BotCommand(command="change", description="Сменить проект"),
-            BotCommand(command="fresh", description="Очистить контекст"),
-            BotCommand(command="yolo", description="YOLO режим (авто-подтверждение)"),
-            BotCommand(command="plugins", description="Показать плагины"),
-            BotCommand(command="context", description="Управление контекстами"),
-            BotCommand(command="status", description="Статус Claude Code"),
-            BotCommand(command="cancel", description="Отменить задачу"),
-            BotCommand(command="stats", description="Ваша статистика"),
-            BotCommand(command="clear", description="Очистить историю чата"),
+            BotCommand(command="start", description="📱 Открыть меню"),
+            BotCommand(command="cancel", description="🛑 Отменить задачу"),
         ]
 
         try:

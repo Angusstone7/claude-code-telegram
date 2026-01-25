@@ -10,6 +10,17 @@ from infrastructure.claude_code.diagnostics import run_diagnostics, format_diagn
 from presentation.keyboards.keyboards import Keyboards
 
 logger = logging.getLogger(__name__)
+
+# Claude Code plugin commands that should be passed through to SDK/CLI
+# These are NOT Telegram bot commands - they are Claude Code slash commands
+CLAUDE_SLASH_COMMANDS = {
+    "ralph-loop", "cancel-ralph",  # ralph-loop plugin
+    "commit", "commit-push-pr", "clean_gone",  # commit-commands plugin
+    "code-review", "review-pr",  # code-review plugin
+    "feature-dev",  # feature-dev plugin
+    "frontend-design",  # frontend-design plugin
+    "plan", "explore",  # built-in agent commands
+}
 router = Router()
 
 
@@ -33,7 +44,7 @@ class CommandHandlers:
         self.file_browser_service = file_browser_service
 
     async def start(self, message: Message) -> None:
-        """Handle /start command"""
+        """Handle /start command - show main inline menu"""
         user = await self.bot_service.get_or_create_user(
             user_id=message.from_user.id,
             username=message.from_user.username,
@@ -41,26 +52,65 @@ class CommandHandlers:
             last_name=message.from_user.last_name
         )
 
-        # Get working directory
-        working_dir = "/root"
-        if self.message_handlers:
-            working_dir = self.message_handlers.get_working_dir(message.from_user.id)
+        user_id = message.from_user.id
 
-        # Check Claude Code status
-        installed, version_info = await self.claude_proxy.check_claude_installed()
-        status = f"✅ {version_info}" if installed else f"⚠️ {version_info}"
+        # Get working directory and project info
+        working_dir = "/root"
+        project_name = None
+        if self.message_handlers:
+            working_dir = self.message_handlers.get_working_dir(user_id)
+
+        # Get current project
+        if self.project_service:
+            try:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self.project_service.get_current(uid)
+                if project:
+                    project_name = project.name
+                    working_dir = project.working_dir
+            except Exception:
+                pass
+
+        # Get YOLO status
+        yolo_enabled = False
+        if self.message_handlers:
+            yolo_enabled = self.message_handlers.is_yolo_mode(user_id)
+
+        # Check if task running
+        has_task = False
+        if self.message_handlers and hasattr(self.message_handlers, 'sdk_service'):
+            if self.message_handlers.sdk_service:
+                has_task = self.message_handlers.sdk_service.is_task_running(user_id)
+        if not has_task:
+            has_task = self.claude_proxy.is_task_running(user_id)
+
+        # Build status text
+        project_info = f"📂 {project_name}" if project_name else "📂 Нет проекта"
+        path_info = f"📁 <code>{working_dir}</code>"
+
+        status_parts = [project_info, path_info]
+        if yolo_enabled:
+            status_parts.append("⚡ YOLO: ON")
+        if has_task:
+            status_parts.append("🔄 Задача выполняется")
+
+        text = (
+            f"🤖 <b>Claude Code Telegram</b>\n\n"
+            f"Привет, {user.first_name}!\n\n"
+            f"{chr(10).join(status_parts)}\n\n"
+            f"<i>Напишите задачу или выберите раздел:</i>"
+        )
 
         await message.answer(
-            f"🤖 <b>Claude Code Telegram Proxy</b>\n\n"
-            f"Привет, {user.first_name}!\n"
-            f"Ваша роль: <b>{user.role.name}</b>\n\n"
-            f"<b>Claude Code:</b> {status}\n"
-            f"<b>Рабочая папка:</b> <code>{working_dir}</code>\n\n"
-            f"Просто отправьте задачу — Claude Code её выполнит!\n"
-            f"Я буду показывать вывод, запрашивать разрешения и передавать вопросы.\n\n"
-            f"Используйте /help для списка команд.",
+            text,
             parse_mode="HTML",
-            reply_markup=Keyboards.main_menu()
+            reply_markup=Keyboards.main_menu_inline(
+                working_dir=working_dir,
+                project_name=project_name,
+                yolo_enabled=yolo_enabled,
+                has_active_task=has_task
+            )
         )
 
     async def help(self, message: Message) -> None:
@@ -544,6 +594,45 @@ class CommandHandlers:
         except Exception as e:
             await message.answer(f"❌ Diagnostics failed: {e}")
 
+    async def claude_command_passthrough(self, message: Message, command: CommandObject) -> None:
+        """
+        Handle Claude Code slash commands by passing them to SDK/CLI.
+
+        Commands like /ralph-loop, /commit, /code-review are Claude Code commands
+        that should be executed by Claude, not by the Telegram bot.
+        """
+        user_id = message.from_user.id
+        command_name = command.command  # e.g., "ralph-loop"
+
+        logger.info(f"[{user_id}] Claude Code command passthrough: /{command_name}")
+
+        # Build the full command as a prompt for Claude
+        # Claude Code CLI expects these commands with slash prefix
+        prompt = f"/{command_name}"
+        if command.args:
+            prompt += f" {command.args}"
+
+        # Check if message handlers are available
+        if not self.message_handlers:
+            await message.answer(
+                "⚠️ Обработчики сообщений не инициализированы.\n"
+                "Не могу передать команду Claude Code.",
+                parse_mode=None
+            )
+            return
+
+        # Inform user that command is being passed through
+        await message.answer(
+            f"🔌 <b>Команда плагина:</b> <code>{prompt}</code>\n\n"
+            f"Передаю в Claude Code...",
+            parse_mode="HTML"
+        )
+
+        # Create a fake message with the command as text and pass to handle_text
+        # This reuses all the existing Claude Code execution logic
+        message.text = prompt
+        await self.message_handlers.handle_text(message)
+
     async def plugins(self, message: Message) -> None:
         """
         Handle /plugins command - show and manage Claude Code plugins.
@@ -722,36 +811,22 @@ class CommandHandlers:
 
 
 def register_handlers(router: Router, handlers: CommandHandlers) -> None:
-    """Register command handlers"""
-    # Basic commands
+    """
+    Register command handlers.
+
+    Only /start and /cancel are registered as Telegram commands.
+    All other functionality is accessed via the inline menu system.
+    """
+    # Main command - shows the inline menu
     router.message.register(handlers.start, Command("start"))
-    router.message.register(handlers.help, Command("help"))
-    router.message.register(handlers.clear, Command("clear"))
-    router.message.register(handlers.stats, Command("stats"))
 
-    # Claude Code commands
-    router.message.register(handlers.project, Command("project"))
+    # Emergency cancel command (always available)
     router.message.register(handlers.cancel, Command("cancel"))
-    router.message.register(handlers.status, Command("status"))
-    router.message.register(handlers.diagnose, Command("diagnose"))
-    router.message.register(handlers.plugins, Command("plugins"))
 
-    # Project/Context management commands
-    router.message.register(handlers.change, Command("change"))
-    router.message.register(handlers.context, Command("context"))
-    router.message.register(handlers.vars, Command("vars"))
-    router.message.register(handlers.fresh, Command("fresh"))
-    router.message.register(handlers.yolo, Command("yolo"))
-    router.message.register(handlers.cd, Command("cd"))
-
-    # System monitoring commands
-    router.message.register(handlers.metrics, Command("metrics"))
-    router.message.register(handlers.docker, Command("docker"))
-
-    # Menu buttons (synced with commands) - use startswith for robust emoji matching
-    router.message.register(handlers.metrics, F.text.startswith("📊"))
-    router.message.register(handlers.docker, F.text.startswith("🐳"))
-    router.message.register(handlers.change, F.text.startswith("📂"))
-    router.message.register(handlers.yolo, F.text.startswith("⚡"))
-    router.message.register(handlers.clear, F.text.startswith("🗑"))
-    router.message.register(handlers.help, F.text.startswith("ℹ️"))
+    # Claude Code plugin commands passthrough
+    # These are forwarded to Claude Code SDK/CLI instead of being handled by bot
+    for cmd in CLAUDE_SLASH_COMMANDS:
+        router.message.register(
+            handlers.claude_command_passthrough,
+            Command(cmd)
+        )

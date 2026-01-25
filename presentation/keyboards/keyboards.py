@@ -5,9 +5,182 @@ from typing import List, Optional, Dict
 class Keyboards:
     """Factory class for creating keyboard layouts"""
 
+    # ============== Main Inline Menu System ==============
+
+    @staticmethod
+    def main_menu_inline(
+        working_dir: str = "/root",
+        project_name: str = None,
+        yolo_enabled: bool = False,
+        has_active_task: bool = False
+    ) -> InlineKeyboardMarkup:
+        """
+        Main menu with inline buttons.
+
+        This is the primary navigation interface, replacing individual commands.
+        """
+        yolo_indicator = " ⚡" if yolo_enabled else ""
+        task_indicator = " 🔄" if has_active_task else ""
+
+        buttons = [
+            # Row 1: Projects and Context
+            [
+                InlineKeyboardButton(text="📂 Проекты", callback_data="menu:projects"),
+                InlineKeyboardButton(text="💬 Контекст", callback_data="menu:context"),
+            ],
+            # Row 2: Settings and Plugins
+            [
+                InlineKeyboardButton(text=f"⚙️ Настройки{yolo_indicator}", callback_data="menu:settings"),
+                InlineKeyboardButton(text="🔌 Плагины", callback_data="menu:plugins"),
+            ],
+            # Row 3: System and Help
+            [
+                InlineKeyboardButton(text=f"📊 Система{task_indicator}", callback_data="menu:system"),
+                InlineKeyboardButton(text="❓ Справка", callback_data="menu:help"),
+            ],
+            # Row 4: Close
+            [
+                InlineKeyboardButton(text="❌ Закрыть", callback_data="menu:close"),
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def menu_projects(
+        current_dir: str = "/root",
+        project_name: str = None
+    ) -> InlineKeyboardMarkup:
+        """Projects submenu - navigation and project management"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="📁 Навигация", callback_data="menu:projects:browse"),
+            ],
+            [
+                InlineKeyboardButton(text="🔄 Сменить проект", callback_data="menu:projects:change"),
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def menu_context(
+        context_name: str = None,
+        message_count: int = 0,
+        has_session: bool = False
+    ) -> InlineKeyboardMarkup:
+        """Context submenu - session and context management"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="✨ Новый контекст", callback_data="menu:context:fresh"),
+            ],
+            [
+                InlineKeyboardButton(text="💬 Контексты", callback_data="menu:context:list"),
+                InlineKeyboardButton(text="📋 Переменные", callback_data="menu:context:vars"),
+            ],
+            [
+                InlineKeyboardButton(text="🗑 Очистить историю", callback_data="menu:context:clear"),
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def menu_settings(
+        yolo_enabled: bool = False,
+        auth_mode: str = "zai_api",
+        has_credentials: bool = False
+    ) -> InlineKeyboardMarkup:
+        """Settings submenu - account and preferences"""
+        yolo_status = "✅" if yolo_enabled else "❌"
+        auth_icon = "☁️" if auth_mode == "claude_account" else "🌐"
+
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    text=f"👤 Аккаунт ({auth_icon})",
+                    callback_data="menu:settings:account"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⚡ YOLO режим: {yolo_status}",
+                    callback_data="menu:settings:yolo"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔐 Авторизация Claude",
+                    callback_data="menu:settings:login"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def menu_system(has_active_task: bool = False) -> InlineKeyboardMarkup:
+        """System submenu - monitoring and control"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="📊 Статус Claude", callback_data="menu:system:status"),
+            ],
+            [
+                InlineKeyboardButton(text="💻 Метрики", callback_data="menu:system:metrics"),
+                InlineKeyboardButton(text="🐳 Docker", callback_data="menu:system:docker"),
+            ],
+            [
+                InlineKeyboardButton(text="🔍 Диагностика", callback_data="menu:system:diagnose"),
+            ],
+        ]
+
+        if has_active_task:
+            buttons.append([
+                InlineKeyboardButton(text="🛑 Отменить задачу", callback_data="menu:system:cancel"),
+            ])
+
+        buttons.append([
+            InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def menu_help() -> InlineKeyboardMarkup:
+        """Help submenu"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="📖 Как работать с ботом", callback_data="menu:help:usage"),
+            ],
+            [
+                InlineKeyboardButton(text="🔌 О плагинах", callback_data="menu:help:plugins"),
+            ],
+            [
+                InlineKeyboardButton(text="⚡ О YOLO режиме", callback_data="menu:help:yolo"),
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def menu_back_only(back_to: str = "menu:main") -> InlineKeyboardMarkup:
+        """Simple back button keyboard"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data=back_to)]
+        ])
+
+    # ============== Legacy Reply Keyboard (kept for compatibility) ==============
+
     @staticmethod
     def main_menu() -> ReplyKeyboardMarkup:
-        """Main menu keyboard - synced with commands"""
+        """Legacy reply keyboard - kept for compatibility"""
         buttons = [
             [KeyboardButton(text="📊 Метрики"), KeyboardButton(text="🐳 Docker")],
             [KeyboardButton(text="📂 Проект"), KeyboardButton(text="⚡ YOLO")],
@@ -805,6 +978,30 @@ class Keyboards:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
+    def account_auth_options() -> InlineKeyboardMarkup:
+        """Keyboard with options for Claude Account authorization"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔐 Войти через браузер",
+                    callback_data="account:login"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📤 Загрузить credentials файл",
+                    callback_data="account:upload"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ Назад",
+                    callback_data="account:menu"
+                )
+            ]
+        ])
+
+    @staticmethod
     def account_upload_credentials() -> InlineKeyboardMarkup:
         """Keyboard shown when waiting for credentials file upload"""
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -812,6 +1009,18 @@ class Keyboards:
                 InlineKeyboardButton(
                     text="❌ Отмена",
                     callback_data="account:cancel_upload"
+                )
+            ]
+        ])
+
+    @staticmethod
+    def account_cancel_login() -> InlineKeyboardMarkup:
+        """Keyboard shown during OAuth login flow"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="account:cancel_login"
                 )
             ]
         ])
