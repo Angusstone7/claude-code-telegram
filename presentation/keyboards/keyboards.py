@@ -273,12 +273,17 @@ class Keyboards:
             emoji = "📂" if is_current else "📁"
             mark = " ✓" if is_current else ""
 
-            buttons.append([
+            row = [
                 InlineKeyboardButton(
                     text=f"{emoji} {p.name}{mark}",
                     callback_data=f"project:switch:{p.id}"
+                ),
+                InlineKeyboardButton(
+                    text="🗑️",
+                    callback_data=f"project:delete:{p.id}"
                 )
-            ])
+            ]
+            buttons.append(row)
 
         # Action buttons
         action_row = []
@@ -420,6 +425,38 @@ class Keyboards:
                 )
             ]
         ])
+
+    @staticmethod
+    def project_delete_confirm(project_id: str, project_name: str, delete_files: bool = False) -> InlineKeyboardMarkup:
+        """
+        Confirmation keyboard for project deletion.
+
+        Args:
+            project_id: Project ID
+            project_name: Project name for display
+            delete_files: Whether to also delete files
+        """
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    text="🗑️ Удалить только проект",
+                    callback_data=f"project:delete_confirm:{project_id}:db"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚠️ Удалить проект И файлы",
+                    callback_data=f"project:delete_confirm:{project_id}:all"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="project:back"
+                )
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     # ============== File Browser Keyboard (/cd command) ==============
 

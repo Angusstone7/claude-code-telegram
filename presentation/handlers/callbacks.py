@@ -51,7 +51,7 @@ class CallbackHandlers:
                 f"🚀 **Command executed**\n\n"
                 f"```bash\n{display_output}\n```\n\n"
                 f"⏱️ Time: {result.execution_time:.2f}s | Exit code: {result.exit_code}",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=None
             )
 
             # Send result to AI for follow-up
@@ -68,7 +68,7 @@ class CallbackHandlers:
                     enable_tools=False
                 )
                 if response:
-                    await callback.message.answer(response, parse_mode=ParseMode.MARKDOWN)
+                    await callback.message.answer(response, parse_mode=None)
             except:
                 pass  # Skip AI follow-up on error
 
@@ -115,7 +115,7 @@ class CallbackHandlers:
                 text += "\n⚠️ **Предупреждения:**\n"
                 text += "\n".join(info["alerts"])
 
-            await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+            await callback.message.edit_text(text, parse_mode=None)
 
         except Exception as e:
             logger.error(f"Error refreshing metrics: {e}")
@@ -132,8 +132,8 @@ class CallbackHandlers:
             containers = await monitor.get_docker_containers()
 
             if not containers:
-                text = "🐳 **Контейнеры не найдены**"
-                await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+                text = "🐳 Контейнеры не найдены"
+                await callback.message.edit_text(text, parse_mode=None)
             else:
                 lines = ["🐳 **Docker контейнеры:**\n"]
                 for c in containers:
@@ -145,7 +145,7 @@ class CallbackHandlers:
                 text = "\n".join(lines)
                 await callback.message.edit_text(
                     text,
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=None,
                     reply_markup=Keyboards.docker_list(containers)
                 )
 
@@ -220,8 +220,8 @@ class CallbackHandlers:
             if success:
                 if len(logs) > 3500:
                     logs = logs[-3500:]
-                text = f"📋 **Логи** (`{container_id}`)\n\n```\n{logs}\n```"
-                await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+                text = f"📋 Логи ({container_id})\n\n{logs}"
+                await callback.message.edit_text(text, parse_mode=None)
             else:
                 await callback.answer(f"❌ {logs}")
 
@@ -271,7 +271,7 @@ class CallbackHandlers:
 
                 await callback.message.edit_text(
                     text,
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=None,
                     reply_markup=Keyboards.container_actions(container_id, container["status"])
                 )
             else:
@@ -297,7 +297,7 @@ class CallbackHandlers:
                 )
 
             text = "\n".join(lines)
-            await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+            await callback.message.edit_text(text, parse_mode=None)
 
         except Exception as e:
             logger.error(f"Error getting top processes: {e}")
@@ -324,7 +324,7 @@ class CallbackHandlers:
 
                 text = "\n".join(lines)
 
-            await callback.message.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+            await callback.message.edit_text(text, parse_mode=None)
 
         except Exception as e:
             logger.error(f"Error getting command history: {e}")
@@ -484,8 +484,8 @@ class CallbackHandlers:
 
             if cancelled:
                 await callback.message.edit_text(
-                    "🛑 **Задача отменена**",
-                    parse_mode=ParseMode.MARKDOWN
+                    "🛑 Задача отменена",
+                    parse_mode=None
                 )
                 await callback.answer("Задача отменена")
             else:
@@ -507,8 +507,8 @@ class CallbackHandlers:
 
         try:
             await callback.message.edit_text(
-                "▶️ **Продолжение сессии...**\n\nОтправьте следующее сообщение для продолжения.",
-                parse_mode=ParseMode.MARKDOWN
+                "▶️ Продолжение сессии...\n\nОтправьте следующее сообщение для продолжения.",
+                parse_mode=None
             )
 
             # Store session_id for next message
@@ -536,8 +536,8 @@ class CallbackHandlers:
                     self.message_handlers.set_working_dir(user_id, path)
 
                 await callback.message.edit_text(
-                    f"📁 **Рабочая папка установлена:**\n`{path}`",
-                    parse_mode=ParseMode.MARKDOWN
+                    f"📁 Рабочая папка установлена:\n{path}",
+                    parse_mode=None
                 )
                 await callback.answer(f"Проект: {path}")
 
@@ -547,8 +547,8 @@ class CallbackHandlers:
                     self.message_handlers.set_expecting_path(user_id, True)
 
                 await callback.message.edit_text(
-                    "📂 **Введите путь к проекту:**\n\nВведите полный путь к папке проекта.",
-                    parse_mode=ParseMode.MARKDOWN
+                    "📂 Введите путь к проекту:\n\nВведите полный путь к папке проекта.",
+                    parse_mode=None
                 )
                 await callback.answer("Введите путь в чат")
 
@@ -580,11 +580,11 @@ class CallbackHandlers:
                     self.message_handlers.set_working_dir(user_id, project.working_dir)
 
                 await callback.message.edit_text(
-                    f"✅ **Переключено на проект:**\n\n"
-                    f"**{project.name}**\n"
-                    f"Путь: `{project.working_dir}`\n\n"
-                    f"Используйте `/context list` для просмотра контекстов.",
-                    parse_mode=ParseMode.MARKDOWN
+                    f"✅ Переключено на проект:\n\n"
+                    f"{project.name}\n"
+                    f"Путь: {project.working_dir}\n\n"
+                    f"Используйте /context list для просмотра контекстов.",
+                    parse_mode=None
                 )
                 await callback.answer(f"Выбран {project.name}")
             else:
@@ -642,7 +642,7 @@ class CallbackHandlers:
 
             await callback.message.edit_text(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=None,
                 reply_markup=Keyboards.folder_browser(folders, root_path)
             )
             await callback.answer()
@@ -684,16 +684,171 @@ class CallbackHandlers:
                 self.message_handlers.set_working_dir(user_id, folder_path)
 
             await callback.message.edit_text(
-                f"✅ **Проект создан:**\n\n"
-                f"**{project.name}**\n"
-                f"Путь: `{project.working_dir}`\n\n"
+                f"✅ Проект создан:\n\n"
+                f"{project.name}\n"
+                f"Путь: {project.working_dir}\n\n"
                 f"Готово к работе! Отправьте первое сообщение.",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=None
             )
             await callback.answer(f"Создан {project.name}")
 
         except Exception as e:
             logger.error(f"Error creating project from folder: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_project_delete(self, callback: CallbackQuery) -> None:
+        """Handle project delete - show confirmation dialog"""
+        project_id = callback.data.split(":")[-1]
+        user_id = callback.from_user.id
+
+        if not self.project_service:
+            await callback.answer("⚠️ Project service not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+            from presentation.keyboards.keyboards import Keyboards
+
+            uid = UserId.from_int(user_id)
+            project = await self.project_service.get_by_id(project_id)
+
+            if not project:
+                await callback.answer("❌ Проект не найден")
+                return
+
+            if int(project.user_id) != user_id:
+                await callback.answer("❌ Это не ваш проект")
+                return
+
+            text = (
+                f"⚠️ Удаление проекта\n\n"
+                f"Проект: {project.name}\n"
+                f"Путь: {project.working_dir}\n\n"
+                f"Выберите действие:"
+            )
+
+            await callback.message.edit_text(
+                text,
+                parse_mode=None,
+                reply_markup=Keyboards.project_delete_confirm(project_id, project.name)
+            )
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error showing delete confirmation: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_project_delete_confirm(self, callback: CallbackQuery) -> None:
+        """Handle confirmed project deletion"""
+        import shutil
+
+        # Parse callback: project:delete_confirm:<id>:<mode>
+        parts = callback.data.split(":")
+        project_id = parts[2] if len(parts) > 2 else ""
+        delete_mode = parts[3] if len(parts) > 3 else "db"
+        user_id = callback.from_user.id
+
+        if not self.project_service:
+            await callback.answer("⚠️ Project service not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+            from presentation.keyboards.keyboards import Keyboards
+
+            uid = UserId.from_int(user_id)
+            project = await self.project_service.get_by_id(project_id)
+
+            if not project:
+                await callback.answer("❌ Проект не найден")
+                return
+
+            if int(project.user_id) != user_id:
+                await callback.answer("❌ Это не ваш проект")
+                return
+
+            project_name = project.name
+            project_path = project.working_dir
+
+            # Delete from database
+            deleted = await self.project_service.delete_project(uid, project_id)
+
+            if not deleted:
+                await callback.answer("❌ Не удалось удалить проект")
+                return
+
+            # Delete files if requested
+            files_deleted = False
+            if delete_mode == "all":
+                try:
+                    import os
+                    if os.path.exists(project_path) and project_path.startswith("/root/projects"):
+                        shutil.rmtree(project_path)
+                        files_deleted = True
+                except Exception as e:
+                    logger.error(f"Error deleting project files: {e}")
+
+            # Show result
+            if files_deleted:
+                result_text = (
+                    f"✅ Проект удален полностью\n\n"
+                    f"Проект: {project_name}\n"
+                    f"Файлы удалены: {project_path}"
+                )
+            else:
+                result_text = (
+                    f"✅ Проект удален из базы\n\n"
+                    f"Проект: {project_name}\n"
+                    f"Файлы сохранены: {project_path}"
+                )
+
+            # Show updated project list
+            projects = await self.project_service.list_projects(uid)
+            current = await self.project_service.get_current(uid)
+            current_id = current.id if current else None
+
+            await callback.message.edit_text(
+                result_text + "\n\n📁 Ваши проекты:",
+                parse_mode=None,
+                reply_markup=Keyboards.project_list(projects, current_id)
+            )
+            await callback.answer(f"✅ Проект {project_name} удален")
+
+        except Exception as e:
+            logger.error(f"Error deleting project: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_project_back(self, callback: CallbackQuery) -> None:
+        """Handle back to project list"""
+        user_id = callback.from_user.id
+
+        if not self.project_service:
+            await callback.answer("⚠️ Project service not available")
+            return
+
+        try:
+            from domain.value_objects.user_id import UserId
+            from presentation.keyboards.keyboards import Keyboards
+
+            uid = UserId.from_int(user_id)
+            projects = await self.project_service.list_projects(uid)
+            current = await self.project_service.get_current(uid)
+            current_id = current.id if current else None
+
+            if projects:
+                text = "📁 Ваши проекты:\n\nВыберите проект или создайте новый:"
+            else:
+                text = "📁 Проекты не найдены\n\nСоздайте первый проект:"
+
+            await callback.message.edit_text(
+                text,
+                parse_mode=None,
+                reply_markup=Keyboards.project_list(projects, current_id)
+            )
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error going back to project list: {e}")
             await callback.answer(f"❌ Ошибка: {e}")
 
     # ============== Context Management Callbacks ==============
@@ -1323,6 +1478,18 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     router.callback_query.register(
         handlers.handle_project_switch,
         F.data.startswith("project:switch:")
+    )
+    router.callback_query.register(
+        handlers.handle_project_delete_confirm,
+        F.data.startswith("project:delete_confirm:")
+    )
+    router.callback_query.register(
+        handlers.handle_project_delete,
+        F.data.startswith("project:delete:")
+    )
+    router.callback_query.register(
+        handlers.handle_project_back,
+        F.data == "project:back"
     )
     router.callback_query.register(
         handlers.handle_project_create,

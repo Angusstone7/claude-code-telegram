@@ -545,7 +545,7 @@ class MessageHandlers:
 
         await message.answer(
             text,
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=None,
             reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
         )
 
@@ -584,15 +584,15 @@ class MessageHandlers:
         if options:
             await message.answer(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=None,
                 reply_markup=Keyboards.claude_question(user_id, options, request_id)
             )
         else:
             # No options - expect text input
             self._expecting_answer[user_id] = True
             await message.answer(
-                text + "\n\n✏️ **Введите ваш ответ:**",
-                parse_mode=ParseMode.MARKDOWN
+                text + "\n\nВведите ваш ответ:",
+                parse_mode=None
             )
 
         # Wait for response
@@ -677,7 +677,7 @@ class MessageHandlers:
 
         perm_msg = await message.answer(
             text,
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=None,
             reply_markup=Keyboards.claude_permission(user_id, tool_name, request_id)
         )
         # Save the message so we can edit it after approval/rejection
@@ -711,7 +711,7 @@ class MessageHandlers:
         if options:
             q_msg = await message.answer(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=None,
                 reply_markup=Keyboards.claude_question(user_id, options, request_id)
             )
             # Save the message so we can edit it after answer
@@ -720,8 +720,8 @@ class MessageHandlers:
             # No options - expect text input
             self._expecting_answer[user_id] = True
             q_msg = await message.answer(
-                text + "\n\n✏️ **Введите ваш ответ:**",
-                parse_mode=ParseMode.MARKDOWN
+                text + "\n\nВведите ваш ответ:",
+                parse_mode=None
             )
             self._pending_question_messages[user_id] = q_msg
 
@@ -738,12 +738,12 @@ class MessageHandlers:
             status = "✅ Одобрено" if approved else "❌ Отклонено"
             try:
                 await perm_msg.edit_text(
-                    f"{status}\n\n🤖 **Продолжаю...**",
-                    parse_mode=ParseMode.MARKDOWN
+                    f"{status}\n\n🤖 Продолжаю...",
+                    parse_mode=None
                 )
                 # Use this message for continued streaming
                 streaming.current_message = perm_msg
-                streaming.buffer = f"{status}\n\n🤖 **Продолжаю...**\n"
+                streaming.buffer = f"{status}\n\n🤖 Продолжаю...\n"
                 streaming.is_finalized = False
             except Exception as e:
                 logger.debug(f"Could not edit permission message: {e}")
@@ -761,12 +761,12 @@ class MessageHandlers:
             short_answer = answer[:50] + "..." if len(answer) > 50 else answer
             try:
                 await q_msg.edit_text(
-                    f"📝 **Ответ:** {short_answer}\n\n🤖 **Продолжаю...**",
-                    parse_mode=ParseMode.MARKDOWN
+                    f"📝 Ответ: {short_answer}\n\n🤖 Продолжаю...",
+                    parse_mode=None
                 )
                 # Use this message for continued streaming
                 streaming.current_message = q_msg
-                streaming.buffer = f"📝 **Ответ:** {short_answer}\n\n🤖 **Продолжаю...**\n"
+                streaming.buffer = f"📝 Ответ: {short_answer}\n\n🤖 Продолжаю...\n"
                 streaming.is_finalized = False
             except Exception as e:
                 logger.debug(f"Could not edit question message: {e}")
@@ -881,12 +881,12 @@ class MessageHandlers:
         # Validate name (alphanumeric + underscore, starts with letter)
         if not re.match(r'^[A-Z][A-Z0-9_]*$', var_name):
             await message.answer(
-                "❌ **Неверное имя переменной**\n\n"
+                "❌ Неверное имя переменной\n\n"
                 "Имя должно:\n"
                 "• Начинаться с буквы\n"
-                "• Содержать только буквы, цифры и `_`\n\n"
-                "Например: `GITLAB_TOKEN`, `API_KEY`, `PROJECT_STACK`",
-                parse_mode=ParseMode.MARKDOWN,
+                "• Содержать только буквы, цифры и _\n\n"
+                "Например: GITLAB_TOKEN, API_KEY, PROJECT_STACK",
+                parse_mode=None,
                 reply_markup=Keyboards.variable_cancel()
             )
             return
@@ -896,9 +896,9 @@ class MessageHandlers:
         self.set_expecting_var_value(user_id, var_name, menu_msg)
 
         await message.answer(
-            f"✏️ **Введите значение для `{var_name}`:**\n\n"
-            f"Например: `glpat-xxxx` или `Python/FastAPI`",
-            parse_mode=ParseMode.MARKDOWN,
+            f"✏️ Введите значение для {var_name}:\n\n"
+            f"Например: glpat-xxxx или Python/FastAPI",
+            parse_mode=None,
             reply_markup=Keyboards.variable_cancel()
         )
 
@@ -948,11 +948,11 @@ class MessageHandlers:
         self.set_expecting_var_desc(user_id, var_name, var_value, menu_msg)
 
         await message.answer(
-            f"📝 **Введите описание для `{var_name}`:**\n\n"
+            f"📝 Введите описание для {var_name}:\n\n"
             f"Опишите, для чего эта переменная и как её использовать.\n"
-            f"Например: _Токен GitLab для git push/pull_\n\n"
+            f"Например: Токен GitLab для git push/pull\n\n"
             f"Или нажмите кнопку, чтобы пропустить.",
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=None,
             reply_markup=Keyboards.variable_skip_description()
         )
 
