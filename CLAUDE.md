@@ -23,33 +23,59 @@ black application/ domain/ infrastructure/ presentation/ shared/
 # Type checking
 mypy application/ domain/ infrastructure/ presentation/ shared/
 
-# Docker deployment
+# Docker deployment (development)
 docker-compose up -d --build
+
+# Docker deployment (production via CI/CD)
+# The GitLab CI/CD pipeline builds and deploys automatically on push to main/master
+# Manual deployment:
+docker-compose -f docker-compose.prod.yml up -d --build
 ```
 
 ## Architecture Overview
 
-This is a Telegram bot for server management using Claude AI. It follows DDD (Domain-Driven Design) with four layers:
+This is a Telegram bot that acts as a remote interface to Claude Code CLI and SDK, enabling AI-powered coding assistance via Telegram. The project follows DDD (Domain-Driven Design) with four layers:
 
 **Domain** → **Application** → **Infrastructure** → **Presentation**
 
+### Core Functionality
+
+The bot provides two backends for interacting with Claude Code:
+
+1. **SDK Backend** (Preferred): Uses `claude-agent-sdk` for direct Python integration with HITL (Human-in-the-Loop) support
+   - Located in `infrastructure/claude_code/sdk_service.py`
+   - Supports streaming responses and tool execution
+   - Integrates with official Claude plugins from `/plugins` directory
+
+2. **CLI Backend** (Fallback): Proxies to `@anthropic-ai/claude-code` npm package
+   - Located in `infrastructure/claude_code/proxy_service.py`
+   - Runs Claude Code commands in subprocess
+   - Includes diagnostics via `infrastructure/claude_code/diagnostics.py`
+
 ### Request Flow
 
-1. **Telegram message arrives** → `presentation/handlers/messages.py`
+1. **Telegram message arrives** → `presentation/handlers/messages.py` or `presentation/handlers/streaming.py`
 2. **Auth middleware checks user** → `presentation/middleware/auth.py`
-3. **Handler calls BotService** → `application/services/bot_service.py`
-4. **BotService orchestrates**:
-   - User/Session lookup via repositories (domain interfaces → infrastructure implementations)
-   - AI calls via `ClaudeAIService` → `infrastructure/messaging/claude_service.py`
-   - Command execution via `SSHCommandExecutor` → `infrastructure/ssh/ssh_executor.py`
-5. **Response sent back** to Telegram
+3. **Handler calls appropriate service**:
+   - For Claude Code interactions: `ClaudeAgentSDKService` or `ClaudeCodeProxyService`
+   - For project/context management: `ProjectService`, `ContextService`, `FileBrowserService`
+   - For legacy features: `BotService`
+4. **Response sent back** to Telegram (with streaming support for SDK)
 
 ### Key Design Patterns
 
-- **Repository Pattern**: Domain layer defines interfaces (`domain/repositories/`), infrastructure implements them (`infrastructure/persistence/sqlite_repository.py`)
+- **Repository Pattern**: Domain layer defines interfaces (`domain/repositories/`), infrastructure implements them (`infrastructure/persistence/`)
 - **Value Objects**: Immutable identifiers like `UserId`, `Role` in `domain/value_objects/`
-- **Application Service**: `BotService` is the single orchestrator - all presentation layer code calls through it
-- **Dependency Injection**: All services are injected in `main.py:Application.setup()`
+- **Application Services**: Each service handles a specific capability (BotService, ProjectService, ContextService, FileBrowserService)
+- **Dependency Injection**: All services are initialized in `main.py:Application.setup()`
+
+### Project and Context Management
+
+The bot manages multiple projects with persistent conversation contexts:
+
+- **Projects**: Stored via `SQLiteProjectRepository`, track working directories
+- **Contexts**: Stored via `SQLiteProjectContextRepository`, maintain conversation history per project
+- **File Browser**: `FileBrowserService` provides file system navigation within `/root/projects`
 
 ### AI Provider Abstraction
 
@@ -60,16 +86,19 @@ The bot supports multiple Claude-compatible APIs (Anthropic, ZhipuAI). Configura
 
 Use `ANTHROPIC_BASE_URL` for alternative API endpoints and `ANTHROPIC_AUTH_TOKEN` for non-standard auth.
 
-### Command Approval Workflow
+### Claude Code Integration
 
-Commands follow a state machine: `PENDING` → `APPROVED`/`REJECTED` → `EXECUTING` → `COMPLETED`/`FAILED`
+**SDK Service** (`infrastructure/claude_code/sdk_service.py`):
+- Wraps `claude-agent-sdk` for Python-native Claude Code access
+- Manages agent lifecycle, session persistence, and streaming responses
+- Loads plugins from `/plugins` directory (official plugins from anthropic/claude-plugins-official)
+- Supports permission modes: `default`, `auto`, `never`
 
-The flow is:
-1. AI suggests command → `BotService.create_pending_command()`
-2. User sees approval keyboard → `presentation/keyboards/keyboards.py`
-3. Callback handler processes → `presentation/handlers/callbacks.py`
-4. Approved: `BotService.execute_command()` runs via SSH
-5. Rejected: `BotService.reject_command()` logs and notifies
+**CLI Proxy Service** (`infrastructure/claude_code/proxy_service.py`):
+- Fallback when SDK is unavailable
+- Executes `claude` CLI commands via subprocess
+- Parses CLI output for Telegram display
+- Includes command diagnostics
 
 ### Session Management
 
@@ -80,8 +109,49 @@ Sessions maintain conversation history per user:
 
 ## Configuration
 
-All config loads from environment variables via `shared/config/settings.py`. The global `settings` instance is used throughout. Key required vars:
-- `TELEGRAM_TOKEN`, `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`), `ALLOWED_USER_ID`
+All config loads from environment variables via `shared/config/settings.py`. The global `settings` instance is used throughout.
+
+### Required Environment Variables
+
+- `TELEGRAM_TOKEN` - Bot token from @BotFather
+- `ALLOWED_USER_ID` - Telegram user ID for authorization
+- Either `ANTHROPIC_API_KEY` (official Anthropic) OR `ANTHROPIC_AUTH_TOKEN` (compatible APIs)
+
+### Optional Claude Code Variables
+
+- `CLAUDE_WORKING_DIR` - Default working directory (default: `/root`)
+- `CLAUDE_PATH` - Path to claude CLI (default: `claude`)
+- `CLAUDE_MAX_TURNS` - Max conversation turns (default: `50`)
+- `CLAUDE_TIMEOUT` - Command timeout in seconds (default: `600`)
+- `CLAUDE_PERMISSION_MODE` - SDK permission mode: `default|auto|never`
+- `CLAUDE_PLUGINS_DIR` - Plugins directory (default: `/plugins`)
+- `CLAUDE_PLUGINS` - Comma-separated enabled plugins
+
+### Optional AI Provider Variables
+
+- `ANTHROPIC_BASE_URL` - Alternative API endpoint (e.g., ZhipuAI)
+- `ANTHROPIC_MODEL` - Model to use
+- `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL` - Model aliases
+
+## Docker and Deployment
+
+**Development**:
+```bash
+docker-compose up -d --build
+```
+
+**Production** (via GitLab CI/CD):
+- Push to `main` or `master` branch triggers automatic deployment
+- Pipeline builds Docker image, transfers to server via SSH, deploys with docker-compose
+- Server: `192.168.0.116:2222`, app path: `/opt/ubuntu_claude`
+- Container is configured with persistent volumes for `./data`, `./logs`, `./projects`
+
+**Dockerfile Highlights**:
+- Base: `python:3.11-slim`
+- Installs Node.js 20.x for Claude Code CLI
+- Installs `@anthropic-ai/claude-code` globally via npm
+- Clones official plugins to `/plugins`
+- Runs `python main.py` as entrypoint
 
 ## Testing
 

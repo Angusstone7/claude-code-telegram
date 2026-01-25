@@ -845,7 +845,7 @@ class MessageHandlers:
 
             # Don't show error message if task was cancelled by user
             if result.error and not result.cancelled:
-                await message.answer(f"⚠️ **Завершено с ошибкой:**\n```\n{result.error[:1000]}\n```")
+                await message.answer(f"⚠️ <b>Завершено с ошибкой:</b>\n<pre>{result.error[:1000]}</pre>", parse_mode="HTML")
 
     async def _handle_answer_input(self, message: Message):
         """Handle text input for question answer"""

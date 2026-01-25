@@ -48,10 +48,10 @@ class CallbackHandlers:
 
             # Update message with result
             await callback.message.edit_text(
-                f"🚀 **Command executed**\n\n"
-                f"```bash\n{display_output}\n```\n\n"
+                f"🚀 <b>Command executed</b>\n\n"
+                f"<pre>{display_output}</pre>\n\n"
                 f"⏱️ Time: {result.execution_time:.2f}s | Exit code: {result.exit_code}",
-                parse_mode=None
+                parse_mode="HTML"
             )
 
             # Send result to AI for follow-up
@@ -101,21 +101,21 @@ class CallbackHandlers:
             metrics = info["metrics"]
 
             text = (
-                f"📊 **Метрики системы**\n\n"
-                f"💻 **CPU:** {metrics['cpu_percent']:.1f}%\n"
-                f"🧠 **Память:** {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)\n"
-                f"💾 **Диск:** {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)\n"
+                f"📊 <b>Метрики системы</b>\n\n"
+                f"💻 <b>CPU:</b> {metrics['cpu_percent']:.1f}%\n"
+                f"🧠 <b>Память:</b> {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)\n"
+                f"💾 <b>Диск:</b> {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)\n"
             )
 
             if metrics.get('load_average', [0])[0] > 0:
-                text += f"📈 **Нагрузка:** {metrics['load_average'][0]:.2f}\n"
+                text += f"📈 <b>Нагрузка:</b> {metrics['load_average'][0]:.2f}\n"
 
             # Alerts
             if info.get("alerts"):
-                text += "\n⚠️ **Предупреждения:**\n"
+                text += "\n⚠️ <b>Предупреждения:</b>\n"
                 text += "\n".join(info["alerts"])
 
-            await callback.message.edit_text(text, parse_mode=None)
+            await callback.message.edit_text(text, parse_mode="HTML")
 
         except Exception as e:
             logger.error(f"Error refreshing metrics: {e}")
@@ -135,17 +135,17 @@ class CallbackHandlers:
                 text = "🐳 Контейнеры не найдены"
                 await callback.message.edit_text(text, parse_mode=None)
             else:
-                lines = ["🐳 **Docker контейнеры:**\n"]
+                lines = ["🐳 <b>Docker контейнеры:</b>\n"]
                 for c in containers:
                     status_emoji = "🟢" if c["status"] == "running" else "🔴"
-                    lines.append(f"\n{status_emoji} **{c['name']}**")
+                    lines.append(f"\n{status_emoji} <b>{c['name']}</b>")
                     lines.append(f"   Статус: {c['status']}")
-                    lines.append(f"   Образ: `{c['image'][:30]}`")
+                    lines.append(f"   Образ: <code>{c['image'][:30]}</code>")
 
                 text = "\n".join(lines)
                 await callback.message.edit_text(
                     text,
-                    parse_mode=None,
+                    parse_mode="HTML",
                     reply_markup=Keyboards.docker_list(containers)
                 )
 
@@ -261,17 +261,17 @@ class CallbackHandlers:
             container = next((c for c in containers if c["id"] == container_id), None)
             if container:
                 text = (
-                    f"🐳 **Контейнер: {container['name']}**\n\n"
-                    f"**ID:** `{container['id']}`\n"
-                    f"**Статус:** {container['status']}\n"
-                    f"**Образ:** `{container['image']}`\n"
+                    f"🐳 <b>Контейнер: {container['name']}</b>\n\n"
+                    f"<b>ID:</b> <code>{container['id']}</code>\n"
+                    f"<b>Статус:</b> {container['status']}\n"
+                    f"<b>Образ:</b> <code>{container['image']}</code>\n"
                 )
                 if container.get("ports"):
-                    text += f"**Порты:** {', '.join(str(p) for p in container['ports'])}\n"
+                    text += f"<b>Порты:</b> {', '.join(str(p) for p in container['ports'])}\n"
 
                 await callback.message.edit_text(
                     text,
-                    parse_mode=None,
+                    parse_mode="HTML",
                     reply_markup=Keyboards.container_actions(container_id, container["status"])
                 )
             else:
@@ -290,14 +290,14 @@ class CallbackHandlers:
             monitor = SystemMonitor()
             processes = await monitor.get_top_processes(limit=10)
 
-            lines = ["📈 **Топ процессов:**\n"]
+            lines = ["📈 <b>Топ процессов:</b>\n"]
             for p in processes:
                 lines.append(
-                    f"`{p.pid:>6}` | CPU: {p.cpu_percent:>5.1f}% | MEM: {p.memory_percent:>5.1f}% | {p.name[:20]}"
+                    f"<code>{p.pid:>6}</code> | CPU: {p.cpu_percent:>5.1f}% | MEM: {p.memory_percent:>5.1f}% | {p.name[:20]}"
                 )
 
             text = "\n".join(lines)
-            await callback.message.edit_text(text, parse_mode=None)
+            await callback.message.edit_text(text, parse_mode="HTML")
 
         except Exception as e:
             logger.error(f"Error getting top processes: {e}")
@@ -314,17 +314,17 @@ class CallbackHandlers:
             commands = await self.bot_service.command_repository.find_by_user(user_id, limit=10)
 
             if not commands:
-                text = "📝 **История команд**\n\nКоманд пока нет."
+                text = "📝 <b>История команд</b>\n\nКоманд пока нет."
             else:
-                lines = ["📝 **История команд:**\n"]
+                lines = ["📝 <b>История команд:</b>\n"]
                 for cmd in commands[:10]:
                     status_emoji = "✅" if cmd.status.value == "completed" else "⏳"
                     cmd_preview = cmd.command[:30] + "..." if len(cmd.command) > 30 else cmd.command
-                    lines.append(f"{status_emoji} `{cmd_preview}`")
+                    lines.append(f"{status_emoji} <code>{cmd_preview}</code>")
 
                 text = "\n".join(lines)
 
-            await callback.message.edit_text(text, parse_mode=None)
+            await callback.message.edit_text(text, parse_mode="HTML")
 
         except Exception as e:
             logger.error(f"Error getting command history: {e}")
@@ -629,14 +629,14 @@ class CallbackHandlers:
 
             if folders:
                 text = (
-                    f"📂 **Обзор проектов**\n\n"
-                    f"Путь: `{root_path}`\n\n"
+                    f"📂 <b>Обзор проектов</b>\n\n"
+                    f"Путь: <code>{root_path}</code>\n\n"
                     f"Выберите папку для создания проекта:"
                 )
             else:
                 text = (
-                    f"📂 **Папки не найдены**\n\n"
-                    f"Путь: `{root_path}`\n\n"
+                    f"📂 <b>Папки не найдены</b>\n\n"
+                    f"Путь: <code>{root_path}</code>\n\n"
                     f"Сначала создайте папку с помощью Claude Code."
                 )
 

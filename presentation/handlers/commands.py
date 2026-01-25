@@ -525,14 +525,14 @@ class CommandHandlers:
             if sdk_service:
                 cancelled = await sdk_service.cancel_task(user_id)
                 if cancelled:
-                    await message.answer("🛑 **Задача отменена** (SDK)")
+                    await message.answer("🛑 <b>Задача отменена</b> (SDK)", parse_mode="HTML")
                     return
 
         # Try CLI fallback
         if self.claude_proxy:
             cli_cancelled = await self.claude_proxy.cancel_task(user_id)
             if cli_cancelled:
-                await message.answer("🛑 **Задача отменена** (CLI)")
+                await message.answer("🛑 <b>Задача отменена</b> (CLI)", parse_mode="HTML")
                 return
 
         if not cancelled:
