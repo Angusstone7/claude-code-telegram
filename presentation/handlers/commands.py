@@ -59,7 +59,7 @@ class CommandHandlers:
             f"Просто отправьте задачу — Claude Code её выполнит!\n"
             f"Я буду показывать вывод, запрашивать разрешения и передавать вопросы.\n\n"
             f"Используйте /help для списка команд.",
-            parse_mode="Markdown",
+            parse_mode=None,
             reply_markup=Keyboards.main_menu()
         )
 
@@ -115,7 +115,7 @@ class CommandHandlers:
 
 Просто опишите что нужно сделать!
         """
-        await message.answer(help_text, parse_mode="Markdown")
+        await message.answer(help_text, parse_mode=None)
 
     async def clear(self, message: Message) -> None:
         """Handle /clear command"""
@@ -167,7 +167,7 @@ class CommandHandlers:
             lines.append("\n⚠️ **Предупреждения:**")
             lines.extend(info["alerts"])
 
-        await message.answer("\n".join(lines), parse_mode="Markdown", reply_markup=Keyboards.system_metrics())
+        await message.answer("\n".join(lines), parse_mode=None, reply_markup=Keyboards.system_metrics())
 
     async def docker(self, message: Message) -> None:
         """Handle /docker command and 🐳 Docker button"""
@@ -183,7 +183,7 @@ class CommandHandlers:
                     "Используйте Claude Code для управления Docker:\n"
                     "• 'docker ps -a'\n"
                     "• 'docker run ...'",
-                    parse_mode="Markdown"
+                    parse_mode=None
                 )
                 return
 
@@ -198,7 +198,7 @@ class CommandHandlers:
             text = "\n".join(lines)
             await message.answer(
                 text,
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=Keyboards.docker_list(containers)
             )
 
@@ -225,12 +225,12 @@ class CommandHandlers:
                 self.message_handlers.set_working_dir(user_id, path)
                 await message.answer(
                     f"📁 **Рабочая папка установлена:**\n`{path}`",
-                    parse_mode="Markdown"
+                    parse_mode=None
                 )
             else:
                 await message.answer(
                     "⚠️ Обработчики сообщений не инициализированы",
-                    parse_mode="Markdown"
+                    parse_mode=None
                 )
         else:
             # Show current working directory and prompt for input
@@ -248,7 +248,7 @@ class CommandHandlers:
                 f"📁 **Текущая рабочая папка:**\n`{current_dir}`\n\n"
                 f"Используйте `/project <путь>` для смены.\n\n"
                 f"Пример:\n`/project /home/myproject`",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=Keyboards.project_selection(projects) if projects else None
             )
 
@@ -285,7 +285,7 @@ class CommandHandlers:
             )
             keyboard = Keyboards.project_list([], None, show_create=True)
 
-        await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+        await message.answer(text, parse_mode=None, reply_markup=keyboard)
 
     async def context(self, message: Message, command: CommandObject) -> None:
         """Handle /context command - show interactive context menu"""
@@ -393,13 +393,13 @@ class CommandHandlers:
                 "⚡ Все операции будут выполняться автоматически!\n"
                 "⚠️ Будьте осторожны - нет подтверждений!\n\n"
                 "Используйте `/yolo` снова чтобы выключить.",
-                parse_mode="Markdown"
+                parse_mode=None
             )
         else:
             await message.answer(
                 "🛡️ **YOLO Mode: OFF**\n\n"
                 "Операции снова требуют подтверждения.",
-                parse_mode="Markdown"
+                parse_mode=None
             )
 
     async def plugins(self, message: Message) -> None:
@@ -413,7 +413,7 @@ class CommandHandlers:
                 "🔌 **Плагины Claude Code**\n\n"
                 "⚠️ SDK сервис недоступен.\n"
                 "Плагины требуют Claude Agent SDK.",
-                parse_mode="Markdown"
+                parse_mode=None
             )
             return
 
@@ -422,7 +422,7 @@ class CommandHandlers:
             await message.answer(
                 "🔌 **Плагины Claude Code**\n\n"
                 "⚠️ SDK сервис не инициализирован.",
-                parse_mode="Markdown"
+                parse_mode=None
             )
             return
 
@@ -432,7 +432,7 @@ class CommandHandlers:
             await message.answer(
                 "🔌 **Плагины Claude Code**\n\n"
                 "Плагины не настроены.",
-                parse_mode="Markdown"
+                parse_mode=None
             )
             return
 
@@ -457,7 +457,7 @@ class CommandHandlers:
             lines.append("\n⚠️ Плагины не найдены в директории.")
             lines.append(f"Путь: `{sdk_service.plugins_dir}`")
 
-        await message.answer("\n".join(lines), parse_mode="Markdown")
+        await message.answer("\n".join(lines), parse_mode=None)
 
     async def cd(self, message: Message, command: CommandObject) -> None:
         """
@@ -584,7 +584,7 @@ class CommandHandlers:
 
         text += "\n\nИспользуйте /diagnose для полной диагностики."
 
-        await message.answer(text, parse_mode="Markdown")
+        await message.answer(text, parse_mode=None)
 
     async def diagnose(self, message: Message) -> None:
         """Handle /diagnose command - run full Claude Code diagnostics"""
@@ -593,7 +593,7 @@ class CommandHandlers:
         try:
             results = await run_diagnostics(self.claude_proxy.claude_path)
             text = format_diagnostics_for_telegram(results)
-            await message.answer(text, parse_mode="Markdown")
+            await message.answer(text, parse_mode=None)
         except Exception as e:
             await message.answer(f"❌ Diagnostics failed: {e}")
 
