@@ -776,28 +776,73 @@ class MenuHandlers:
     async def _show_docker(self, callback: CallbackQuery):
         """Show Docker containers"""
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
-            containers = await monitor.get_docker_containers()
+            # Check if docker module is installed
+            try:
+                import docker
+            except ImportError:
+                await callback.message.edit_text(
+                    "🐳 <b>Docker контейнеры</b>\n\n"
+                    "❌ Библиотека docker не установлена\n\n"
+                    "Установите: <code>pip install docker</code>",
+                    reply_markup=Keyboards.menu_back_only("menu:system"),
+                    parse_mode="HTML"
+                )
+                await callback.answer()
+                return
+
+            # Try to connect to Docker daemon
+            try:
+                client = docker.from_env()
+                containers = client.containers.list(all=True)
+            except docker.errors.DockerException as e:
+                await callback.message.edit_text(
+                    "🐳 <b>Docker контейнеры</b>\n\n"
+                    f"❌ Не удалось подключиться к Docker daemon:\n"
+                    f"<code>{str(e)[:200]}</code>\n\n"
+                    "Проверьте что Docker запущен и доступен.",
+                    reply_markup=Keyboards.menu_back_only("menu:system"),
+                    parse_mode="HTML"
+                )
+                await callback.answer()
+                return
 
             if not containers:
-                text = "🐳 <b>Docker контейнеры</b>\n\nКонтейнеры не найдены."
-                keyboard = Keyboards.menu_back_only("menu:system")
-            else:
-                lines = ["🐳 <b>Docker контейнеры:</b>\n"]
-                for c in containers:
-                    status_emoji = "🟢" if c["status"] == "running" else "🔴"
-                    lines.append(f"\n{status_emoji} <b>{c['name']}</b>")
-                    lines.append(f"   Статус: {c['status']}")
-                    lines.append(f"   Образ: <code>{c['image'][:30]}</code>")
-                text = "\n".join(lines)
-                keyboard = Keyboards.docker_list(containers)
+                await callback.message.edit_text(
+                    "🐳 <b>Docker контейнеры</b>\n\n"
+                    "📦 Контейнеры не найдены\n\n"
+                    "Используйте <code>docker ps -a</code> для проверки.",
+                    reply_markup=Keyboards.menu_back_only("menu:system"),
+                    parse_mode="HTML"
+                )
+                await callback.answer()
+                return
+
+            # Format container list
+            lines = ["🐳 <b>Docker контейнеры:</b>\n"]
+            container_list = []
+            for container in containers:
+                status_emoji = "🟢" if container.status == "running" else "🔴"
+                image_tag = container.image.tags[0] if container.image.tags else str(container.image.id)[:12]
+                lines.append(f"\n{status_emoji} <b>{container.name}</b>")
+                lines.append(f"   Статус: {container.status}")
+                lines.append(f"   Образ: <code>{image_tag[:40]}</code>")
+
+                container_list.append({
+                    "id": container.short_id,
+                    "name": container.name,
+                    "status": container.status,
+                    "image": image_tag,
+                })
+
+            text = "\n".join(lines)
+            keyboard = Keyboards.docker_list(container_list)
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
         except Exception as e:
+            logger.error(f"Error showing Docker containers: {e}", exc_info=True)
             await callback.message.edit_text(
-                f"🐳 Docker\n\n❌ Ошибка: {e}",
+                f"🐳 Docker\n\n❌ Ошибка: {str(e)[:300]}",
                 reply_markup=Keyboards.menu_back_only("menu:system"),
                 parse_mode="HTML"
             )
