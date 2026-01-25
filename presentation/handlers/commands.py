@@ -406,63 +406,6 @@ class CommandHandlers:
                 parse_mode="HTML"
             )
 
-    async def plugins(self, message: Message) -> None:
-        """
-        Handle /plugins command - show available Claude Code plugins.
-
-        Shows plugins from the official anthropic/claude-plugins-official repo.
-        """
-        if not self.message_handlers or not hasattr(self.message_handlers, 'sdk_service'):
-            await message.answer(
-                "🔌 <b>Плагины Claude Code</b>\n\n"
-                "⚠️ SDK сервис недоступен.\n"
-                "Плагины требуют Claude Agent SDK.",
-                parse_mode="HTML"
-            )
-            return
-
-        sdk_service = self.message_handlers.sdk_service
-        if not sdk_service:
-            await message.answer(
-                "🔌 <b>Плагины Claude Code</b>\n\n"
-                "⚠️ SDK сервис не инициализирован.",
-                parse_mode="HTML"
-            )
-            return
-
-        plugins_info = sdk_service.get_enabled_plugins_info()
-
-        if not plugins_info:
-            await message.answer(
-                "🔌 <b>Плагины Claude Code</b>\n\n"
-                "Плагины не настроены.",
-                parse_mode="HTML"
-            )
-            return
-
-        lines = ["🔌 <b>Плагины Claude Code:</b>\n"]
-        available_count = 0
-        for plugin in plugins_info:
-            if plugin.get("available"):
-                lines.append(f"✅ <code>/{plugin['name']}</code> — {plugin['description']}")
-                available_count += 1
-            else:
-                lines.append(f"❌ <code>/{plugin['name']}</code> — не найден")
-
-        if available_count > 0:
-            lines.append("\n<b>Как использовать:</b>")
-            lines.append("Просто скажите Claude что нужно сделать:")
-            lines.append("• 'сделай коммит'")
-            lines.append("• 'запусти /commit'")
-            lines.append("• 'создай PR'")
-            lines.append("• 'проведи код ревью'")
-            lines.append("\nClaude сам определит какой плагин использовать!")
-        else:
-            lines.append("\n⚠️ Плагины не найдены в директории.")
-            lines.append(f"Путь: `{sdk_service.plugins_dir}`")
-
-        await message.answer("\n".join(lines), parse_mode=None)
-
     async def cd(self, message: Message, command: CommandObject) -> None:
         """
         Handle /cd command - interactive folder navigation.
@@ -799,7 +742,6 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     router.message.register(handlers.vars, Command("vars"))
     router.message.register(handlers.fresh, Command("fresh"))
     router.message.register(handlers.yolo, Command("yolo"))
-    router.message.register(handlers.plugins, Command("plugins"))
     router.message.register(handlers.cd, Command("cd"))
 
     # System monitoring commands
