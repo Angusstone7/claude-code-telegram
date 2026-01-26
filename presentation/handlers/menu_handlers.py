@@ -655,6 +655,39 @@ class MenuHandlers:
                     )
             await callback.answer()
 
+        elif action == "usage":
+            # Show Claude.ai usage limits
+            await self._show_usage_limits(callback)
+
+    async def _show_usage_limits(self, callback: CallbackQuery):
+        """Show Claude.ai subscription usage limits"""
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        try:
+            from infrastructure.claude_api.usage_service import ClaudeUsageService
+
+            service = ClaudeUsageService(self.account_service)
+            limits = await service.get_usage_limits()
+            text = service.format_usage_for_telegram(limits)
+
+            buttons = [
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="menu:settings:usage")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:settings")]
+            ]
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+        except Exception as e:
+            logger.error(f"Error showing usage limits: {e}", exc_info=True)
+            await callback.message.edit_text(
+                f"❌ Ошибка: {str(e)}",
+                reply_markup=Keyboards.menu_back_only("menu:settings"),
+                parse_mode="HTML"
+            )
+
+        await callback.answer()
+
     # ============== Plugins Section ==============
 
     async def _handle_plugins(self, callback: CallbackQuery, state: FSMContext):

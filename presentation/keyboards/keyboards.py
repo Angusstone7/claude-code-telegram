@@ -113,6 +113,12 @@ class Keyboards:
             ],
             [
                 InlineKeyboardButton(
+                    text="📊 Лимиты Claude.ai",
+                    callback_data="menu:settings:usage"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔐 Авторизация Claude",
                     callback_data="menu:settings:login"
                 ),
