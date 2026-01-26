@@ -397,18 +397,50 @@ class MessageHandlers:
         caption = message.caption or ""
 
         if caption:
-            # Format prompt with file and task
-            enriched_prompt = self.file_processor_service.format_for_prompt(
-                processed, caption
-            )
+            # Check if caption is a plugin command (starts with /)
+            if caption.startswith("/"):
+                # Cache file and let command handler pick it up
+                self._file_cache[message.message_id] = processed
 
-            # Notify user
-            file_info = f"📎 {processed.filename} ({processed.size_bytes // 1024} KB)"
-            task_preview = caption[:50] + "..." if len(caption) > 50 else caption
-            await message.answer(f"Получен файл: {file_info}\nЗадача: {task_preview}")
+                # Parse command and args
+                parts = caption.split(maxsplit=1)
+                command_name = parts[0][1:]  # Remove leading /
+                command_args = parts[1] if len(parts) > 1 else ""
 
-            # Execute task with file context
-            await self._execute_task_with_prompt(message, enriched_prompt)
+                # Build prompt for plugin command with file context
+                skill_command = f"/{command_name}"
+                if command_args:
+                    skill_command += f" {command_args}"
+
+                prompt = f"run {skill_command}"
+                enriched_prompt = self.file_processor_service.format_for_prompt(
+                    processed, prompt
+                )
+
+                # Notify user
+                file_info = f"📎 {processed.filename} ({processed.size_bytes // 1024} KB)"
+                await message.answer(
+                    f"🔌 <b>Команда плагина:</b> <code>{skill_command}</code>\n"
+                    f"{file_info}\n\n"
+                    f"Передаю в Claude Code...",
+                    parse_mode="HTML"
+                )
+
+                # Execute plugin command with file context (new session)
+                await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
+            else:
+                # Regular task with file
+                enriched_prompt = self.file_processor_service.format_for_prompt(
+                    processed, caption
+                )
+
+                # Notify user
+                file_info = f"📎 {processed.filename} ({processed.size_bytes // 1024} KB)"
+                task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+                await message.answer(f"Получен файл: {file_info}\nЗадача: {task_preview}")
+
+                # Execute task with file context
+                await self._execute_task_with_prompt(message, enriched_prompt)
         else:
             # Cache file for reply
             self._file_cache[message.message_id] = processed
@@ -486,15 +518,46 @@ class MessageHandlers:
         caption = message.caption or ""
 
         if caption:
-            # Format prompt with image
-            enriched_prompt = self.file_processor_service.format_for_prompt(
-                processed, caption
-            )
+            # Check if caption is a plugin command (starts with /)
+            if caption.startswith("/"):
+                # Cache file for reference
+                self._file_cache[message.message_id] = processed
 
-            task_preview = caption[:50] + "..." if len(caption) > 50 else caption
-            await message.answer(f"🖼 Изображение получено. Задача: {task_preview}")
+                # Parse command and args
+                parts = caption.split(maxsplit=1)
+                command_name = parts[0][1:]  # Remove leading /
+                command_args = parts[1] if len(parts) > 1 else ""
 
-            await self._execute_task_with_prompt(message, enriched_prompt)
+                # Build prompt for plugin command with file context
+                skill_command = f"/{command_name}"
+                if command_args:
+                    skill_command += f" {command_args}"
+
+                prompt = f"run {skill_command}"
+                enriched_prompt = self.file_processor_service.format_for_prompt(
+                    processed, prompt
+                )
+
+                # Notify user
+                await message.answer(
+                    f"🔌 <b>Команда плагина:</b> <code>{skill_command}</code>\n"
+                    f"🖼 Изображение добавлено в контекст\n\n"
+                    f"Передаю в Claude Code...",
+                    parse_mode="HTML"
+                )
+
+                # Execute plugin command with file context (new session)
+                await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
+            else:
+                # Regular task with image
+                enriched_prompt = self.file_processor_service.format_for_prompt(
+                    processed, caption
+                )
+
+                task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+                await message.answer(f"🖼 Изображение получено. Задача: {task_preview}")
+
+                await self._execute_task_with_prompt(message, enriched_prompt)
         else:
             # Cache for reply
             self._file_cache[message.message_id] = processed
