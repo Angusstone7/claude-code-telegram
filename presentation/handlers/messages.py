@@ -272,8 +272,13 @@ class MessageHandlers:
         if event:
             event.set()
 
-    async def handle_text(self, message: Message) -> None:
-        """Handle text messages - main entry point"""
+    async def handle_text(self, message: Message, prompt_override: str = None) -> None:
+        """Handle text messages - main entry point
+
+        Args:
+            message: Telegram message
+            prompt_override: If provided, use this instead of message.text (for plugin commands)
+        """
         user_id = message.from_user.id
         bot = message.bot
 
@@ -324,7 +329,8 @@ class MessageHandlers:
         working_dir = self.get_working_dir(user_id)
         session_id = self._continue_sessions.get(user_id)  # Don't pop - keep for next message
         context_id = None
-        enriched_prompt = message.text  # May be enriched with context variables
+        # Use prompt_override if provided (for plugin commands), otherwise use message.text
+        enriched_prompt = prompt_override if prompt_override else message.text
 
         # Use project/context services if available (for auto-continue)
         if self.project_service and self.context_service:
@@ -359,10 +365,11 @@ class MessageHandlers:
                         logger.info(f"[{user_id}] Starting new session (no previous session_id)")
 
                     # Enrich prompt with context variables
+                    original_prompt = prompt_override if prompt_override else message.text
                     new_prompt = await self.context_service.get_enriched_prompt(
-                        context_id, message.text
+                        context_id, original_prompt
                     )
-                    if new_prompt != message.text:
+                    if new_prompt != original_prompt:
                         enriched_prompt = new_prompt
                         logger.info(f"Enriched prompt with {len(context.variables)} context variables")
 
@@ -378,7 +385,7 @@ class MessageHandlers:
             working_dir=working_dir,
             claude_session_id=session_id
         )
-        session.start_task(message.text)
+        session.start_task(enriched_prompt)
         self._user_sessions[user_id] = session
 
         # Store context_id for saving messages later

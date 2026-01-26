@@ -628,10 +628,9 @@ class CommandHandlers:
             parse_mode="HTML"
         )
 
-        # Create a fake message with the command as text and pass to handle_text
+        # Pass the command to handle_text with prompt_override
         # This reuses all the existing Claude Code execution logic
-        message.text = prompt
-        await self.message_handlers.handle_text(message)
+        await self.message_handlers.handle_text(message, prompt_override=prompt)
 
     async def plugins(self, message: Message) -> None:
         """
