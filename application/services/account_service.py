@@ -67,9 +67,16 @@ class ClaudeModel(str, Enum):
 class LocalModelConfig:
     """Configuration for a local model endpoint (LMStudio, Ollama, etc.)"""
     name: str           # User-defined name (e.g., "My LMStudio")
-    base_url: str       # e.g., "http://localhost:1234/v1"
+    base_url: str       # e.g., "http://localhost:1234" (trailing /v1 is auto-stripped)
     model_name: str     # e.g., "llama-3.2-8b"
     api_key: Optional[str] = None  # Optional API key (some local servers need it)
+
+    def __post_init__(self):
+        """Normalize base_url - remove trailing /v1 to avoid double /v1/v1 path."""
+        # SDK adds /v1/messages, so base_url should NOT include /v1
+        self.base_url = self.base_url.rstrip("/")
+        if self.base_url.endswith("/v1"):
+            self.base_url = self.base_url[:-3]
 
     def to_dict(self) -> dict:
         return {
