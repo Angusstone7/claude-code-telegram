@@ -53,7 +53,7 @@ class OAuthLoginSession:
         self._output_lines: list[str] = []
 
     def _get_env(self) -> dict:
-        """Build environment for OAuth login (proxy, no API keys)"""
+        """Build environment for OAuth login (proxy, no API keys, headless)"""
         env = os.environ.copy()
 
         # Set proxy for accessing claude.ai
@@ -65,6 +65,12 @@ class OAuthLoginSession:
         # Bypass proxy for local network addresses
         env["NO_PROXY"] = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
         env["no_proxy"] = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
+
+        # Headless environment - prevent CLI from trying to open browser
+        env["BROWSER"] = "/bin/true"  # No-op browser command
+        env["CI"] = "true"  # Signal CI/headless environment
+        env["TERM"] = "dumb"  # Simple terminal
+        env.pop("DISPLAY", None)  # No display
 
         # Remove API keys to force OAuth login
         env.pop("ANTHROPIC_API_KEY", None)
