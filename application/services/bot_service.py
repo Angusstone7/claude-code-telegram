@@ -230,8 +230,8 @@ class BotService:
     # System info
     async def get_system_info(self) -> Dict:
         """Get system information"""
-        from infrastructure.monitoring.system_monitor import SystemMonitor
-        monitor = SystemMonitor()
+        from infrastructure.monitoring.system_monitor import create_system_monitor
+        monitor = create_system_monitor()
 
         metrics = await monitor.get_metrics()
         return {

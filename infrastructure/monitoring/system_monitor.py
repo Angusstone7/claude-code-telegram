@@ -8,6 +8,28 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Singleton SSH executor for Docker commands
+_ssh_executor_instance = None
+
+
+def get_ssh_executor():
+    """Get or create SSH executor singleton for Docker operations"""
+    global _ssh_executor_instance
+    if _ssh_executor_instance is None:
+        try:
+            from infrastructure.ssh.ssh_executor import SSHCommandExecutor
+            _ssh_executor_instance = SSHCommandExecutor()
+            logger.info("SSH executor initialized for Docker operations")
+        except Exception as e:
+            logger.warning(f"Could not initialize SSH executor: {e}")
+    return _ssh_executor_instance
+
+
+def create_system_monitor(alert_thresholds: dict = None) -> "SystemMonitor":
+    """Factory function to create SystemMonitor with SSH executor"""
+    ssh_executor = get_ssh_executor()
+    return SystemMonitor(alert_thresholds=alert_thresholds, ssh_executor=ssh_executor)
+
 
 @dataclass
 class SystemMetrics:
@@ -54,13 +76,14 @@ class ProcessInfo:
 class SystemMonitor:
     """System resource monitoring service"""
 
-    def __init__(self, alert_thresholds: dict = None):
+    def __init__(self, alert_thresholds: dict = None, ssh_executor=None):
         self.thresholds = alert_thresholds or {
             "cpu": 80.0,
             "memory": 85.0,
             "disk": 90.0,
         }
         self._alerts = []
+        self._ssh_executor = ssh_executor
 
     async def get_metrics(self) -> SystemMetrics:
         """Get current system metrics"""
@@ -154,7 +177,51 @@ class SystemMonitor:
         return alerts
 
     async def get_docker_containers(self) -> List[dict]:
-        """Get list of Docker containers with status"""
+        """Get list of Docker containers with status via SSH"""
+        if self._ssh_executor:
+            return await self._get_docker_containers_ssh()
+        return await self._get_docker_containers_local()
+
+    async def _get_docker_containers_ssh(self) -> List[dict]:
+        """Get Docker containers via SSH command on host"""
+        try:
+            # Use docker ps with JSON format for reliable parsing
+            result = await self._ssh_executor.execute(
+                'docker ps -a --format "{{.ID}}|{{.Names}}|{{.Status}}|{{.Image}}|{{.Ports}}"'
+            )
+            if result.exit_code != 0:
+                logger.error(f"Docker SSH command failed: {result.stderr}")
+                return []
+
+            containers = []
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                parts = line.split("|")
+                if len(parts) >= 4:
+                    status_full = parts[2].lower()
+                    # Extract status (running, exited, etc.)
+                    if "up" in status_full:
+                        status = "running"
+                    elif "exited" in status_full:
+                        status = "exited"
+                    else:
+                        status = status_full.split()[0] if status_full else "unknown"
+
+                    containers.append({
+                        "id": parts[0][:12],
+                        "name": parts[1],
+                        "status": status,
+                        "image": parts[3],
+                        "ports": parts[4].split(", ") if len(parts) > 4 and parts[4] else [],
+                    })
+            return containers
+        except Exception as e:
+            logger.error(f"Error getting Docker containers via SSH: {e}")
+            return []
+
+    async def _get_docker_containers_local(self) -> List[dict]:
+        """Get Docker containers via local Docker socket (fallback)"""
         try:
             import docker
 
@@ -227,6 +294,11 @@ class SystemMonitor:
 
     async def docker_stop(self, container_id: str) -> tuple[bool, str]:
         """Stop a Docker container"""
+        if self._ssh_executor:
+            return await self._docker_command_ssh("stop", container_id)
+        return await self._docker_stop_local(container_id)
+
+    async def _docker_stop_local(self, container_id: str) -> tuple[bool, str]:
         try:
             import docker
             client = docker.from_env()
@@ -240,6 +312,11 @@ class SystemMonitor:
 
     async def docker_start(self, container_id: str) -> tuple[bool, str]:
         """Start a Docker container"""
+        if self._ssh_executor:
+            return await self._docker_command_ssh("start", container_id)
+        return await self._docker_start_local(container_id)
+
+    async def _docker_start_local(self, container_id: str) -> tuple[bool, str]:
         try:
             import docker
             client = docker.from_env()
@@ -253,6 +330,11 @@ class SystemMonitor:
 
     async def docker_restart(self, container_id: str) -> tuple[bool, str]:
         """Restart a Docker container"""
+        if self._ssh_executor:
+            return await self._docker_command_ssh("restart", container_id)
+        return await self._docker_restart_local(container_id)
+
+    async def _docker_restart_local(self, container_id: str) -> tuple[bool, str]:
         try:
             import docker
             client = docker.from_env()
@@ -266,6 +348,24 @@ class SystemMonitor:
 
     async def docker_logs(self, container_id: str, lines: int = 50) -> tuple[bool, str]:
         """Get Docker container logs"""
+        if self._ssh_executor:
+            return await self._docker_logs_ssh(container_id, lines)
+        return await self._docker_logs_local(container_id, lines)
+
+    async def _docker_logs_ssh(self, container_id: str, lines: int = 50) -> tuple[bool, str]:
+        try:
+            result = await self._ssh_executor.execute(f"docker logs --tail {lines} {container_id}")
+            if result.exit_code != 0:
+                return False, result.stderr or "Failed to get logs"
+            # Combine stdout and stderr (docker logs outputs to both)
+            output = result.stdout
+            if result.stderr and not result.stderr.startswith("Error"):
+                output = output + "\n" + result.stderr if output else result.stderr
+            return True, output or "(empty logs)"
+        except Exception as e:
+            return False, str(e)
+
+    async def _docker_logs_local(self, container_id: str, lines: int = 50) -> tuple[bool, str]:
         try:
             import docker
             client = docker.from_env()
@@ -279,6 +379,12 @@ class SystemMonitor:
 
     async def docker_remove(self, container_id: str, force: bool = False) -> tuple[bool, str]:
         """Remove a Docker container"""
+        if self._ssh_executor:
+            force_flag = "-f" if force else ""
+            return await self._docker_command_ssh("rm", container_id, force_flag)
+        return await self._docker_remove_local(container_id, force)
+
+    async def _docker_remove_local(self, container_id: str, force: bool = False) -> tuple[bool, str]:
         try:
             import docker
             client = docker.from_env()
@@ -288,5 +394,16 @@ class SystemMonitor:
             return True, f"Container {name} removed"
         except ImportError:
             return False, "Docker module not installed"
+        except Exception as e:
+            return False, str(e)
+
+    async def _docker_command_ssh(self, action: str, container_id: str, extra_flags: str = "") -> tuple[bool, str]:
+        """Execute a docker command via SSH"""
+        try:
+            cmd = f"docker {action} {extra_flags} {container_id}".strip()
+            result = await self._ssh_executor.execute(cmd)
+            if result.exit_code != 0:
+                return False, result.stderr or f"Failed to {action} container"
+            return True, f"Container {container_id} {action}ed successfully"
         except Exception as e:
             return False, str(e)

@@ -222,8 +222,8 @@ class CommandHandlers:
     async def docker(self, message: Message) -> None:
         """Handle /docker command and 🐳 Docker button"""
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             containers = await monitor.get_docker_containers()
 
             if not containers:

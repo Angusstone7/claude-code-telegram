@@ -159,8 +159,8 @@ class CallbackHandlers:
         """Handle docker stop container"""
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             success, message = await monitor.docker_stop(container_id)
 
             if success:
@@ -177,8 +177,8 @@ class CallbackHandlers:
         """Handle docker start container"""
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             success, message = await monitor.docker_start(container_id)
 
             if success:
@@ -195,8 +195,8 @@ class CallbackHandlers:
         """Handle docker restart container"""
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             success, message = await monitor.docker_restart(container_id)
 
             if success:
@@ -213,8 +213,8 @@ class CallbackHandlers:
         """Handle docker logs"""
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             success, logs = await monitor.docker_logs(container_id, lines=30)
 
             if success:
@@ -235,8 +235,8 @@ class CallbackHandlers:
         """Handle docker remove container"""
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             success, message = await monitor.docker_remove(container_id, force=True)
 
             if success:
@@ -286,8 +286,8 @@ class CallbackHandlers:
     async def handle_metrics_top(self, callback: CallbackQuery) -> None:
         """Handle top processes request"""
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            monitor = SystemMonitor()
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
             processes = await monitor.get_top_processes(limit=10)
 
             lines = ["📈 <b>Топ процессов:</b>\n"]
