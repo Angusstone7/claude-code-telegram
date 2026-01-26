@@ -22,6 +22,7 @@ from application.services.account_service import (
     AccountService,
     AuthMode,
     CredentialsInfo,
+    LocalModelConfig,
     CREDENTIALS_PATH,
     CLAUDE_PROXY,
 )
@@ -215,6 +216,10 @@ class AccountStates(StatesGroup):
     """FSM states for account operations"""
     waiting_credentials_file = State()
     waiting_oauth_code = State()
+    # Local model setup states
+    waiting_local_url = State()
+    waiting_local_model_name = State()
+    waiting_local_display_name = State()
 
 
 class AccountHandlers:
@@ -272,6 +277,23 @@ class AccountHandlers:
         self.router.message.register(
             self.handle_oauth_code_input,
             AccountStates.waiting_oauth_code,
+            F.text
+        )
+
+        # Local model setup handlers
+        self.router.message.register(
+            self.handle_local_url_input,
+            AccountStates.waiting_local_url,
+            F.text
+        )
+        self.router.message.register(
+            self.handle_local_model_name_input,
+            AccountStates.waiting_local_model_name,
+            F.text
+        )
+        self.router.message.register(
+            self.handle_local_display_name_input,
+            AccountStates.waiting_local_display_name,
             F.text
         )
 
@@ -380,6 +402,14 @@ class AccountHandlers:
             # Delete Claude Account credentials
             await self._handle_delete_account(callback, state)
 
+        elif action == "local_setup":
+            # Start local model setup
+            await self._start_local_model_setup(callback, state)
+
+        elif action == "local_use_default_name":
+            # Use model name as display name
+            await self._handle_local_use_default_name(callback, state)
+
         else:
             await callback.answer(f"Неизвестное действие: {action}")
 
@@ -426,6 +456,11 @@ class AccountHandlers:
                 )
                 await callback.answer()
                 return
+
+        # For Local Model, start setup flow directly
+        if mode == AuthMode.LOCAL_MODEL:
+            await self._start_local_model_setup(callback, state)
+            return
 
         # Show confirmation
         if mode == AuthMode.CLAUDE_ACCOUNT:
@@ -573,34 +608,45 @@ class AccountHandlers:
         await callback.answer()
 
     async def _show_model_selection(self, callback: CallbackQuery, state: FSMContext):
-        """Show model selection menu"""
+        """Show model selection menu based on current auth mode"""
         user_id = callback.from_user.id
 
-        # Get current model
-        current_model = await self.account_service.get_model(user_id)
+        # Get settings and available models for current auth mode
+        settings = await self.account_service.get_settings(user_id)
+        models = await self.account_service.get_available_models(user_id)
 
-        from application.services.account_service import ClaudeModel
+        # Build title based on auth mode
+        titles = {
+            AuthMode.CLAUDE_ACCOUNT: ("Claude", "Официальные модели Anthropic"),
+            AuthMode.ZAI_API: ("z.ai API", "Модели ZhipuAI"),
+            AuthMode.LOCAL_MODEL: ("Локальная модель", "LMStudio / Ollama / LLama"),
+        }
+        title, subtitle = titles.get(settings.auth_mode, ("Модели", ""))
 
-        text = (
-            "🤖 <b>Выбор модели Claude</b>\n\n"
-            "Выберите модель для использования:\n\n"
-        )
+        text = f"🤖 <b>Выбор модели - {title}</b>\n"
+        if subtitle:
+            text += f"<i>{subtitle}</i>\n\n"
 
         # Add model descriptions
-        for model in [ClaudeModel.OPUS, ClaudeModel.SONNET, ClaudeModel.HAIKU]:
-            display_name = ClaudeModel.get_display_name(model)
-            description = ClaudeModel.get_description(model)
-            # Compare with all possible formats: enum, value, legacy string
-            is_selected = current_model in (model, model.value, str(model))
-            emoji = "✅" if is_selected else "  "
-            text += f"{emoji} <b>{display_name}</b>\n"
-            text += f"   <i>{description}</i>\n\n"
+        for m in models:
+            emoji = "✅" if m.get("is_selected") else "  "
+            text += f"{emoji} <b>{m['name']}</b>\n"
+            if m.get("desc"):
+                text += f"   <i>{m['desc']}</i>\n\n"
 
-        text += "\n<i>Выбор модели доступен для всех режимов авторизации</i>"
+        if not models:
+            if settings.auth_mode == AuthMode.LOCAL_MODEL:
+                text += "\n<i>Локальная модель не настроена. Нажмите '⚙️ Изменить настройки' чтобы добавить.</i>"
+            else:
+                text += "\n<i>Нет доступных моделей</i>"
 
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.model_select(current_model),
+            reply_markup=Keyboards.model_select(
+                models=models,
+                auth_mode=settings.auth_mode.value,
+                current_model=settings.model
+            ),
             parse_mode="HTML"
         )
         await callback.answer()
@@ -969,6 +1015,195 @@ class AccountHandlers:
             "Авторизация отменена.\n"
             "Используйте /account для настроек."
         )
+
+    # ============== Local Model Setup Handlers ==============
+
+    async def _start_local_model_setup(self, callback: CallbackQuery, state: FSMContext):
+        """Start local model setup flow - ask for URL"""
+        text = (
+            "🖥️ <b>Настройка локальной модели</b>\n\n"
+            "Введите URL вашего локального сервера.\n\n"
+            "<b>Примеры:</b>\n"
+            "• LMStudio: <code>http://localhost:1234/v1</code>\n"
+            "• Ollama: <code>http://localhost:11434/v1</code>\n"
+            "• vLLM: <code>http://localhost:8000/v1</code>\n\n"
+            "<i>Сервер должен быть совместим с OpenAI API</i>"
+        )
+
+        await state.set_state(AccountStates.waiting_local_url)
+        await callback.message.edit_text(
+            text,
+            reply_markup=Keyboards.cancel_only(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+
+    async def handle_local_url_input(self, message: Message, state: FSMContext):
+        """Handle local model URL input"""
+        url = message.text.strip()
+
+        # Validate URL
+        if not url.startswith(("http://", "https://")):
+            await message.answer(
+                "❌ URL должен начинаться с http:// или https://\n\n"
+                "Попробуйте ещё раз:",
+                reply_markup=Keyboards.cancel_only(),
+                parse_mode="HTML"
+            )
+            return
+
+        # Store URL and ask for model name
+        await state.update_data(local_url=url)
+        await state.set_state(AccountStates.waiting_local_model_name)
+
+        await message.answer(
+            "📝 <b>Название модели</b>\n\n"
+            "Введите название модели на вашем сервере.\n\n"
+            "<b>Примеры:</b>\n"
+            "• <code>llama-3.2-8b</code>\n"
+            "• <code>mistral-7b-instruct</code>\n"
+            "• <code>codestral-22b</code>\n"
+            "• <code>qwen2.5-coder-32b</code>\n\n"
+            "<i>Проверьте список моделей на вашем сервере</i>",
+            reply_markup=Keyboards.cancel_only(),
+            parse_mode="HTML"
+        )
+
+    async def handle_local_model_name_input(self, message: Message, state: FSMContext):
+        """Handle local model name input"""
+        model_name = message.text.strip()
+
+        if not model_name:
+            await message.answer(
+                "❌ Название модели не может быть пустым.\n\n"
+                "Введите название модели:",
+                reply_markup=Keyboards.cancel_only()
+            )
+            return
+
+        # Store model name and ask for display name
+        await state.update_data(local_model_name=model_name)
+        await state.set_state(AccountStates.waiting_local_display_name)
+
+        await message.answer(
+            "🏷️ <b>Имя для отображения</b>\n\n"
+            f"Введите понятное имя для этой модели\n"
+            f"(например: 'Мой LMStudio' или 'Локальная Llama').\n\n"
+            f"Или нажмите кнопку чтобы использовать '{model_name}':",
+            reply_markup=Keyboards.local_model_skip_name(model_name),
+            parse_mode="HTML"
+        )
+
+    async def handle_local_display_name_input(self, message: Message, state: FSMContext):
+        """Handle local model display name input"""
+        user_id = message.from_user.id
+        display_name = message.text.strip()
+
+        if not display_name:
+            await message.answer(
+                "❌ Имя не может быть пустым.\n\n"
+                "Введите имя для отображения:",
+                reply_markup=Keyboards.cancel_only()
+            )
+            return
+
+        await self._complete_local_model_setup(message, state, display_name)
+
+    async def _handle_local_use_default_name(self, callback: CallbackQuery, state: FSMContext):
+        """Handle using model name as display name"""
+        data = await state.get_data()
+        model_name = data.get("local_model_name", "Local Model")
+
+        await callback.answer()
+        # Create a fake message to reuse the completion logic
+        await self._complete_local_model_setup(callback, state, model_name)
+
+    async def _complete_local_model_setup(
+        self,
+        event,  # Message or CallbackQuery
+        state: FSMContext,
+        display_name: str
+    ):
+        """Complete local model setup"""
+        user_id = event.from_user.id
+
+        # Get stored data
+        data = await state.get_data()
+        url = data.get("local_url")
+        model_name = data.get("local_model_name")
+
+        if not url or not model_name:
+            # Something went wrong, start over
+            if isinstance(event, CallbackQuery):
+                await event.message.edit_text(
+                    "❌ Ошибка: данные настройки потеряны. Начните заново.",
+                    reply_markup=Keyboards.cancel_only()
+                )
+            else:
+                await event.answer(
+                    "❌ Ошибка: данные настройки потеряны. Начните заново.",
+                    reply_markup=Keyboards.cancel_only()
+                )
+            await state.clear()
+            return
+
+        # Create config and save
+        config = LocalModelConfig(
+            name=display_name,
+            base_url=url,
+            model_name=model_name,
+        )
+
+        settings = await self.account_service.set_local_model_config(user_id, config)
+
+        await state.clear()
+
+        text = (
+            f"✅ <b>Локальная модель настроена!</b>\n\n"
+            f"Имя: {display_name}\n"
+            f"URL: <code>{url}</code>\n"
+            f"Модель: <code>{model_name}</code>\n\n"
+            f"Теперь все запросы идут на локальный сервер."
+        )
+
+        creds_info = self.account_service.get_credentials_info()
+
+        if isinstance(event, CallbackQuery):
+            await event.message.edit_text(
+                text,
+                reply_markup=Keyboards.account_menu(
+                    current_mode=AuthMode.LOCAL_MODEL.value,
+                    has_credentials=creds_info.exists,
+                    current_model=model_name,
+                ),
+                parse_mode="HTML"
+            )
+        else:
+            await event.answer(
+                text,
+                reply_markup=Keyboards.account_menu(
+                    current_mode=AuthMode.LOCAL_MODEL.value,
+                    has_credentials=creds_info.exists,
+                    current_model=model_name,
+                ),
+                parse_mode="HTML"
+            )
+
+        logger.info(f"[{user_id}] Local model configured: {display_name} at {url}")
+
+    async def handle_local_cancel_text(self, message: Message, state: FSMContext):
+        """Handle cancel text during local model setup"""
+        if message.text and message.text.lower() in ("отмена", "cancel", "/cancel"):
+            await state.clear()
+            await message.answer("Настройка отменена. Используйте /account для настроек.")
+        else:
+            current_state = await state.get_state()
+            if current_state == AccountStates.waiting_local_url:
+                await self.handle_local_url_input(message, state)
+            elif current_state == AccountStates.waiting_local_model_name:
+                await self.handle_local_model_name_input(message, state)
+            elif current_state == AccountStates.waiting_local_display_name:
+                await self.handle_local_display_name_input(message, state)
 
 
 def register_account_handlers(dp, account_handlers: AccountHandlers):

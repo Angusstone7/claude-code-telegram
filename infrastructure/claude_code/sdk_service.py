@@ -224,16 +224,20 @@ class ClaudeAgentSDKService:
         Get environment variables for the user based on their auth mode.
 
         If AccountService is configured, returns env vars based on user's
-        selected auth mode (z.ai API or Claude Account with proxy).
+        selected auth mode (z.ai API, Claude Account with proxy, or Local Model).
         Otherwise, returns current environment.
         """
         if not self.account_service:
             return dict(os.environ)
 
         try:
-            mode = await self.account_service.get_auth_mode(user_id)
-            env = self.account_service.apply_env_for_mode(mode)
-            logger.debug(f"[{user_id}] Using auth mode: {mode.value}")
+            settings = await self.account_service.get_settings(user_id)
+            # Pass local_config for LOCAL_MODEL mode
+            env = self.account_service.apply_env_for_mode(
+                settings.auth_mode,
+                local_config=settings.local_model_config
+            )
+            logger.debug(f"[{user_id}] Using auth mode: {settings.auth_mode.value}")
             return env
         except Exception as e:
             logger.warning(f"[{user_id}] Error getting auth mode, using default env: {e}")

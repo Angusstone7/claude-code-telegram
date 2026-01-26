@@ -33,6 +33,7 @@ class AuthMode(str, Enum):
     """Authorization mode"""
     ZAI_API = "zai_api"
     CLAUDE_ACCOUNT = "claude_account"
+    LOCAL_MODEL = "local_model"
 
 
 class ClaudeModel(str, Enum):
@@ -63,12 +64,39 @@ class ClaudeModel(str, Enum):
 
 
 @dataclass
+class LocalModelConfig:
+    """Configuration for a local model endpoint (LMStudio, Ollama, etc.)"""
+    name: str           # User-defined name (e.g., "My LMStudio")
+    base_url: str       # e.g., "http://localhost:1234/v1"
+    model_name: str     # e.g., "llama-3.2-8b"
+    api_key: Optional[str] = None  # Optional API key (some local servers need it)
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "base_url": self.base_url,
+            "model_name": self.model_name,
+            "api_key": self.api_key,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "LocalModelConfig":
+        return cls(
+            name=data.get("name", "Local Model"),
+            base_url=data["base_url"],
+            model_name=data["model_name"],
+            api_key=data.get("api_key"),
+        )
+
+
+@dataclass
 class AccountSettings:
     """User account settings"""
     user_id: int
     auth_mode: AuthMode = AuthMode.ZAI_API
-    model: Optional[str] = None  # Preferred Claude model (e.g., "claude-sonnet-4-5")
+    model: Optional[str] = None  # Preferred model (e.g., "claude-sonnet-4-5" or "glm-4.7")
     proxy_url: str = CLAUDE_PROXY
+    local_model_config: Optional[LocalModelConfig] = None  # Config for LOCAL_MODEL mode
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -177,6 +205,7 @@ class AccountService:
         Each auth mode only accepts compatible models:
         - Claude Account: only official Claude models (opus, sonnet, haiku)
         - z.ai API: only z.ai models (glm-4.7, etc.) or env default
+        - Local Model: use the configured local model
 
         Returns:
             - Model string if compatible with current mode
@@ -191,6 +220,12 @@ class AccountService:
                 # Normalize legacy "ClaudeModel.OPUS" → "claude-opus-4-5"
                 return self._normalize_model(settings.model)
             # No model or non-Claude model: SDK will use its default
+            return None
+
+        elif settings.auth_mode == AuthMode.LOCAL_MODEL:
+            # For local model, use the configured model from local_model_config
+            if settings.local_model_config:
+                return settings.local_model_config.model_name
             return None
 
         # z.ai API mode
@@ -241,6 +276,97 @@ class AccountService:
         settings.updated_at = datetime.now()
         await self.repository.save(settings)
         logger.info(f"[{user_id}] Model set to: {model or 'default'}")
+        return settings
+
+    async def get_available_models(self, user_id: int) -> list[dict]:
+        """
+        Get available models based on current auth mode.
+
+        Returns:
+            List of model dicts with: id, name, desc, is_selected
+        """
+        settings = await self.get_settings(user_id)
+
+        if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
+            models = [
+                {"id": ClaudeModel.OPUS.value, "name": "Opus 4.5", "desc": "Самая мощная модель"},
+                {"id": ClaudeModel.SONNET.value, "name": "Sonnet 4.5", "desc": "Баланс скорости и качества (рекомендуется)"},
+                {"id": ClaudeModel.HAIKU.value, "name": "Haiku 4", "desc": "Быстрая модель"},
+            ]
+            for m in models:
+                m["is_selected"] = settings.model == m["id"]
+            return models
+
+        elif settings.auth_mode == AuthMode.ZAI_API:
+            models = self._get_zai_models_from_env()
+            for m in models:
+                m["is_selected"] = settings.model == m["id"]
+            return models
+
+        elif settings.auth_mode == AuthMode.LOCAL_MODEL:
+            if settings.local_model_config:
+                return [{
+                    "id": settings.local_model_config.model_name,
+                    "name": settings.local_model_config.name,
+                    "desc": settings.local_model_config.base_url,
+                    "is_selected": True,
+                }]
+            return []
+
+        return []
+
+    def _get_zai_models_from_env(self) -> list[dict]:
+        """Get z.ai models from environment variables or use defaults."""
+        models = []
+
+        # Check for env-configured models
+        haiku = os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+        sonnet = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
+        opus = os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        default = os.environ.get("ANTHROPIC_MODEL")
+
+        if haiku:
+            models.append({"id": haiku, "name": self._format_model_name(haiku), "desc": "Быстрая модель"})
+        if sonnet and sonnet != haiku:
+            models.append({"id": sonnet, "name": self._format_model_name(sonnet), "desc": "Сбалансированная модель"})
+        if opus and opus not in (haiku, sonnet):
+            models.append({"id": opus, "name": self._format_model_name(opus), "desc": "Мощная модель"})
+        if default and default not in (haiku, sonnet, opus):
+            models.append({"id": default, "name": self._format_model_name(default), "desc": "Модель по умолчанию"})
+
+        # Fallback to hardcoded z.ai defaults
+        if not models:
+            models = [
+                {"id": "glm-4.5-air", "name": "GLM 4.5 Air", "desc": "Быстрая модель"},
+                {"id": "glm-4.7", "name": "GLM 4.7", "desc": "Мощная модель"},
+            ]
+
+        return models
+
+    def _format_model_name(self, model_id: str) -> str:
+        """Format model ID to display name (glm-4.7 → GLM 4.7)."""
+        return model_id.replace("-", " ").replace("_", " ").title()
+
+    async def set_local_model_config(
+        self, user_id: int, config: LocalModelConfig
+    ) -> AccountSettings:
+        """
+        Set local model configuration and switch to LOCAL_MODEL mode.
+
+        Args:
+            user_id: User ID
+            config: Local model configuration
+
+        Returns:
+            Updated settings
+        """
+        settings = await self.get_settings(user_id)
+        settings.auth_mode = AuthMode.LOCAL_MODEL
+        settings.local_model_config = config
+        settings.model = config.model_name
+        settings.updated_at = datetime.now()
+        await self.repository.save(settings)
+        logger.info(f"[{user_id}] Set local model: {config.name} ({config.base_url})")
         return settings
 
     def get_credentials_info(self) -> CredentialsInfo:
@@ -326,12 +452,15 @@ class AccountService:
             logger.error(f"Error saving credentials: {e}")
             return False, f"Error: {e}"
 
-    def get_env_for_mode(self, mode: AuthMode) -> dict[str, str]:
+    def get_env_for_mode(
+        self, mode: AuthMode, local_config: Optional[LocalModelConfig] = None
+    ) -> dict[str, str]:
         """
         Build environment variables for the specified auth mode.
 
         Args:
             mode: Authorization mode
+            local_config: Local model configuration (required for LOCAL_MODEL mode)
 
         Returns:
             Dict of environment variables to set
@@ -385,9 +514,32 @@ class AccountService:
 
             logger.debug(f"Claude Account mode: using SDK defaults, proxy={CLAUDE_PROXY[:30]}...")
 
+        elif mode == AuthMode.LOCAL_MODEL and local_config:
+            # Local model mode - use user-provided URL and model
+            env["ANTHROPIC_BASE_URL"] = local_config.base_url
+            if local_config.api_key:
+                env["ANTHROPIC_API_KEY"] = local_config.api_key
+            else:
+                # Some local servers accept any key or none
+                env["ANTHROPIC_API_KEY"] = "local-no-key"
+            env["ANTHROPIC_MODEL"] = local_config.model_name
+
+            # Remove proxy settings (local server is on local network)
+            env["_REMOVE_HTTP_PROXY"] = "1"
+            env["_REMOVE_HTTPS_PROXY"] = "1"
+            env["_REMOVE_http_proxy"] = "1"
+            env["_REMOVE_https_proxy"] = "1"
+
+            logger.debug(f"Local model mode: url={local_config.base_url}, model={local_config.model_name}")
+
         return env
 
-    def apply_env_for_mode(self, mode: AuthMode, base_env: dict = None) -> dict[str, str]:
+    def apply_env_for_mode(
+        self,
+        mode: AuthMode,
+        base_env: dict = None,
+        local_config: Optional[LocalModelConfig] = None
+    ) -> dict[str, str]:
         """
         Apply environment variables for the specified auth mode.
 
@@ -396,6 +548,7 @@ class AccountService:
         Args:
             mode: Authorization mode
             base_env: Base environment (defaults to os.environ)
+            local_config: Local model configuration (required for LOCAL_MODEL mode)
 
         Returns:
             New environment dict ready for subprocess/SDK
@@ -405,7 +558,7 @@ class AccountService:
         else:
             base_env = dict(base_env)
 
-        mode_env = self.get_env_for_mode(mode)
+        mode_env = self.get_env_for_mode(mode, local_config=local_config)
 
         # Handle removal markers
         if mode_env.pop("_REMOVE_ANTHROPIC_API_KEY", None):
@@ -424,6 +577,16 @@ class AccountService:
             base_env.pop("ANTHROPIC_DEFAULT_SONNET_MODEL", None)
         if mode_env.pop("_REMOVE_ANTHROPIC_DEFAULT_OPUS_MODEL", None):
             base_env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+
+        # Remove proxy environment variables (for local model mode)
+        if mode_env.pop("_REMOVE_HTTP_PROXY", None):
+            base_env.pop("HTTP_PROXY", None)
+        if mode_env.pop("_REMOVE_HTTPS_PROXY", None):
+            base_env.pop("HTTPS_PROXY", None)
+        if mode_env.pop("_REMOVE_http_proxy", None):
+            base_env.pop("http_proxy", None)
+        if mode_env.pop("_REMOVE_https_proxy", None):
+            base_env.pop("https_proxy", None)
 
         # Additional safety: For Claude Account mode, ensure API keys are removed
         # This is a double-check to prevent using old/stale API keys

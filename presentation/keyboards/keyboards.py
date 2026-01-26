@@ -1058,11 +1058,23 @@ class Keyboards:
             )
         ])
 
+        # Local Model button
+        local_emoji = "✅" if current_mode == "local_model" else "🖥️"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{local_emoji} Локальная модель",
+                callback_data="account:mode:local_model"
+            )
+        ])
+
         # Model selection button (show model name if set)
-        from application.services.account_service import ClaudeModel
         model_text = "🤖 Модель"
         if current_model:
-            model_name = ClaudeModel.get_display_name(current_model)
+            # Use a simple formatting for model name
+            model_name = current_model.replace("-", " ").replace("_", " ").title()
+            # Keep short for display
+            if len(model_name) > 20:
+                model_name = model_name[:17] + "..."
             model_text = f"🤖 Модель: {model_name}"
 
         buttons.append([
@@ -1150,43 +1162,43 @@ class Keyboards:
         ])
 
     @staticmethod
-    def model_select(current_model: str = None) -> InlineKeyboardMarkup:
+    def model_select(
+        models: list = None,
+        auth_mode: str = "zai_api",
+        current_model: str = None
+    ) -> InlineKeyboardMarkup:
         """
-        Model selection keyboard.
+        Dynamic model selection keyboard based on auth mode.
 
         Args:
+            models: List of model dicts with id, name, is_selected (from AccountService.get_available_models())
+            auth_mode: Current auth mode
             current_model: Currently selected model
         """
-        from application.services.account_service import ClaudeModel
-
         buttons = []
 
-        # Opus button - use .value to get actual model ID, not enum name
-        opus_emoji = "✅" if current_model in (ClaudeModel.OPUS, ClaudeModel.OPUS.value, "ClaudeModel.OPUS") else "💎"
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{opus_emoji} Opus 4.5",
-                callback_data=f"account:model:{ClaudeModel.OPUS.value}"
-            )
-        ])
-
-        # Sonnet button
-        sonnet_emoji = "✅" if current_model in (ClaudeModel.SONNET, ClaudeModel.SONNET.value, "ClaudeModel.SONNET") else "⚡"
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{sonnet_emoji} Sonnet 4.5 (рекомендуется)",
-                callback_data=f"account:model:{ClaudeModel.SONNET.value}"
-            )
-        ])
-
-        # Haiku button
-        haiku_emoji = "✅" if current_model in (ClaudeModel.HAIKU, ClaudeModel.HAIKU.value, "ClaudeModel.HAIKU") else "🚀"
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{haiku_emoji} Haiku 4",
-                callback_data=f"account:model:{ClaudeModel.HAIKU.value}"
-            )
-        ])
+        if models:
+            # Dynamic buttons from provided models list
+            for m in models:
+                emoji = "✅" if m.get("is_selected") else "🔘"
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"{emoji} {m['name']}",
+                        callback_data=f"account:model:{m['id']}"
+                    )
+                ])
+        else:
+            # Fallback to Claude models if no list provided (backwards compatibility)
+            from application.services.account_service import ClaudeModel
+            for model_enum in [ClaudeModel.OPUS, ClaudeModel.SONNET, ClaudeModel.HAIKU]:
+                is_selected = current_model in (model_enum, model_enum.value, str(model_enum))
+                emoji = "✅" if is_selected else "🔘"
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"{emoji} {ClaudeModel.get_display_name(model_enum)}",
+                        callback_data=f"account:model:{model_enum.value}"
+                    )
+                ])
 
         # Default (auto) button
         default_emoji = "✅" if not current_model else "🔄"
@@ -1196,6 +1208,15 @@ class Keyboards:
                 callback_data="account:model:default"
             )
         ])
+
+        # For local model mode, add "Change settings" button
+        if auth_mode == "local_model":
+            buttons.append([
+                InlineKeyboardButton(
+                    text="⚙️ Изменить настройки",
+                    callback_data="account:local_setup"
+                )
+            ])
 
         # Back button
         buttons.append([
@@ -1212,6 +1233,8 @@ class Keyboards:
         """Confirmation keyboard for mode switch"""
         if mode == "claude_account":
             text = "✅ Да, переключить на Claude Account"
+        elif mode == "local_model":
+            text = "✅ Да, настроить локальную модель"
         else:
             text = "✅ Да, переключить на z.ai API"
 
@@ -1228,6 +1251,26 @@ class Keyboards:
                     callback_data="account:menu"
                 )
             ]
+        ])
+
+    @staticmethod
+    def cancel_only(back_to: str = "account:menu") -> InlineKeyboardMarkup:
+        """Simple cancel button keyboard"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data=back_to)]
+        ])
+
+    @staticmethod
+    def local_model_skip_name(default_name: str) -> InlineKeyboardMarkup:
+        """Keyboard for skipping display name input"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"✅ Использовать '{default_name}'",
+                    callback_data=f"account:local_use_default_name"
+                )
+            ],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="account:menu")]
         ])
 
     @staticmethod

@@ -5,6 +5,7 @@ Persists user account settings for auth mode switching.
 """
 
 import aiosqlite
+import json
 import logging
 from datetime import datetime
 from typing import Optional
@@ -44,6 +45,15 @@ class SQLiteAccountRepository:
                 # Column already exists, that's fine
                 pass
 
+            # Add local_model_config column if it doesn't exist (migration for local models)
+            try:
+                await db.execute("ALTER TABLE account_settings ADD COLUMN local_model_config TEXT")
+                await db.commit()
+                logger.info("Added local_model_config column to account_settings table")
+            except Exception:
+                # Column already exists, that's fine
+                pass
+
             logger.info("Account settings table initialized")
 
     async def find_by_user_id(self, user_id: int) -> Optional["AccountSettings"]:
@@ -63,16 +73,22 @@ class SQLiteAccountRepository:
 
     async def save(self, settings: "AccountSettings") -> None:
         """Save account settings"""
+        # Serialize local_model_config to JSON
+        local_config_json = None
+        if settings.local_model_config:
+            local_config_json = json.dumps(settings.local_model_config.to_dict())
+
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO account_settings
-                (user_id, auth_mode, model, proxy_url, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (user_id, auth_mode, model, proxy_url, local_model_config, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 settings.user_id,
                 settings.auth_mode.value,
                 settings.model,
                 settings.proxy_url,
+                local_config_json,
                 settings.created_at.isoformat() if settings.created_at else None,
                 settings.updated_at.isoformat() if settings.updated_at else None,
             ))
@@ -89,13 +105,24 @@ class SQLiteAccountRepository:
 
     def _row_to_settings(self, row) -> "AccountSettings":
         """Convert database row to AccountSettings"""
-        from application.services.account_service import AccountSettings, AuthMode
+        from application.services.account_service import AccountSettings, AuthMode, LocalModelConfig
+
+        # Deserialize local_model_config from JSON
+        local_model_config = None
+        if "local_model_config" in row.keys() and row["local_model_config"]:
+            try:
+                local_model_config = LocalModelConfig.from_dict(
+                    json.loads(row["local_model_config"])
+                )
+            except (json.JSONDecodeError, TypeError, KeyError) as e:
+                logger.warning(f"Failed to deserialize local_model_config: {e}")
 
         return AccountSettings(
             user_id=row["user_id"],
             auth_mode=AuthMode(row["auth_mode"]),
             model=row["model"] if "model" in row.keys() else None,  # May be None for existing records
             proxy_url=row["proxy_url"],
+            local_model_config=local_model_config,
             created_at=(
                 datetime.fromisoformat(row["created_at"])
                 if row["created_at"] else None
