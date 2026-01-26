@@ -215,7 +215,8 @@ class Application:
         # Account handlers (for /account command and mode switching)
         account_handlers = AccountHandlers(
             self.account_service,
-            context_service=self.context_service  # For session reset on model change
+            context_service=self.context_service,  # For session reset on model change
+            project_service=self.project_service,  # For getting project_id to reset context
         )
         register_account_handlers(self.dp, account_handlers)
 

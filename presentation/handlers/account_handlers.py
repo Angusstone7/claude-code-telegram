@@ -237,9 +237,11 @@ class AccountHandlers:
         self,
         account_service: AccountService,
         context_service=None,  # Optional: for session reset on model change
+        project_service=None,  # Optional: needed to get project_id for context reset
     ):
         self.account_service = account_service
         self.context_service = context_service
+        self.project_service = project_service
         self.message_handlers = None  # Set from main.py for session cache clear
         self.router = Router(name="account")
         # Active OAuth login sessions per user
@@ -728,12 +730,16 @@ class AccountHandlers:
                 session_reset = True
 
             # Clear project context (start fresh conversation)
-            if self.context_service:
+            if self.context_service and self.project_service:
                 try:
-                    current_context = await self.context_service.get_current_context(user_id)
-                    if current_context:
-                        await self.context_service.start_fresh(current_context.id)
-                        logger.info(f"[{user_id}] Session reset on model change: {old_model} -> {new_model}")
+                    from domain.value_objects.user_id import UserId
+                    uid = UserId.from_int(user_id)
+                    project = await self.project_service.get_current(uid)
+                    if project:
+                        current_context = await self.context_service.get_current(project.id)
+                        if current_context:
+                            await self.context_service.start_fresh(current_context.id)
+                            logger.info(f"[{user_id}] Session reset on model change: {old_model} -> {new_model}")
                 except Exception as e:
                     logger.warning(f"[{user_id}] Failed to clear context on model change: {e}")
 
