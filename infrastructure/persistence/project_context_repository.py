@@ -81,6 +81,19 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                 # Column already exists
                 pass
 
+            # Global variables table (inheritable to all projects)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS global_variables (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    created_at TEXT,
+                    UNIQUE(user_id, name)
+                )
+            """)
+
             # Create indexes
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_contexts_project_id
@@ -93,6 +106,10 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_variables_context_id
                 ON context_variables(context_id)
+            """)
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_global_variables_user_id
+                ON global_variables(user_id)
             """)
 
             await db.commit()
@@ -462,4 +479,64 @@ class SQLiteProjectContextRepository(IProjectContextRepository):
                 row = await cursor.fetchone()
                 if row:
                     return ContextVariable(name=row[0], value=row[1], description=row[2] or "")
+
+    # ==================== Global Variables ====================
+
+    async def set_global_variable(
+        self,
+        user_id: UserId,
+        name: str,
+        value: str,
+        description: str = ""
+    ) -> None:
+        """Set a global variable that applies to all projects"""
+        async with aiosqlite.connect(self.db_path) as db:
+            now = datetime.now().isoformat()
+            await db.execute("""
+                INSERT OR REPLACE INTO global_variables (user_id, name, value, description, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (int(user_id), name, value, description, now))
+            await db.commit()
+            logger.info(f"Set global variable '{name}' for user {user_id}")
+
+    async def delete_global_variable(self, user_id: UserId, name: str) -> bool:
+        """Delete a global variable"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM global_variables WHERE user_id = ? AND name = ?",
+                (int(user_id), name)
+            )
+            deleted = cursor.rowcount > 0
+            await db.commit()
+            if deleted:
+                logger.info(f"Deleted global variable '{name}' for user {user_id}")
+            return deleted
+
+    async def get_global_variables(self, user_id: UserId) -> Dict[str, ContextVariable]:
+        """Get all global variables for a user"""
+        async with aiosqlite.connect(self.db_path) as db:
+            variables = {}
+            async with db.execute(
+                "SELECT name, value, description FROM global_variables WHERE user_id = ?",
+                (int(user_id),)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                for row in rows:
+                    name = row[0]
+                    value = row[1]
+                    description = row[2] if len(row) > 2 and row[2] else ""
+                    variables[name] = ContextVariable(name=name, value=value, description=description)
+            return variables
+
+    async def get_global_variable(self, user_id: UserId, name: str) -> Optional[ContextVariable]:
+        """Get a single global variable"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT name, value, description FROM global_variables WHERE user_id = ? AND name = ?",
+                (int(user_id), name)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return ContextVariable(name=row[0], value=row[1], description=row[2] or "")
+        return None
         return None

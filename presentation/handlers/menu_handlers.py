@@ -659,6 +659,47 @@ class MenuHandlers:
             # Show Claude.ai usage limits
             await self._show_usage_limits(callback)
 
+        elif action == "global_vars":
+            # Show global variables menu
+            await self._show_global_variables(callback)
+
+    async def _show_global_variables(self, callback: CallbackQuery):
+        """Show global variables menu"""
+        user_id = callback.from_user.id
+
+        try:
+            from domain.value_objects.user_id import UserId
+            uid = UserId.from_int(user_id)
+
+            # Get global variables
+            variables = await self.context_service.get_global_variables(uid)
+
+            text = (
+                "🌍 <b>Глобальные переменные</b>\n\n"
+                "Эти переменные наследуются <b>всеми проектами</b> и контекстами.\n"
+                "Переменные контекста могут переопределять глобальные.\n\n"
+            )
+
+            if variables:
+                text += f"📋 <i>Всего переменных: {len(variables)}</i>"
+            else:
+                text += "<i>Нет глобальных переменных</i>"
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=Keyboards.global_variables_menu(
+                    variables,
+                    show_back=True,
+                    back_to="menu:settings"
+                ),
+                parse_mode="HTML"
+            )
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f"Error showing global variables: {e}", exc_info=True)
+            await callback.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
     async def _show_usage_limits(self, callback: CallbackQuery):
         """Show Claude.ai subscription usage limits"""
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton

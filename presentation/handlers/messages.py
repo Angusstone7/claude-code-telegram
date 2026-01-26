@@ -108,6 +108,9 @@ class MessageHandlers:
         self._plans = PlanApprovalManager()
         self._files = FileContextManager()
 
+        # Reference to callback handlers (for global variable input)
+        self.callback_handlers = None
+
         # Legacy compatibility aliases (to minimize changes in other files)
         self.default_working_dir = default_working_dir
 
@@ -562,6 +565,15 @@ class MessageHandlers:
         if self._plans.is_expecting_clarification(user_id):
             await self._handle_plan_clarification(message)
             return
+
+        # Check for global variable input (handled by CallbackHandlers)
+        if hasattr(self, 'callback_handlers') and self.callback_handlers:
+            if self.callback_handlers.is_gvar_input_active(user_id):
+                handled = await self.callback_handlers.process_gvar_input(
+                    user_id, message.text, message
+                )
+                if handled:
+                    return
 
         # === CHECK IF TASK RUNNING ===
         if self._is_task_running(user_id):

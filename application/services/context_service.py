@@ -316,17 +316,20 @@ class ContextService:
     async def get_enriched_prompt(
         self,
         context_id: str,
-        user_prompt: str
+        user_prompt: str,
+        user_id: UserId = None
     ) -> str:
         """
         Enrich a user prompt with context variables.
 
         This builds a prompt that includes all context variables
-        so Claude can use them automatically.
+        so Claude can use them automatically. Global variables are
+        inherited and can be overridden by context-specific variables.
 
         Args:
             context_id: Context ID
             user_prompt: Original user prompt
+            user_id: User ID for loading global variables
 
         Returns:
             Enriched prompt with context variables prepended
@@ -335,8 +338,106 @@ class ContextService:
         if not context:
             return user_prompt
 
-        variables_block = context.build_variables_prompt()
+        # Get merged variables (global + context-specific)
+        if user_id:
+            merged_variables = await self.get_merged_variables(context_id, user_id)
+            # Temporarily set merged variables for building prompt
+            original_variables = context.variables
+            context.variables = merged_variables
+            variables_block = context.build_variables_prompt()
+            context.variables = original_variables
+        else:
+            variables_block = context.build_variables_prompt()
+
         if variables_block:
             return f"{variables_block}\n\n---\n\n{user_prompt}"
 
         return user_prompt
+
+    # ==================== Global Variables ====================
+
+    async def set_global_variable(
+        self,
+        user_id: UserId,
+        name: str,
+        value: str,
+        description: str = ""
+    ) -> None:
+        """
+        Set a global variable that applies to all projects.
+
+        Args:
+            user_id: User ID
+            name: Variable name
+            value: Variable value
+            description: Description for AI
+        """
+        await self.context_repository.set_global_variable(user_id, name, value, description)
+        logger.info(f"Set global variable '{name}' for user {user_id}")
+
+    async def delete_global_variable(self, user_id: UserId, name: str) -> bool:
+        """
+        Delete a global variable.
+
+        Args:
+            user_id: User ID
+            name: Variable name
+
+        Returns:
+            True if deleted, False if not found
+        """
+        result = await self.context_repository.delete_global_variable(user_id, name)
+        if result:
+            logger.info(f"Deleted global variable '{name}' for user {user_id}")
+        return result
+
+    async def get_global_variables(self, user_id: UserId) -> Dict[str, ContextVariable]:
+        """
+        Get all global variables for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Dict of variable name -> ContextVariable
+        """
+        return await self.context_repository.get_global_variables(user_id)
+
+    async def get_global_variable(self, user_id: UserId, name: str) -> Optional[ContextVariable]:
+        """
+        Get a single global variable.
+
+        Args:
+            user_id: User ID
+            name: Variable name
+
+        Returns:
+            ContextVariable or None
+        """
+        return await self.context_repository.get_global_variable(user_id, name)
+
+    async def get_merged_variables(
+        self,
+        context_id: str,
+        user_id: UserId
+    ) -> Dict[str, ContextVariable]:
+        """
+        Get merged variables: global variables + context-specific variables.
+
+        Context-specific variables override global variables with the same name.
+
+        Args:
+            context_id: Context ID
+            user_id: User ID
+
+        Returns:
+            Dict of merged variables
+        """
+        # Start with global variables
+        merged = await self.get_global_variables(user_id)
+
+        # Override with context-specific variables
+        context_vars = await self.get_variables(context_id)
+        merged.update(context_vars)
+
+        return merged

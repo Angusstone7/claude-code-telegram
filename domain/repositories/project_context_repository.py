@@ -205,3 +205,65 @@ class IProjectContextRepository(ABC):
             context_id: Context ID
         """
         pass
+
+    # ==================== Global Variables ====================
+
+    @abstractmethod
+    async def set_global_variable(
+        self,
+        user_id: UserId,
+        name: str,
+        value: str,
+        description: str = ""
+    ) -> None:
+        """
+        Set a global variable that applies to all projects.
+
+        Args:
+            user_id: User ID
+            name: Variable name
+            value: Variable value
+            description: Description for AI
+        """
+        pass
+
+    @abstractmethod
+    async def delete_global_variable(self, user_id: UserId, name: str) -> bool:
+        """
+        Delete a global variable.
+
+        Args:
+            user_id: User ID
+            name: Variable name
+
+        Returns:
+            True if deleted, False if not found
+        """
+        pass
+
+    @abstractmethod
+    async def get_global_variables(self, user_id: UserId) -> dict:
+        """
+        Get all global variables for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Dict of variable name -> ContextVariable
+        """
+        pass
+
+    @abstractmethod
+    async def get_global_variable(self, user_id: UserId, name: str):
+        """
+        Get a single global variable.
+
+        Args:
+            user_id: User ID
+            name: Variable name
+
+        Returns:
+            ContextVariable or None
+        """
+        pass

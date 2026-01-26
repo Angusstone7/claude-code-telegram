@@ -44,11 +44,112 @@ docker logs -f claude_agent
 cd telegram-mcp && npm run build
 ```
 
+## Project Statistics
+
+| Metric | Value |
+|--------|-------|
+| Python LOC | ~23,600 |
+| Python files | 100 |
+| Unit tests | 143+ |
+| Handlers LOC | ~9,000 |
+| telegram-mcp LOC | ~10,000 |
+
 ## Architecture Overview
 
 This is a Telegram bot that acts as a remote interface to Claude Code CLI and SDK, enabling AI-powered coding assistance via Telegram. The project follows DDD (Domain-Driven Design) with four layers:
 
 **Domain** → **Application** → **Infrastructure** → **Presentation**
+
+### Project Structure
+
+```
+/root/projects/ubuntu_claude/
+├── domain/                          # DDD Domain layer (Business Logic)
+│   ├── entities/                   # User, Session, Command, Message, Project
+│   ├── value_objects/              # UserId, Role, Permission, AIProviderConfig, ProjectPath
+│   ├── repositories/               # Repository interfaces (abstract contracts)
+│   └── services/                   # Domain service interfaces
+│
+├── application/                     # DDD Application layer (Use Cases)
+│   ├── services/
+│   │   ├── bot_service.py         # Main orchestration for legacy features
+│   │   ├── account_service.py     # Auth mode switching (API Key vs Claude Account)
+│   │   ├── project_service.py     # Project management and working directory
+│   │   ├── context_service.py     # Conversation context per project
+│   │   ├── file_browser_service.py # File system navigation
+│   │   └── file_processor_service.py # File upload processing
+│   ├── commands/
+│   └── queries/
+│
+├── infrastructure/                  # DDD Infrastructure layer
+│   ├── claude_code/                # Claude Code integration
+│   │   ├── sdk_service.py         # SDK backend (preferred, with HITL support)
+│   │   ├── proxy_service.py       # CLI backend (fallback)
+│   │   ├── diagnostics.py         # SDK/CLI health checks
+│   │   ├── tool_formatters.py     # Response formatting for Telegram
+│   │   └── task_context.py        # Session context management
+│   ├── persistence/                # SQLite implementations
+│   │   ├── sqlite_repository.py   # User, Session, Command repositories
+│   │   ├── project_repository.py  # Project storage
+│   │   ├── project_context_repository.py # Conversation history
+│   │   └── sqlite_account_repository.py  # Account credentials
+│   ├── messaging/                  # AI service
+│   │   └── claude_service.py      # Anthropic API integration
+│   ├── ssh/                        # Remote execution
+│   │   └── ssh_executor.py        # AsyncSSH wrapper
+│   ├── docker/                     # Container management
+│   ├── gitlab/                     # GitLab integration
+│   └── monitoring/                 # System metrics
+│       └── system_monitor.py
+│
+├── presentation/                    # DDD Presentation layer (Telegram Interface)
+│   ├── handlers/                   # Request handlers(~9,000 LOC total)
+│   │   ├── commands.py            # /start, /help, /clear, /stats (872 LOC)
+│   │   ├── messages.py            # User messages and Claude Code forwarding (1,286 LOC)
+│   │   ├── streaming.py           # Streaming message handling (926 LOC)
+│   │   ├── callbacks.py           # Inline button callbacks (1,999 LOC)
+│   │   ├── account_handlers.py    # Account management UI (1,307 LOC)
+│   │   ├── menu_handlers.py       # Main menu system (1,042 LOC)
+│   │   └── state/                 # State managers
+│   │       ├── user_state.py      # User session state
+│   │       ├── hitl_manager.py    # Human-in-the-Loop permission handling
+│   │       ├── plan_manager.py    # Plan approval state
+│   │       ├── file_context.py    # File upload caching
+│   │       └── variable_input.py  # Variable input state machine
+│   ├── keyboards/
+│   │   └── keyboards.py           # Inline keyboard definitions (189+ LOC)
+│   └── middleware/
+│       └── auth.py                # User authorization checks
+│
+├── shared/                         # Shared utilities
+│   ├── config/
+│   │   └── settings.py            # Configuration from environment variables
+│   ├── container.py               # Dependency Injection Container (~324 LOC)
+│   ├── constants.py               # Application constants
+│   ├── logging/                   # Logging utilities
+│   └── utils/                     # Helper functions
+│
+├── telegram-mcp/                   # TypeScript MCP Server
+│   ├── src/
+│   │   └── index.ts               # MCP implementation (10K+ LOC)
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── tests/                          # Test Suite
+│   ├── conftest.py                # Pytest fixtures and config
+│   └── unit/
+│       ├── domain/                # Domain layer tests
+│       ├── application/           # Application layer tests
+│       └── infrastructure/        # Infrastructure tests
+│
+├── main.py                         # Application entry point (268 LOC)
+├── requirements.txt                # Python dependencies
+├── Dockerfile                      # Container image definition
+├── docker-compose.yml              # Development deployment
+├── docker-compose.prod.yml         # Production deployment
+├── .gitlab-ci.yml                  # CI/CD pipeline
+└── .env.example                    # Environment template
+```
 
 ### Core Functionality
 
@@ -90,7 +191,7 @@ The bot is a **Telegram remote interface to Claude Code**, enabling AI-powered c
   - `ContextService`: Conversation context per project
   - `FileBrowserService`: File system navigation
   - `AccountService`: Authentication mode switching (API Key vs Claude Account)
-- **Dependency Injection**: All services are initialized in `main.py:Application.setup()` (~300 lines of setup code)
+- **Dependency Injection**: Container-based wiring in `shared/container.py` (~324 LOC)
 - **Handler Registration**: Handlers are registered separately in `main.py`
   - Command handlers: `/start`, `/help`, `/clear`, `/stats`
   - Message handlers: Text messages, documents, photos
@@ -143,13 +244,13 @@ Use `ANTHROPIC_BASE_URL` for alternative API endpoints and `ANTHROPIC_AUTH_TOKEN
   - `send_message`: Send text notifications to Telegram (supports HTML formatting)
   - `send_file`: Send files to Telegram with optional captions
   - `send_plan`: Create and send plan documents as .md files
-- Allows Claude to proactively send notifications/files to Telegram without bot intervention
+- Allows Claude to proactively send notifications/files to Telegram withoutbot intervention
 - Build with `cd telegram-mcp && npm run build`
 - Configured in `.claude/` directory for Claude Code CLI
 - Uses `@modelcontextprotocol/sdk` package
 - Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` environment variables
 
-### Session Management (Legacy)
+### Session Management
 
 The bot maintains two session systems:
 
@@ -179,7 +280,7 @@ The bot maintains two session systems:
 - **Important**: When switching to Claude Account mode, remove `ANTHROPIC_API_KEY` from environment to avoid conflicts
 
 **Account switching UI** (`presentation/handlers/account_handlers.py`):
-- 378+ lines of inline keyboard handlers
+- 1,307 lines of inline keyboard handlers
 - Guides user through account setup process
 - Validates credentials before switching
 - Displays current account status and available models
@@ -220,7 +321,7 @@ All config loads from environment variables via `shared/config/settings.py`. The
 ### Required Environment Variables
 
 - `TELEGRAM_TOKEN` - Bot token from @BotFather
-- `ALLOWED_USER_ID` - Telegram user ID for authorization
+- `ALLOWED_USER_ID` - Telegram user ID for authorization (comma-separated for multiple users)
 - Either `ANTHROPIC_API_KEY` (official Anthropic) OR `ANTHROPIC_AUTH_TOKEN` (compatible APIs)
 
 ### Optional Claude Code Variables
@@ -236,8 +337,39 @@ All config loads from environment variables via `shared/config/settings.py`. The
 ### Optional AI Provider Variables
 
 - `ANTHROPIC_BASE_URL` - Alternative API endpoint (e.g., ZhipuAI)
-- `ANTHROPIC_MODEL` - Model to use
-- `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL` - Model aliases
+- `ANTHROPIC_MODEL` - Model to use (default: `claude-sonnet-4-20250514`)
+- `ANTHROPIC_DEFAULT_HAIKU_MODEL` - Haiku model alias (default: `claude-3-5-haiku-20241022`)
+- `ANTHROPIC_DEFAULT_SONNET_MODEL` - Sonnet model alias (default: `claude-sonnet-4-20250514`)
+- `ANTHROPIC_DEFAULT_OPUS_MODEL` - Opus model alias (default: `claude-opus-4-20250514`)
+
+## Database Schema
+
+**SQLite Database** (`data/bot.db`)
+
+| Table | Purpose |
+|-------|---------|
+| users | User profiles with roles and permissions |
+| sessions | Conversation sessions (legacy) |
+| commands | Command execution history |
+| projects | User projects with working directories |
+| project_contexts | Per-project conversation history |
+| accounts | OAuth credentials for Claude Account mode |
+
+## Dependencies
+
+| Component | Purpose | Version |
+|-----------|---------|---------|
+| aiogram | Telegram bot framework | 3.10.0 |
+| anthropic | Claude API | >=0.40.0 |
+| claude-agent-sdk | Claude Code SDK | >=0.1.0 |
+| aiosqlite | Async SQLite | >=0.19.0 |
+| asyncssh | SSH execution | 2.17.0 |
+| psutil | System monitoring | >=6.0.0 |
+| docker | Container management | >=7.0.0 |
+| python-dotenv | Config loading | 1.0.1 |
+| pytest-asyncio | Async testing | >=0.21.0 |
+| black | Code formatting | >=23.0.0 |
+| mypy | Type checking | >=1.5.0 |
 
 ## Docker and Deployment
 
@@ -248,7 +380,7 @@ docker-compose up -d --build
 
 **Production** (via GitLab CI/CD):
 - Push to `main` or `master` branch triggers automatic deployment
-- Pipeline builds Docker image, transfers to server via SSH, deploys with docker-compose
+- Pipeline has 2 stages: build (Docker image) and deploy (transfer to server)
 - Server: `192.168.0.116:2222`, app path: `/opt/ubuntu_claude`
 - Container is configured with persistent volumes for `./data`, `./logs`, `./projects`
 
@@ -276,19 +408,23 @@ Current test coverage:
 - Application layer: ~30%
 - 143+ tests passing
 
+**Test Configuration** (`tests/conftest.py`):
+- Async test support with pytest-asyncio
+- Fixtures for entities (User, Session, Command, Message)
+- Mock fixtures for repositories and services
+- Value object fixtures (UserId, Role, etc.)
+
 ## Known Issues & Refactoring Needs
 
 See `REFACTORING.md` for detailed SOLID/DDD improvement plan. Major items:
 
-- **MessageHandlers** (`presentation/handlers/messages.py`, 784+ lines): God class handling multiple concerns
-  - Should be split into: `ClaudeCodeMessageHandler`, `DockerMessageHandler`, `FileMessageHandler`, `SettingsMessageHandler`
-- **CallbackHandlers** (`presentation/handlers/callbacks.py`, 1194+ lines): God class with too many responsibilities
+- **CallbackHandlers** (`presentation/handlers/callbacks.py`, 1,999 LOC): God class with too many responsibilities
   - Should be split by domain: `DockerCallbackHandler`, `GitLabCallbackHandler`, `SystemCallbackHandler`, `SettingsCallbackHandler`
+- **MessageHandlers** (`presentation/handlers/messages.py`, 1,286 LOC): God class handling multiple concerns
+  - Should be split into: `ClaudeCodeMessageHandler`, `DockerMessageHandler`, `FileMessageHandler`, `SettingsMessageHandler`
 - **State management**: 14+ state dictionaries scattered across handlers
-  - Need unified `UserStateManager` service
+  - Need unified `UserStateManager` service (partially implemented in `presentation/handlers/state/`)
   - Current state dicts: `waiting_for_docker_command`, `waiting_for_project_name`, `waiting_for_gitlab_token`, etc.
-- **Dependency injection**: Services are passed as constructor params but main.py has ~300 lines of setup
-  - Consider dependency injection container (e.g., `dependency-injector` library)
 
 ## Proxy Configuration
 

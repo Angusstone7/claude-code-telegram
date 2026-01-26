@@ -113,6 +113,12 @@ class Keyboards:
             ],
             [
                 InlineKeyboardButton(
+                    text="🌍 Глобальные переменные",
+                    callback_data="menu:settings:global_vars"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="📊 Лимиты Claude.ai",
                     callback_data="menu:settings:usage"
                 ),
@@ -905,6 +911,92 @@ class Keyboards:
             [
                 InlineKeyboardButton(text="⏭️ Пропустить описание", callback_data="var:skip_desc"),
                 InlineKeyboardButton(text="❌ Отмена", callback_data="var:list")
+            ]
+        ])
+
+    # ============== Global Variables Keyboards ==============
+
+    @staticmethod
+    def global_variables_menu(
+        variables: Dict,  # Dict[str, ContextVariable]
+        show_back: bool = True,
+        back_to: str = "menu:settings"
+    ) -> InlineKeyboardMarkup:
+        """
+        Global variables menu - variables inherited by all projects.
+
+        Args:
+            variables: Dict of name -> ContextVariable
+            show_back: Whether to show back button
+            back_to: Callback data for back button
+
+        Returns:
+            InlineKeyboardMarkup with:
+            - List of global variables with edit/delete buttons
+            - "Add new" button
+            - "Back" button
+        """
+        buttons = []
+
+        # List variables (max 10)
+        for name in sorted(variables.keys())[:10]:
+            var = variables[name]
+
+            # Mask value for display
+            value = var.value if hasattr(var, 'value') else str(var)
+            display_val = value[:8] + "***" if len(value) > 8 else value
+
+            # Truncate name for callback (max 20 chars)
+            callback_name = name[:20]
+
+            # Variable row: name [edit] [delete]
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"🌍 {name}",
+                    callback_data=f"gvar:show:{callback_name}"
+                ),
+                InlineKeyboardButton(text="✏️", callback_data=f"gvar:e:{callback_name}"),
+                InlineKeyboardButton(text="🗑️", callback_data=f"gvar:d:{callback_name}")
+            ])
+
+        # Add button
+        buttons.append([
+            InlineKeyboardButton(text="➕ Добавить", callback_data="gvar:add")
+        ])
+
+        # Back button
+        if show_back:
+            buttons.append([
+                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+            ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def global_variable_delete_confirm(name: str) -> InlineKeyboardMarkup:
+        """Confirmation keyboard for global variable deletion"""
+        callback_name = name[:20]
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"gvar:dc:{callback_name}"),
+                InlineKeyboardButton(text="⬅️ Отмена", callback_data="gvar:list")
+            ]
+        ])
+
+    @staticmethod
+    def global_variable_cancel() -> InlineKeyboardMarkup:
+        """Cancel button for global variable input flows"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="gvar:list")]
+        ])
+
+    @staticmethod
+    def global_variable_skip_description() -> InlineKeyboardMarkup:
+        """Skip description button during global variable creation"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏭️ Пропустить описание", callback_data="gvar:skip_desc"),
+                InlineKeyboardButton(text="❌ Отмена", callback_data="gvar:list")
             ]
         ])
 
