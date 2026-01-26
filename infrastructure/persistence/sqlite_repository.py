@@ -136,17 +136,76 @@ class SQLiteSessionRepository(SessionRepository):
         return None
 
     async def find_by_user(self, user_id: UserId) -> List[Session]:
+        """
+        Find all sessions for user with messages in a single query (N+1 fix).
+
+        Uses LEFT JOIN to fetch sessions and their messages together,
+        then groups by session_id in Python.
+        """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC",
-                (int(user_id),),
-            ) as cursor:
+
+            # Single query with LEFT JOIN (N+1 fix)
+            query = """
+                SELECT
+                    s.session_id, s.user_id, s.context, s.created_at,
+                    s.updated_at, s.is_active,
+                    sm.role as msg_role, sm.content as msg_content,
+                    sm.timestamp as msg_timestamp, sm.tool_use_id, sm.tool_result
+                FROM sessions s
+                LEFT JOIN session_messages sm ON s.session_id = sm.session_id
+                WHERE s.user_id = ?
+                ORDER BY s.updated_at DESC, sm.timestamp ASC
+            """
+            async with db.execute(query, (int(user_id),)) as cursor:
                 rows = await cursor.fetchall()
-                sessions = []
-                for row in rows:
-                    sessions.append(await self._row_to_session(db, row))
-                return sessions
+
+            # Group by session_id
+            sessions_dict = {}
+            for row in rows:
+                session_id = row["session_id"]
+                if session_id not in sessions_dict:
+                    sessions_dict[session_id] = {
+                        "row": row,
+                        "messages": []
+                    }
+                # Add message if exists (LEFT JOIN may have NULL)
+                if row["msg_role"]:
+                    sessions_dict[session_id]["messages"].append(
+                        Message(
+                            role=MessageRole(row["msg_role"]),
+                            content=row["msg_content"],
+                            timestamp=(
+                                datetime.fromisoformat(row["msg_timestamp"])
+                                if row["msg_timestamp"]
+                                else None
+                            ),
+                            tool_use_id=row["tool_use_id"],
+                            tool_result=row["tool_result"],
+                        )
+                    )
+
+            # Build Session objects
+            sessions = []
+            for data in sessions_dict.values():
+                row = data["row"]
+                sessions.append(Session(
+                    session_id=row["session_id"],
+                    user_id=UserId.from_int(row["user_id"]),
+                    messages=data["messages"],
+                    context=json.loads(row["context"]) if row["context"] else {},
+                    created_at=(
+                        datetime.fromisoformat(row["created_at"])
+                        if row["created_at"] else None
+                    ),
+                    updated_at=(
+                        datetime.fromisoformat(row["updated_at"])
+                        if row["updated_at"] else None
+                    ),
+                    is_active=bool(row["is_active"]),
+                ))
+
+            return sessions
 
     async def find_active_by_user(self, user_id: UserId) -> Optional[Session]:
         async with aiosqlite.connect(self.db_path) as db:

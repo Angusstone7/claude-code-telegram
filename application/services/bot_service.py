@@ -241,7 +241,14 @@ class BotService:
         }
 
     async def get_user_stats(self, user_id: int) -> Dict:
-        """Get user statistics"""
+        """
+        Get user statistics.
+
+        Uses UserStats value object to encapsulate stats calculation
+        (fixes Feature Envy - service no longer formats user's own data).
+        """
+        from domain.value_objects.user_stats import UserStats
+
         user = await self.user_repository.find_by_id(UserId.from_int(user_id))
         if not user:
             return {}
@@ -249,24 +256,9 @@ class BotService:
         commands = await self.command_repository.find_by_user(user_id, limit=1000)
         sessions = await self.session_repository.find_by_user(UserId.from_int(user_id))
 
-        return {
-            "user": {
-                "id": user.user_id,
-                "username": user.username,
-                "role": user.role.name,
-                "is_active": user.is_active,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-                "last_command_at": user.last_command_at.isoformat() if user.last_command_at else None
-            },
-            "commands": {
-                "total": len(commands),
-                "by_status": await self.command_repository.get_statistics(user_id)
-            },
-            "sessions": {
-                "total": len(sessions),
-                "active": sum(1 for s in sessions if s.is_active)
-            }
-        }
+        # Delegate stats calculation to the value object
+        stats = UserStats.from_user(user, commands, sessions)
+        return stats.to_dict()
 
     async def cleanup_old_data(self) -> Dict[str, int]:
         """Clean up old data"""

@@ -701,6 +701,9 @@ class ClaudeAgentSDKService:
                     return PermissionResultAllow(updated_input=updated_input)
 
             # ExitPlanMode - show plan and wait for user approval
+            # NOTE: Plan approval is ALWAYS required, even in YOLO/bypassPermissions mode!
+            # This is intentional - plans should always be reviewed by user before execution.
+            # This check comes BEFORE permission_mode check to ensure it's never bypassed.
             if tool_name == "ExitPlanMode":
                 # Extract plan info
                 plan_file = tool_input.get("planFile", "")
