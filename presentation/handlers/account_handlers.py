@@ -233,8 +233,14 @@ class AccountHandlers:
     - OAuth login via claude /login
     """
 
-    def __init__(self, account_service: AccountService):
+    def __init__(
+        self,
+        account_service: AccountService,
+        context_service=None,  # Optional: for session reset on model change
+    ):
         self.account_service = account_service
+        self.context_service = context_service
+        self.message_handlers = None  # Set from main.py for session cache clear
         self.router = Router(name="account")
         # Active OAuth login sessions per user
         self._oauth_sessions: dict[int, OAuthLoginSession] = {}
@@ -337,6 +343,8 @@ class AccountHandlers:
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
                 current_model=settings.model,
+                show_back=True,
+                back_to="menu:main"
             )
         )
 
@@ -430,10 +438,15 @@ class AccountHandlers:
 
         settings = await self.account_service.get_settings(user_id)
 
-        # If already in this mode, do nothing
+        # If already in this mode, show submenu for Claude Account
         if settings.auth_mode == mode:
-            await callback.answer("Этот режим уже выбран")
-            return
+            if mode == AuthMode.CLAUDE_ACCOUNT:
+                # Show Claude Account submenu with options
+                await self._show_claude_submenu(callback, state)
+                return
+            else:
+                await callback.answer("Этот режим уже выбран")
+                return
 
         # For Claude Account, check if credentials exist
         if mode == AuthMode.CLAUDE_ACCOUNT:
@@ -566,10 +579,12 @@ class AccountHandlers:
         settings = await self.account_service.get_settings(user_id)
         creds_info = self.account_service.get_credentials_info()
 
-        current_mode_name = (
-            "z.ai API" if settings.auth_mode == AuthMode.ZAI_API
-            else "Claude Account"
-        )
+        mode_names = {
+            AuthMode.ZAI_API: "z.ai API",
+            AuthMode.CLAUDE_ACCOUNT: "Claude Account",
+            AuthMode.LOCAL_MODEL: "Локальная модель",
+        }
+        current_mode_name = mode_names.get(settings.auth_mode, "Неизвестно")
 
         text = (
             f"🔧 <b>Настройки аккаунта</b>\n\n"
@@ -584,9 +599,39 @@ class AccountHandlers:
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
                 current_model=settings.model,
+                show_back=True,
+                back_to="menu:main"
             ),
             parse_mode="HTML"
         )
+
+    async def _show_claude_submenu(self, callback: CallbackQuery, state: FSMContext):
+        """Show Claude Account submenu with options"""
+        user_id = callback.from_user.id
+        settings = await self.account_service.get_settings(user_id)
+        creds_info = self.account_service.get_credentials_info()
+
+        text = "☁️ <b>Claude Account</b>\n\n"
+
+        if creds_info.exists:
+            text += f"Статус: ✅ Авторизован\n"
+            if creds_info.subscription_type:
+                text += f"Подписка: {creds_info.subscription_type}\n"
+            if creds_info.rate_limit_tier:
+                text += f"Rate limit: {creds_info.rate_limit_tier}\n"
+        else:
+            text += "Статус: ❌ Не авторизован\n"
+
+        await callback.message.edit_text(
+            text,
+            reply_markup=Keyboards.claude_account_submenu(
+                has_credentials=creds_info.exists,
+                subscription_type=creds_info.subscription_type,
+                current_model=settings.model if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT else None
+            ),
+            parse_mode="HTML"
+        )
+        await callback.answer()
 
     async def _show_upload_prompt(self, callback: CallbackQuery, state: FSMContext):
         """Show credentials file upload prompt"""
@@ -657,23 +702,47 @@ class AccountHandlers:
         state: FSMContext,
         model_value: str
     ):
-        """Handle model selection"""
+        """Handle model selection with session reset"""
         user_id = callback.from_user.id
 
+        # Get old model before changing
+        old_model = await self.account_service.get_model(user_id)
+
         # Parse model value
+        new_model = None if model_value == "default" else model_value
+
         if model_value == "default":
-            # Set to None for default/auto
             await self.account_service.set_model(user_id, None)
             model_name = "По умолчанию (авто)"
         else:
-            # Set specific model
             await self.account_service.set_model(user_id, model_value)
             from application.services.account_service import ClaudeModel
             model_name = ClaudeModel.get_display_name(model_value)
 
+        # Reset session if model changed
+        session_reset = False
+        if old_model != new_model:
+            # Clear in-memory session cache
+            if self.message_handlers:
+                self.message_handlers.clear_session_cache(user_id)
+                session_reset = True
+
+            # Clear project context (start fresh conversation)
+            if self.context_service:
+                try:
+                    current_context = await self.context_service.get_current_context(user_id)
+                    if current_context:
+                        await self.context_service.start_fresh(current_context.id)
+                        logger.info(f"[{user_id}] Session reset on model change: {old_model} -> {new_model}")
+                except Exception as e:
+                    logger.warning(f"[{user_id}] Failed to clear context on model change: {e}")
+
         # Return to menu with success message
         await self._show_menu(callback, state)
-        await callback.answer(f"✅ Модель: {model_name}")
+        msg = f"✅ Модель: {model_name}"
+        if session_reset:
+            msg += "\n🔄 Сессия сброшена"
+        await callback.answer(msg, show_alert=session_reset)
 
     async def _handle_delete_account(self, callback: CallbackQuery, state: FSMContext):
         """Handle Claude Account deletion (credentials file)"""
@@ -746,6 +815,8 @@ class AccountHandlers:
                             current_mode=AuthMode.ZAI_API.value,
                             has_credentials=True,
                             current_model=settings.model,
+                            show_back=True,
+                            back_to="menu:main"
                         )
                     )
                     await state.clear()
@@ -765,6 +836,8 @@ class AccountHandlers:
                         has_credentials=True,
                         subscription_type=creds_info.subscription_type,
                         current_model=settings.model,
+                        show_back=True,
+                        back_to="menu:main"
                     )
                 )
                 await state.clear()
@@ -952,6 +1025,8 @@ class AccountHandlers:
                         current_mode=AuthMode.ZAI_API.value,
                         has_credentials=True,
                         current_model=settings.model,
+                        show_back=True,
+                        back_to="menu:main"
                     )
                 )
                 await state.clear()
@@ -972,6 +1047,8 @@ class AccountHandlers:
                     has_credentials=True,
                     subscription_type=creds_info.subscription_type,
                     current_model=settings.model,
+                    show_back=True,
+                    back_to="menu:main"
                 )
             )
             await state.clear()
@@ -1175,6 +1252,8 @@ class AccountHandlers:
                     current_mode=AuthMode.LOCAL_MODEL.value,
                     has_credentials=creds_info.exists,
                     current_model=model_name,
+                    show_back=True,
+                    back_to="menu:main"
                 ),
                 parse_mode="HTML"
             )
@@ -1185,6 +1264,8 @@ class AccountHandlers:
                     current_mode=AuthMode.LOCAL_MODEL.value,
                     has_credentials=creds_info.exists,
                     current_model=model_name,
+                    show_back=True,
+                    back_to="menu:main"
                 ),
                 parse_mode="HTML"
             )

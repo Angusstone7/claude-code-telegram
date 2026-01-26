@@ -213,7 +213,10 @@ class Application:
     def _register_handlers(self):
         """Register all handlers"""
         # Account handlers (for /account command and mode switching)
-        account_handlers = AccountHandlers(self.account_service)
+        account_handlers = AccountHandlers(
+            self.account_service,
+            context_service=self.context_service  # For session reset on model change
+        )
         register_account_handlers(self.dp, account_handlers)
 
         # Message handlers (with SDK service preferred, CLI as fallback)
@@ -224,6 +227,9 @@ class Application:
             project_service=self.project_service,
             context_service=self.context_service
         )
+
+        # Link message_handlers to account_handlers for session cache clear
+        account_handlers.message_handlers = msg_handlers
 
         # Command handlers (with claude_proxy and project/context services)
         cmd_handlers = CommandHandlers(

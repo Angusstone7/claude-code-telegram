@@ -1067,39 +1067,24 @@ class Keyboards:
             )
         ])
 
-        # Model selection button (show model name if set)
-        model_text = "🤖 Модель"
-        if current_model:
-            # Use a simple formatting for model name
-            model_name = current_model.replace("-", " ").replace("_", " ").title()
-            # Keep short for display
-            if len(model_name) > 20:
-                model_name = model_name[:17] + "..."
-            model_text = f"🤖 Модель: {model_name}"
+        # Model selection button - only for non-Claude modes
+        # (Claude mode has its own submenu with model selection)
+        if current_mode != "claude_account":
+            model_text = "🤖 Модель"
+            if current_model:
+                # Use a simple formatting for model name
+                model_name = current_model.replace("-", " ").replace("_", " ").title()
+                # Keep short for display
+                if len(model_name) > 20:
+                    model_name = model_name[:17] + "..."
+                model_text = f"🤖 Модель: {model_name}"
 
-        buttons.append([
-            InlineKeyboardButton(
-                text=model_text,
-                callback_data="account:select_model"
-            )
-        ])
-
-        # Delete account button (only if credentials exist)
-        if has_credentials:
             buttons.append([
                 InlineKeyboardButton(
-                    text="🗑️ Удалить аккаунт Claude",
-                    callback_data="account:delete_account"
+                    text=model_text,
+                    callback_data="account:select_model"
                 )
             ])
-
-        # Info/status button
-        buttons.append([
-            InlineKeyboardButton(
-                text="ℹ️ Статус авторизации",
-                callback_data="account:status"
-            )
-        ])
 
         # Back or close button
         if show_back:
@@ -1136,6 +1121,65 @@ class Keyboards:
                 )
             ]
         ])
+
+    @staticmethod
+    def claude_account_submenu(
+        has_credentials: bool = False,
+        subscription_type: str = None,
+        current_model: str = None
+    ) -> InlineKeyboardMarkup:
+        """
+        Submenu for Claude Account with management options.
+
+        Args:
+            has_credentials: Whether credentials file exists
+            subscription_type: Subscription type from credentials
+            current_model: Currently selected model
+        """
+        buttons = []
+
+        # Model selection button
+        model_text = "🤖 Модель"
+        if current_model:
+            model_name = current_model.replace("-", " ").replace("_", " ").title()
+            if len(model_name) > 20:
+                model_name = model_name[:17] + "..."
+            model_text = f"🤖 Модель: {model_name}"
+
+        buttons.append([
+            InlineKeyboardButton(
+                text=model_text,
+                callback_data="account:select_model"
+            )
+        ])
+
+        # Status button with subscription info
+        status_text = f"ℹ️ Статус ({subscription_type})" if subscription_type else "ℹ️ Статус авторизации"
+        buttons.append([
+            InlineKeyboardButton(
+                text=status_text,
+                callback_data="account:status"
+            )
+        ])
+
+        # Delete account button (only if credentials exist)
+        if has_credentials:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🗑️ Удалить аккаунт Claude",
+                    callback_data="account:delete_account"
+                )
+            ])
+
+        # Back button
+        buttons.append([
+            InlineKeyboardButton(
+                text="◀️ Назад",
+                callback_data="account:menu"
+            )
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
     def account_upload_credentials() -> InlineKeyboardMarkup:
