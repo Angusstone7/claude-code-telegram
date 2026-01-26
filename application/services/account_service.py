@@ -171,9 +171,13 @@ class AccountService:
         """
         Get preferred model for user, respecting auth mode.
 
+        Each auth mode only accepts compatible models:
+        - Claude Account: only official Claude models (opus, sonnet, haiku)
+        - z.ai API: only z.ai models (glm-4.7, etc.) or env default
+
         Returns:
-            - For Claude Account: user's model if it's official Claude model, else None
-            - For z.ai API: user's configured model (any)
+            - Model string if compatible with current mode
+            - None to use provider's default (SDK default or ANTHROPIC_MODEL env)
         """
         settings = await self.get_settings(user_id)
 
@@ -186,7 +190,13 @@ class AccountService:
             # No model or non-Claude model: SDK will use its default
             return None
 
-        # z.ai API mode: use user's configured model (glm-4.7, etc.)
+        # z.ai API mode
+        if settings.model and self._is_official_claude_model(settings.model):
+            # User selected Claude model but using z.ai → use env default (ANTHROPIC_MODEL)
+            logger.debug(f"[{user_id}] Claude model selected but using z.ai API, falling back to env default")
+            return None
+
+        # z.ai API with z.ai-compatible model (glm-4.7, etc.)
         return settings.model
 
     def _is_official_claude_model(self, model: str) -> bool:
@@ -329,13 +339,16 @@ class AccountService:
             # z.ai API mode - use env vars from settings
             base_url = os.environ.get("ANTHROPIC_BASE_URL")
             auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
+            model = os.environ.get("ANTHROPIC_MODEL")
 
             if base_url:
                 env["ANTHROPIC_BASE_URL"] = base_url
             if auth_token:
                 env["ANTHROPIC_API_KEY"] = auth_token
+            if model:
+                env["ANTHROPIC_MODEL"] = model  # Keep z.ai default model in env
 
-            logger.debug(f"z.ai mode env: base_url={base_url is not None}")
+            logger.debug(f"z.ai mode env: base_url={base_url is not None}, model={model}")
 
         elif mode == AuthMode.CLAUDE_ACCOUNT:
             # Claude Account mode - use credentials file with proxy
