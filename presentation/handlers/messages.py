@@ -563,7 +563,7 @@ class MessageHandlers:
             streaming = self._streaming_handlers.get(user_id)
             if streaming:
                 truncated_details = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n⚡ <b>Авто-одобрено:</b> <code>{tool_name}</code>\n<code>{truncated_details}</code>\n")
+                await streaming.append(f"\n⚡ **Авто-одобрено:** `{tool_name}`\n`{truncated_details}`\n")
             return True
 
         # Normal mode: show buttons and wait for approval
@@ -692,7 +692,7 @@ class MessageHandlers:
             streaming = self._streaming_handlers.get(user_id)
             if streaming:
                 truncated_details = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n⚡ <b>Авто-одобрено:</b> <code>{tool_name}</code>\n<code>{truncated_details}</code>\n")
+                await streaming.append(f"\n⚡ **Авто-одобрено:** `{tool_name}`\n`{truncated_details}`\n")
 
             # Auto-approve via SDK
             if self.sdk_service:

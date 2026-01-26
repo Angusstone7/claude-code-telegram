@@ -81,15 +81,17 @@ class OAuthLoginSession:
             OAuth URL if found, None if failed
         """
         try:
+            # Try new syntax: "claude login" with --no-browser for headless
+            # The slash command "/login" may not work in newer CLI versions
             self.process = await asyncio.create_subprocess_exec(
-                "claude", "/login",
+                "claude", "login", "--no-browser",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,  # Merge stderr to stdout
                 env=self._get_env(),
             )
 
-            logger.info(f"[{self.user_id}] Started claude /login process (PID: {self.process.pid})")
+            logger.info(f"[{self.user_id}] Started 'claude login --no-browser' process (PID: {self.process.pid})")
 
             # Read output until we find the OAuth URL
             # Typical output: "Browser didn't open? Use the url below..."
@@ -100,11 +102,13 @@ class OAuthLoginSession:
                 while True:
                     line = await self.process.stdout.readline()
                     if not line:
+                        logger.info(f"[{self.user_id}] claude /login: EOF reached, output_lines={len(self._output_lines)}")
                         break
 
                     decoded = line.decode('utf-8', errors='ignore').strip()
                     self._output_lines.append(decoded)
-                    logger.debug(f"[{self.user_id}] claude /login: {decoded}")
+                    # Log at INFO level for debugging
+                    logger.info(f"[{self.user_id}] claude /login output: {decoded[:200]}")
 
                     # Look for OAuth URL in line
                     url_match = re.search(r'https://claude\.ai/oauth/authorize[^\s]+', decoded)
@@ -116,7 +120,7 @@ class OAuthLoginSession:
             try:
                 self.oauth_url = await asyncio.wait_for(read_until_url(), timeout=timeout_seconds)
             except asyncio.TimeoutError:
-                logger.warning(f"[{self.user_id}] Timeout waiting for OAuth URL")
+                logger.warning(f"[{self.user_id}] Timeout waiting for OAuth URL. Got {len(self._output_lines)} lines: {self._output_lines}")
                 await self.cancel()
                 return None
 
