@@ -724,7 +724,8 @@ class MenuHandlers:
             await self._show_metrics(callback)
 
         elif action == "docker":
-            await self._show_docker(callback)
+            page = int(param) if param.isdigit() else 0
+            await self._show_docker(callback, page=page)
 
         elif action == "diagnose":
             await self._run_diagnostics(callback)
@@ -797,10 +798,12 @@ class MenuHandlers:
         )
         await callback.answer()
 
-    async def _show_docker(self, callback: CallbackQuery):
-        """Show Docker containers via SSH"""
+    async def _show_docker(self, callback: CallbackQuery, page: int = 0):
+        """Show Docker containers via SSH with pagination"""
         try:
             from infrastructure.monitoring.system_monitor import create_system_monitor
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
             monitor = create_system_monitor()
             containers = await monitor.get_docker_containers()
 
@@ -815,24 +818,58 @@ class MenuHandlers:
                 await callback.answer()
                 return
 
-            # Format container list (limit to 15 to avoid MESSAGE_TOO_LONG)
-            max_containers = 15
-            shown_containers = containers[:max_containers]
+            # Pagination settings
+            per_page = 10
+            total = len(containers)
+            total_pages = (total + per_page - 1) // per_page
+            page = max(0, min(page, total_pages - 1))  # Clamp page number
+
+            start_idx = page * per_page
+            end_idx = min(start_idx + per_page, total)
+            page_containers = containers[start_idx:end_idx]
 
             running = sum(1 for c in containers if c["status"] == "running")
-            total = len(containers)
 
-            lines = [f"🐳 <b>Docker контейнеры</b> ({running}🟢 / {total} всего)\n"]
-            for container in shown_containers:
+            # Format container list
+            lines = [f"🐳 <b>Docker</b> ({running}🟢 / {total}) — стр. {page + 1}/{total_pages}\n"]
+            for container in page_containers:
                 status_emoji = "🟢" if container["status"] == "running" else "🔴"
-                name = container['name'][:25]
+                name = container['name'][:22]
                 lines.append(f"{status_emoji} <b>{name}</b> — {container['status']}")
 
-            if len(containers) > max_containers:
-                lines.append(f"\n<i>...и ещё {len(containers) - max_containers} контейнеров</i>")
-
             text = "\n".join(lines)
-            keyboard = Keyboards.docker_list(shown_containers, show_back=True, back_to="menu:system")
+
+            # Build keyboard with pagination
+            buttons = []
+
+            # Container action buttons (2 per row)
+            for container in page_containers:
+                status = container["status"]
+                cid = container["id"]
+                if status == "running":
+                    buttons.append([
+                        InlineKeyboardButton(text=f"⏹ {container['name'][:15]}", callback_data=f"docker:stop:{cid}"),
+                        InlineKeyboardButton(text="📋 Логи", callback_data=f"docker:logs:{cid}"),
+                    ])
+                else:
+                    buttons.append([
+                        InlineKeyboardButton(text=f"▶️ {container['name'][:15]}", callback_data=f"docker:start:{cid}"),
+                        InlineKeyboardButton(text="🗑 Удалить", callback_data=f"docker:rm:{cid}"),
+                    ])
+
+            # Pagination row
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"menu:system:docker:{page - 1}"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton(text="Вперёд ▶️", callback_data=f"menu:system:docker:{page + 1}"))
+            if nav_row:
+                buttons.append(nav_row)
+
+            # Back button
+            buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:system")])
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
