@@ -815,16 +815,24 @@ class MenuHandlers:
                 await callback.answer()
                 return
 
-            # Format container list
-            lines = ["🐳 <b>Docker контейнеры:</b>\n"]
-            for container in containers:
+            # Format container list (limit to 15 to avoid MESSAGE_TOO_LONG)
+            max_containers = 15
+            shown_containers = containers[:max_containers]
+
+            running = sum(1 for c in containers if c["status"] == "running")
+            total = len(containers)
+
+            lines = [f"🐳 <b>Docker контейнеры</b> ({running}🟢 / {total} всего)\n"]
+            for container in shown_containers:
                 status_emoji = "🟢" if container["status"] == "running" else "🔴"
-                lines.append(f"\n{status_emoji} <b>{container['name']}</b>")
-                lines.append(f"   Статус: {container['status']}")
-                lines.append(f"   Образ: <code>{container['image'][:40]}</code>")
+                name = container['name'][:25]
+                lines.append(f"{status_emoji} <b>{name}</b> — {container['status']}")
+
+            if len(containers) > max_containers:
+                lines.append(f"\n<i>...и ещё {len(containers) - max_containers} контейнеров</i>")
 
             text = "\n".join(lines)
-            keyboard = Keyboards.docker_list(containers, show_back=True, back_to="menu:system")
+            keyboard = Keyboards.docker_list(shown_containers, show_back=True, back_to="menu:system")
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
