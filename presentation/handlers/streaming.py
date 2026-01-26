@@ -12,6 +12,7 @@ import html as html_module
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Optional
 from aiogram import Bot
 from aiogram.types import Message, InlineKeyboardMarkup
@@ -35,15 +36,30 @@ def markdown_to_html(text: str, is_streaming: bool = False) -> str:
     - __underline__ → <u>underline</u>
     - ~~strike~~ → <s>strike</s>
     - Unclosed code blocks (for streaming)
+
+    Fault-tolerant:
+    - Handles partial markdown constructs during streaming
+    - Escapes problematic characters to prevent Telegram parse errors
+    - Preserves original text on conversion failure
     """
     if not text:
         return text
 
+    try:
+        return _markdown_to_html_impl(text, is_streaming)
+    except Exception as e:
+        # Fallback: escape everything and return as-is
+        logger.warning(f"markdown_to_html failed, using fallback: {e}")
+        return html_module.escape(text)
+
+
+def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
+    """Internal implementation of markdown to HTML conversion."""
     # Placeholder system to protect code blocks from double-processing
     placeholders = []
 
     def get_placeholder(index: int) -> str:
-        return f"[--CODE-BLOCK-{index}--]"
+        return f"\x00BLOCK{index}\x00"  # Use null bytes as unlikely delimiters
 
     # 1. Handle UNCLOSED code block (for streaming)
     code_fence_count = text.count('```')
@@ -85,7 +101,7 @@ def markdown_to_html(text: str, is_streaming: bool = False) -> str:
         text
     )
 
-    # 3. Protect inline code
+    # 3. Protect inline code (but not partial backticks at end during streaming)
     def protect_inline_code(m: re.Match) -> str:
         key = get_placeholder(len(placeholders))
         placeholders.append(f'<code>{html_module.escape(m.group(1))}</code>')
@@ -97,10 +113,32 @@ def markdown_to_html(text: str, is_streaming: bool = False) -> str:
     text = html_module.escape(text)
 
     # 5. Markdown conversions (now safe - code blocks are protected)
-    text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__([^_]+)__', r'<u>\1</u>', text)
-    text = re.sub(r'~~([^~]+)~~', r'<s>\1</s>', text)
-    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
+    # Use non-greedy matching and be careful with partial constructs
+
+    # Bold: **text** - but not if it's just ** at the end (streaming)
+    if is_streaming and text.rstrip().endswith('**'):
+        # Don't convert, might be partial
+        pass
+    else:
+        text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+
+    # Underline: __text__
+    if is_streaming and text.rstrip().endswith('__'):
+        pass
+    else:
+        text = re.sub(r'__([^_]+)__', r'<u>\1</u>', text)
+
+    # Strikethrough: ~~text~~
+    if is_streaming and text.rstrip().endswith('~~'):
+        pass
+    else:
+        text = re.sub(r'~~([^~]+)~~', r'<s>\1</s>', text)
+
+    # Italic: *text* (but not ** which is bold)
+    if is_streaming and text.rstrip().endswith('*') and not text.rstrip().endswith('**'):
+        pass
+    else:
+        text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
 
     # 6. Add unclosed block at the end
     if unclosed_code_placeholder:
@@ -166,11 +204,15 @@ class IncrementalFormatter:
 
     This prevents flickering by ensuring stable parts
     produce identical HTML on every call.
+
+    IMPORTANT: Preserves initial text (header) to avoid cutting first letters.
     """
 
     def __init__(self):
         self.stable_html = ""  # Cached HTML for stable parts
         self.stable_raw_length = 0  # Length of processed raw text
+        self._initial_formatted = False  # Track if we've formatted initial content
+        self._min_stable_chars = 50  # Minimum chars before considering stable boundary
 
     def format(self, raw_text: str, is_final: bool = False) -> str:
         """
@@ -183,9 +225,17 @@ class IncrementalFormatter:
         Returns:
             stable_html + newly_formatted_unstable_html
         """
+        if not raw_text:
+            return ""
+
         if len(raw_text) < self.stable_raw_length:
             # Text got shorter (rare) - reset cache
             self.reset()
+
+        # For very short text, format everything without caching
+        # This prevents cutting off initial characters
+        if len(raw_text) < self._min_stable_chars:
+            return markdown_to_html(raw_text, is_streaming=not is_final)
 
         # Find stability boundary
         stable_boundary = self._find_stable_boundary(raw_text)
@@ -213,6 +263,7 @@ class IncrementalFormatter:
         Text is stable when:
         - All ``` are paired (code blocks closed)
         - After last closed block there's a paragraph separator \\n\\n
+        - We have enough content to safely cache (min_stable_chars)
         """
         # Find all closed code blocks
         closed_blocks = list(re.finditer(r'```[\s\S]*?```', text))
@@ -231,9 +282,16 @@ class IncrementalFormatter:
             # Check that paragraph is "stable" (all markers paired)
             para_text = after_blocks[:last_para]
             if self._is_paragraph_stable(para_text):
-                return last_closed_end + last_para + 2
+                boundary = last_closed_end + last_para + 2
+                # Only return if we have enough content cached
+                if boundary >= self._min_stable_chars:
+                    return boundary
 
-        return last_closed_end
+        # If we have closed code blocks, that's a stable point
+        if last_closed_end >= self._min_stable_chars:
+            return last_closed_end
+
+        return 0  # Nothing stable yet
 
     def _is_paragraph_stable(self, text: str) -> bool:
         """Check that all inline markers are paired."""
@@ -247,6 +305,7 @@ class IncrementalFormatter:
         """Reset cache for new message."""
         self.stable_html = ""
         self.stable_raw_length = 0
+        self._initial_formatted = False
 
 
 class StreamingHandler:
@@ -301,6 +360,9 @@ class StreamingHandler:
         self._estimated_tokens: int = 0  # Accumulated token estimate
         self._context_limit: int = context_limit  # Max context window
 
+        # File change tracking for end-of-session summary
+        self._file_change_tracker: Optional["FileChangeTracker"] = None
+
         if initial_message:
             self.messages.append(initial_message)
 
@@ -328,6 +390,60 @@ class StreamingHandler:
         """
         pct = int(100 * self._estimated_tokens / self._context_limit) if self._context_limit > 0 else 0
         return self._estimated_tokens, self._context_limit, min(pct, 100)
+
+    def get_file_tracker(self) -> "FileChangeTracker":
+        """Get or create file change tracker for this session."""
+        if self._file_change_tracker is None:
+            self._file_change_tracker = FileChangeTracker()
+        return self._file_change_tracker
+
+    def track_file_change(self, tool_name: str, tool_input: dict) -> None:
+        """Track a file-modifying tool use."""
+        tracker = self.get_file_tracker()
+        tracker.track_tool_use(tool_name, tool_input)
+
+    async def show_file_changes_summary(self) -> Optional[Message]:
+        """
+        Show summary of all file changes at end of session.
+
+        Sends a separate message with Cursor-style file change summary
+        showing all files that were created, edited, or deleted.
+
+        Returns:
+            Sent message or None if no changes
+        """
+        if self._file_change_tracker is None or not self._file_change_tracker.has_changes():
+            return None
+
+        summary = self._file_change_tracker.get_summary()
+        if not summary:
+            return None
+
+        try:
+            msg = await self.bot.send_message(
+                self.chat_id,
+                summary,
+                parse_mode="HTML"
+            )
+            return msg
+        except TelegramBadRequest as e:
+            logger.warning(f"Failed to send file changes summary: {e}")
+            # Try without formatting
+            try:
+                plain_summary = self._file_change_tracker.get_summary()
+                # Strip HTML tags for plain text
+                plain_summary = re.sub(r'<[^>]+>', '', plain_summary)
+                msg = await self.bot.send_message(
+                    self.chat_id,
+                    plain_summary,
+                    parse_mode=None
+                )
+                return msg
+            except Exception:
+                return None
+        except Exception as e:
+            logger.error(f"Error sending file changes summary: {e}")
+            return None
 
     async def start(self, initial_text: str = "🤖 Запускаю...") -> Message:
         """Start streaming with an initial message"""
@@ -924,3 +1040,198 @@ class HeartbeatTracker:
             except Exception as e:
                 logger.debug(f"Heartbeat error: {e}")
                 break
+
+
+@dataclass
+class FileChange:
+    """Represents a single file change."""
+    file_path: str
+    action: str  # "create", "edit", "delete"
+    lines_added: int = 0
+    lines_removed: int = 0
+
+
+class FileChangeTracker:
+    """
+    Tracks file changes during a Claude session.
+
+    Monitors Edit, Write, and Bash (for git operations) tool uses
+    to build a summary of all modifications.
+
+    Usage:
+        tracker = FileChangeTracker()
+        tracker.track_tool_use("Edit", {"file_path": "/app/main.py", ...})
+        tracker.track_tool_result("Edit", "...edited 5 lines...")
+        summary = tracker.get_summary()
+    """
+
+    def __init__(self):
+        self._changes: dict[str, FileChange] = {}  # file_path -> FileChange
+        self._current_tool: Optional[str] = None
+        self._current_file: Optional[str] = None
+
+    def track_tool_use(self, tool_name: str, tool_input: dict) -> None:
+        """
+        Track a tool use event.
+
+        Args:
+            tool_name: Name of the tool (Edit, Write, Bash, etc.)
+            tool_input: Tool input parameters
+        """
+        tool_lower = tool_name.lower()
+        self._current_tool = tool_lower
+
+        if tool_lower == "write":
+            file_path = tool_input.get("file_path", "")
+            if file_path:
+                self._current_file = file_path
+                content = tool_input.get("content", "")
+                lines = content.count('\n') + 1 if content else 0
+
+                # Check if file exists (new or overwrite)
+                if file_path in self._changes:
+                    # Overwriting existing tracked file
+                    self._changes[file_path].lines_added += lines
+                    self._changes[file_path].action = "edit"
+                else:
+                    self._changes[file_path] = FileChange(
+                        file_path=file_path,
+                        action="create",
+                        lines_added=lines,
+                        lines_removed=0
+                    )
+
+        elif tool_lower == "edit":
+            file_path = tool_input.get("file_path", "")
+            if file_path:
+                self._current_file = file_path
+                old_string = tool_input.get("old_string", "")
+                new_string = tool_input.get("new_string", "")
+
+                old_lines = old_string.count('\n') + 1 if old_string else 0
+                new_lines = new_string.count('\n') + 1 if new_string else 0
+
+                if file_path in self._changes:
+                    self._changes[file_path].lines_added += new_lines
+                    self._changes[file_path].lines_removed += old_lines
+                else:
+                    self._changes[file_path] = FileChange(
+                        file_path=file_path,
+                        action="edit",
+                        lines_added=new_lines,
+                        lines_removed=old_lines
+                    )
+
+        elif tool_lower == "bash":
+            command = tool_input.get("command", "")
+            # Track git-related commands
+            if "git add" in command or "git commit" in command:
+                # Git operations are tracked but don't count as file changes
+                pass
+            elif "rm " in command or "del " in command:
+                # Try to extract file path from delete commands
+                import shlex
+                try:
+                    parts = shlex.split(command)
+                    for i, part in enumerate(parts):
+                        if part in ("rm", "del") and i + 1 < len(parts):
+                            file_path = parts[i + 1]
+                            if not file_path.startswith("-"):
+                                self._changes[file_path] = FileChange(
+                                    file_path=file_path,
+                                    action="delete",
+                                    lines_added=0,
+                                    lines_removed=0
+                                )
+                except Exception:
+                    pass
+
+    def track_tool_result(self, tool_name: str, output: str) -> None:
+        """
+        Track a tool result to update change statistics.
+
+        Args:
+            tool_name: Name of the tool
+            output: Tool output/result
+        """
+        # Could parse output for more accurate line counts
+        # For now, we rely on input-based tracking
+        self._current_tool = None
+        self._current_file = None
+
+    def get_changes(self) -> list[FileChange]:
+        """Get list of all tracked changes."""
+        return list(self._changes.values())
+
+    def get_summary(self) -> str:
+        """
+        Generate a Cursor-style summary of file changes.
+
+        Returns:
+            Formatted summary string with file changes
+        """
+        if not self._changes:
+            return ""
+
+        lines = ["📊 <b>Изменённые файлы:</b>\n"]
+
+        total_added = 0
+        total_removed = 0
+
+        # Sort by action: creates first, then edits, then deletes
+        action_order = {"create": 0, "edit": 1, "delete": 2}
+        sorted_changes = sorted(
+            self._changes.values(),
+            key=lambda c: (action_order.get(c.action, 1), c.file_path)
+        )
+
+        for change in sorted_changes:
+            # Get just the filename for display
+            filename = change.file_path.split("/")[-1].split("\\")[-1]
+
+            # Action emoji
+            if change.action == "create":
+                action_emoji = "✨"
+            elif change.action == "delete":
+                action_emoji = "🗑️"
+            else:
+                action_emoji = "📝"
+
+            # Format line changes
+            changes_str = ""
+            if change.lines_added > 0:
+                changes_str += f"<code>+{change.lines_added}</code>"
+                total_added += change.lines_added
+            if change.lines_removed > 0:
+                if changes_str:
+                    changes_str += " "
+                changes_str += f"<code>-{change.lines_removed}</code>"
+                total_removed += change.lines_removed
+
+            if changes_str:
+                lines.append(f"  {action_emoji} <code>{filename}</code> {changes_str}")
+            else:
+                lines.append(f"  {action_emoji} <code>{filename}</code>")
+
+        # Total summary
+        if total_added > 0 or total_removed > 0:
+            total_str = ""
+            if total_added > 0:
+                total_str += f"<code>+{total_added}</code>"
+            if total_removed > 0:
+                if total_str:
+                    total_str += " "
+                total_str += f"<code>-{total_removed}</code>"
+            lines.append(f"\n<i>Итого: {len(self._changes)} файл(ов), {total_str}</i>")
+
+        return "\n".join(lines)
+
+    def has_changes(self) -> bool:
+        """Check if any changes were tracked."""
+        return len(self._changes) > 0
+
+    def reset(self) -> None:
+        """Clear all tracked changes."""
+        self._changes.clear()
+        self._current_tool = None
+        self._current_file = None

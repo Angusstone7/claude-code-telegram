@@ -744,6 +744,10 @@ class MessageHandlers:
                 if session:
                     session.working_dir = new_dir
 
+        # Track file changes for end-of-session summary
+        if streaming and tool_name.lower() in ("edit", "write", "bash"):
+            streaming.track_file_change(tool_name, tool_input)
+
         if streaming:
             if tool_name.lower() == "todowrite":
                 todos = tool_input.get("todos", [])
@@ -1037,6 +1041,8 @@ class MessageHandlers:
         if result.cancelled:
             if streaming:
                 await streaming.finalize("**Задача отменена**")
+                # Show file changes even on cancel (user might want to see what was done)
+                await streaming.show_file_changes_summary()
             if session:
                 session.cancel()
             return
@@ -1044,6 +1050,8 @@ class MessageHandlers:
         if result.success:
             if streaming:
                 await streaming.send_completion(success=True)
+                # Show summary of all file changes (Cursor-style)
+                await streaming.show_file_changes_summary()
             if session:
                 session.complete(result.session_id)
 
@@ -1085,6 +1093,8 @@ class MessageHandlers:
         else:
             if streaming:
                 await streaming.send_completion(success=False)
+                # Show file changes even on error (user might want to see what was done)
+                await streaming.show_file_changes_summary()
             if session:
                 session.fail(result.error or "Cancelled" if result.cancelled else "Unknown error")
 
