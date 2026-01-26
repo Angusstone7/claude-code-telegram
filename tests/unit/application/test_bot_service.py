@@ -340,16 +340,30 @@ class TestBotServiceStatistics:
     @pytest.mark.asyncio
     async def test_get_user_stats(self, bot_service, mock_user_repository, mock_session_repository, mock_command_repository, user, user_id, session):
         """Test getting user statistics."""
+        from unittest.mock import MagicMock
+        from domain.entities.command import CommandStatus
+
+        # Create mock commands with different statuses
+        mock_commands = []
+        for _ in range(5):
+            cmd = MagicMock()
+            cmd.status = CommandStatus.COMPLETED
+            mock_commands.append(cmd)
+        failed_cmd = MagicMock()
+        failed_cmd.status = CommandStatus.FAILED
+        mock_commands.append(failed_cmd)
+
         mock_user_repository.find_by_id.return_value = user
-        mock_command_repository.find_by_user = AsyncMock(return_value=[])
-        mock_command_repository.get_statistics.return_value = {"completed": 5, "failed": 1}
+        mock_command_repository.find_by_user = AsyncMock(return_value=mock_commands)
         mock_session_repository.find_by_user = AsyncMock(return_value=[session])
 
         result = await bot_service.get_user_stats(123456789)
 
         assert result["user"]["username"] == "testuser"
         assert result["user"]["role"] == "user"
-        assert result["commands"]["by_status"] == {"completed": 5, "failed": 1}
+        assert result["commands"]["by_status"]["completed"] == 5
+        assert result["commands"]["by_status"]["failed"] == 1
+        assert result["commands"]["total"] == 6
         assert result["sessions"]["total"] == 1
 
     @pytest.mark.asyncio
