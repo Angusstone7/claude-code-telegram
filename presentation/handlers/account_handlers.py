@@ -634,8 +634,8 @@ class AccountHandlers:
             if success:
                 # If was in Claude Account mode, switch to z.ai API
                 settings = await self.account_service.get_settings(user_id)
-                if settings.auth_mode.value == "claude_account":
-                    await self.account_service.set_auth_mode(user_id, "zai_api")
+                if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
+                    await self.account_service.set_auth_mode(user_id, AuthMode.ZAI_API)
 
                 # Return to menu
                 await self._show_menu(callback, state)
