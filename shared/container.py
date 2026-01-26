@@ -286,7 +286,7 @@ class Container:
                 bot_service=self.bot_service(),
                 message_handlers=self.message_handlers(),
                 claude_proxy=self.claude_proxy(),
-                claude_sdk=self.claude_sdk(),
+                sdk_service=self.claude_sdk(),
                 project_service=self.project_service(),
                 context_service=self.context_service(),
                 file_browser_service=self.file_browser_service(),
