@@ -25,6 +25,16 @@ from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService, TaskResult
 from domain.entities.claude_code_session import ClaudeCodeSession, SessionStatus
 
+# Try to import FileProcessorService
+try:
+    from application.services.file_processor_service import FileProcessorService, ProcessedFile, FileType
+    FILE_PROCESSOR_AVAILABLE = True
+except ImportError:
+    FILE_PROCESSOR_AVAILABLE = False
+    FileProcessorService = None
+    ProcessedFile = None
+    FileType = None
+
 # Try to import SDK service
 try:
     from infrastructure.claude_code.sdk_service import (
@@ -53,7 +63,8 @@ class MessageHandlers:
         sdk_service: Optional["ClaudeAgentSDKService"] = None,
         default_working_dir: str = "/root",
         project_service=None,
-        context_service=None
+        context_service=None,
+        file_processor_service: Optional["FileProcessorService"] = None
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy  # CLI fallback
@@ -61,6 +72,14 @@ class MessageHandlers:
         self.default_working_dir = default_working_dir
         self.project_service = project_service
         self.context_service = context_service
+
+        # File processor service
+        if file_processor_service:
+            self.file_processor_service = file_processor_service
+        elif FILE_PROCESSOR_AVAILABLE:
+            self.file_processor_service = FileProcessorService()
+        else:
+            self.file_processor_service = None
 
         # Determine which backend to use
         self.use_sdk = sdk_service is not None and SDK_AVAILABLE
@@ -96,6 +115,13 @@ class MessageHandlers:
         self._expecting_var_desc: dict[int, tuple] = {}     # user_id -> (var_name, var_value)
         self._pending_var_message: dict[int, Message] = {}  # user_id -> menu message to update
         self._editing_var_name: dict[int, str] = {}         # user_id -> var being edited
+
+        # File cache for reply handling (message_id -> ProcessedFile)
+        self._file_cache: dict[int, "ProcessedFile"] = {}
+
+        # Plan approval state (ExitPlanMode)
+        self._pending_plan_messages: dict[int, Message] = {}  # user_id -> plan message
+        self._expecting_plan_clarification: dict[int, bool] = {}  # user_id -> waiting for clarification
 
     def is_yolo_mode(self, user_id: int) -> bool:
         """Check if YOLO mode is enabled for user"""
@@ -272,6 +298,290 @@ class MessageHandlers:
         if event:
             event.set()
 
+    # ============== Plan Approval Methods (ExitPlanMode) ==============
+
+    async def handle_plan_response(self, user_id: int, response: str):
+        """
+        Handle plan approval response from callback.
+
+        Args:
+            user_id: User ID
+            response: One of "approve", "reject", "cancel", or "clarify:text"
+        """
+        if self.use_sdk and self.sdk_service:
+            success = await self.sdk_service.respond_to_plan(user_id, response)
+            if success:
+                self._expecting_plan_clarification.pop(user_id, None)
+                return
+        logger.warning(f"[{user_id}] Failed to respond to plan: {response}")
+
+    def set_expecting_plan_clarification(self, user_id: int, expecting: bool):
+        """Set whether we're expecting plan clarification text from user"""
+        self._expecting_plan_clarification[user_id] = expecting
+
+    def _is_task_running(self, user_id: int) -> bool:
+        """Check if a task is already running for user"""
+        is_running = False
+        if self.use_sdk and self.sdk_service:
+            is_running = self.sdk_service.is_task_running(user_id)
+        if not is_running:
+            is_running = self.claude_proxy.is_task_running(user_id)
+        return is_running
+
+    async def handle_document(self, message: Message) -> None:
+        """
+        Handle document (file) messages.
+
+        Scenarios:
+        1. Document with caption - caption as task, file in context
+        2. Document without caption - cache for reply
+        """
+        user_id = message.from_user.id
+        bot = message.bot
+
+        # Check authorization
+        user = await self.bot_service.authorize_user(user_id)
+        if not user:
+            await message.answer("❌ Вы не авторизованы для использования этого бота.")
+            return
+
+        # Check if task already running
+        if self._is_task_running(user_id):
+            await message.answer(
+                "⏳ Задача уже выполняется.\n\n"
+                "Дождитесь завершения или используйте /cancel",
+                reply_markup=Keyboards.claude_cancel(user_id)
+            )
+            return
+
+        # Get document
+        document = message.document
+        if not document:
+            return
+
+        # Check if file processor available
+        if not self.file_processor_service:
+            await message.answer("⚠️ Обработка файлов недоступна")
+            return
+
+        # Validate file
+        filename = document.file_name or "unknown"
+        file_size = document.file_size or 0
+
+        is_valid, error = self.file_processor_service.validate_file(filename, file_size)
+        if not is_valid:
+            await message.answer(f"❌ {error}")
+            return
+
+        # Download file
+        try:
+            file = await bot.get_file(document.file_id)
+            file_content = await bot.download_file(file.file_path)
+        except Exception as e:
+            logger.error(f"Error downloading file: {e}")
+            await message.answer(f"❌ Ошибка скачивания файла: {e}")
+            return
+
+        # Process file
+        processed = await self.file_processor_service.process_file(
+            file_content,
+            filename,
+            document.mime_type
+        )
+
+        if processed.error:
+            await message.answer(f"❌ Ошибка обработки: {processed.error}")
+            return
+
+        # If has caption - execute task with file
+        caption = message.caption or ""
+
+        if caption:
+            # Format prompt with file and task
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed, caption
+            )
+
+            # Notify user
+            file_info = f"📎 {processed.filename} ({processed.size_bytes // 1024} KB)"
+            task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+            await message.answer(f"Получен файл: {file_info}\nЗадача: {task_preview}")
+
+            # Execute task with file context
+            await self._execute_task_with_prompt(message, enriched_prompt)
+        else:
+            # Cache file for reply
+            self._file_cache[message.message_id] = processed
+
+            await message.answer(
+                f"📎 <b>Файл получен:</b> {processed.filename}\n"
+                f"📊 <b>Размер:</b> {processed.size_bytes // 1024} KB\n"
+                f"📄 <b>Тип:</b> {processed.file_type.value}\n\n"
+                f"Сделайте <b>reply</b> на это сообщение с текстом задачи\n"
+                f"или командой плагина (например, <code>/ralph-loop</code>)",
+                parse_mode="HTML"
+            )
+
+    async def handle_photo(self, message: Message) -> None:
+        """
+        Handle photo messages.
+
+        Photos are processed as images for multimodal requests.
+        """
+        user_id = message.from_user.id
+        bot = message.bot
+
+        # Check authorization
+        user = await self.bot_service.authorize_user(user_id)
+        if not user:
+            await message.answer("❌ Вы не авторизованы для использования этого бота.")
+            return
+
+        # Check if task already running
+        if self._is_task_running(user_id):
+            await message.answer(
+                "⏳ Задача уже выполняется.",
+                reply_markup=Keyboards.claude_cancel(user_id)
+            )
+            return
+
+        # Get photo (last = highest resolution)
+        if not message.photo:
+            return
+
+        photo = message.photo[-1]
+
+        # Validate size
+        max_image_size = 5 * 1024 * 1024  # 5 MB
+        if photo.file_size and photo.file_size > max_image_size:
+            await message.answer("❌ Изображение слишком большое (максимум 5 MB)")
+            return
+
+        # Check if file processor available
+        if not self.file_processor_service:
+            await message.answer("⚠️ Обработка файлов недоступна")
+            return
+
+        # Download photo
+        try:
+            file = await bot.get_file(photo.file_id)
+            file_content = await bot.download_file(file.file_path)
+        except Exception as e:
+            logger.error(f"Error downloading photo: {e}")
+            await message.answer(f"❌ Ошибка скачивания: {e}")
+            return
+
+        # Process as image
+        filename = f"image_{photo.file_unique_id}.jpg"
+        processed = await self.file_processor_service.process_file(
+            file_content,
+            filename,
+            "image/jpeg"
+        )
+
+        if processed.error:
+            await message.answer(f"❌ Ошибка обработки: {processed.error}")
+            return
+
+        caption = message.caption or ""
+
+        if caption:
+            # Format prompt with image
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed, caption
+            )
+
+            task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+            await message.answer(f"🖼 Изображение получено. Задача: {task_preview}")
+
+            await self._execute_task_with_prompt(message, enriched_prompt)
+        else:
+            # Cache for reply
+            self._file_cache[message.message_id] = processed
+
+            await message.answer(
+                "🖼 <b>Изображение получено</b>\n\n"
+                "Сделайте <b>reply</b> на это сообщение с текстом задачи.",
+                parse_mode="HTML"
+            )
+
+    async def _extract_reply_file_context(
+        self,
+        reply_message: Message,
+        bot: Bot
+    ) -> Optional[tuple["ProcessedFile", str]]:
+        """
+        Extract file from reply message.
+
+        Returns:
+            Tuple[ProcessedFile, original_caption] or None
+        """
+        if not self.file_processor_service:
+            return None
+
+        # Check document
+        if reply_message.document:
+            doc = reply_message.document
+            filename = doc.file_name or "unknown"
+            file_size = doc.file_size or 0
+
+            is_valid, _ = self.file_processor_service.validate_file(filename, file_size)
+            if not is_valid:
+                return None
+
+            try:
+                file = await bot.get_file(doc.file_id)
+                file_content = await bot.download_file(file.file_path)
+                processed = await self.file_processor_service.process_file(
+                    file_content,
+                    filename,
+                    doc.mime_type
+                )
+                if processed.is_valid:
+                    return (processed, reply_message.caption or "")
+            except Exception as e:
+                logger.error(f"Error extracting document from reply: {e}")
+                return None
+
+        # Check photo
+        if reply_message.photo:
+            photo = reply_message.photo[-1]
+            max_size = 5 * 1024 * 1024
+            if photo.file_size and photo.file_size > max_size:
+                return None
+
+            try:
+                file = await bot.get_file(photo.file_id)
+                file_content = await bot.download_file(file.file_path)
+                processed = await self.file_processor_service.process_file(
+                    file_content,
+                    f"image_{photo.file_unique_id}.jpg",
+                    "image/jpeg"
+                )
+                if processed.is_valid:
+                    return (processed, reply_message.caption or "")
+            except Exception as e:
+                logger.error(f"Error extracting photo from reply: {e}")
+                return None
+
+        return None
+
+    async def _execute_task_with_prompt(self, message: Message, prompt: str) -> None:
+        """
+        Execute Claude task with given prompt.
+
+        This is a wrapper that sets up the context and calls handle_text logic.
+        """
+        # Store original text and replace with enriched prompt
+        original_text = message.text
+        message.text = prompt
+
+        # Call handle_text which has all the SDK/CLI logic
+        await self.handle_text(message)
+
+        # Restore original text (in case message object is reused)
+        message.text = original_text
+
     async def handle_text(
         self,
         message: Message,
@@ -294,6 +604,54 @@ class MessageHandlers:
             await message.answer("❌ Вы не авторизованы для использования этого бота.")
             return
 
+        # ========== FILE REPLY HANDLING ==========
+        # Check if this is a reply to a cached file
+        reply = message.reply_to_message
+        if reply and reply.message_id in self._file_cache and self.file_processor_service:
+            # Get cached file
+            processed_file = self._file_cache.pop(reply.message_id)
+
+            # Format prompt with file and task
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed_file, message.text
+            )
+
+            # Notify user
+            task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
+            await message.answer(
+                f"📎 Файл: {processed_file.filename}\n"
+                f"📝 Задача: {task_preview}"
+            )
+
+            # Execute with file context
+            original_text = message.text
+            message.text = enriched_prompt
+            # Continue to normal handle_text logic below
+            # Don't return - let it flow through
+
+        # Check if reply to message with document/photo (not cached)
+        elif reply and (reply.document or reply.photo) and self.file_processor_service:
+            file_context = await self._extract_reply_file_context(reply, bot)
+            if file_context:
+                processed_file, _ = file_context
+
+                # Format prompt with file
+                enriched_prompt = self.file_processor_service.format_for_prompt(
+                    processed_file, message.text
+                )
+
+                task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
+                await message.answer(
+                    f"📎 Файл: {processed_file.filename}\n"
+                    f"📝 Задача: {task_preview}"
+                )
+
+                # Replace message text with enriched prompt
+                message.text = enriched_prompt
+                # Continue to normal handle_text logic below
+
+        # ========== END FILE REPLY HANDLING ==========
+
         # Handle special input modes
         if self._expecting_answer.get(user_id):
             await self._handle_answer_input(message)
@@ -314,6 +672,11 @@ class MessageHandlers:
 
         if user_id in self._expecting_var_desc:
             await self._handle_var_desc_input(message)
+            return
+
+        # Handle plan clarification (user entered feedback for plan)
+        if self._expecting_plan_clarification.get(user_id):
+            await self._handle_plan_clarification(message)
             return
 
         # Check if already running (check both backends)
@@ -455,6 +818,7 @@ class MessageHandlers:
                     on_permission_completed=lambda approved: self._on_permission_completed(user_id, approved),
                     on_question=lambda q, opts: self._on_question_sdk(user_id, q, opts, message),
                     on_question_completed=lambda answer: self._on_question_completed(user_id, answer),
+                    on_plan_request=lambda plan_file, inp: self._on_plan_request(user_id, plan_file, inp, message),
                     on_thinking=lambda think: self._on_thinking(user_id, think),
                     on_error=lambda err: self._on_error(user_id, err),
                 )
@@ -779,6 +1143,62 @@ class MessageHandlers:
             )
             self._pending_question_messages[user_id] = q_msg
 
+    async def _on_plan_request(
+        self,
+        user_id: int,
+        plan_file: str,
+        tool_input: dict,
+        message: Message
+    ):
+        """
+        Handle plan approval request from SDK (ExitPlanMode tool).
+
+        Shows the plan content with approval buttons.
+        """
+        request_id = str(uuid.uuid4())[:8]
+
+        # Try to read plan content from file
+        plan_content = ""
+        if plan_file:
+            try:
+                # plan_file is typically something like ".claude/plans/xxx.md"
+                working_dir = self.get_working_dir(user_id)
+                plan_path = os.path.join(working_dir, plan_file)
+
+                if os.path.exists(plan_path):
+                    with open(plan_path, 'r', encoding='utf-8') as f:
+                        plan_content = f.read()
+                else:
+                    logger.warning(f"[{user_id}] Plan file not found: {plan_path}")
+            except Exception as e:
+                logger.error(f"[{user_id}] Error reading plan file: {e}")
+
+        # If no plan content from file, try to get from tool_input
+        if not plan_content:
+            plan_content = tool_input.get("planContent", "")
+
+        # Format message
+        if plan_content:
+            # Truncate if too long for Telegram (max ~4096 chars)
+            if len(plan_content) > 3500:
+                plan_content = plan_content[:3500] + "\n\n... (план сокращён)"
+
+            text = f"📋 <b>План готов к выполнению</b>\n\n<pre>{plan_content}</pre>"
+        else:
+            text = "📋 <b>План готов к выполнению</b>\n\n<i>Содержимое плана недоступно</i>"
+
+        # Send plan with approval buttons
+        plan_msg = await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=Keyboards.plan_approval(user_id, request_id)
+        )
+
+        # Save message for editing after response
+        self._pending_plan_messages[user_id] = plan_msg
+
+        logger.info(f"[{user_id}] Plan approval requested, file: {plan_file}")
+
     async def _on_permission_completed(self, user_id: int, approved: bool):
         """
         Handle permission completion - edit the permission message to show result
@@ -911,6 +1331,19 @@ class MessageHandlers:
 
         # Use the unified response handler (supports both SDK and CLI)
         await self.handle_question_response(user_id, answer)
+
+    async def _handle_plan_clarification(self, message: Message):
+        """Handle text input for plan clarification"""
+        user_id = message.from_user.id
+        self._expecting_plan_clarification[user_id] = False
+
+        clarification = message.text.strip()
+        preview = clarification[:50] + "..." if len(clarification) > 50 else clarification
+
+        await message.answer(f"✏️ Уточнение отправлено: {preview}")
+
+        # Send clarification to SDK
+        await self.handle_plan_response(user_id, f"clarify:{clarification}")
 
     async def _handle_path_input(self, message: Message):
         """Handle text input for path"""
@@ -1090,6 +1523,13 @@ class MessageHandlers:
 
 def register_handlers(router: Router, handlers: MessageHandlers) -> None:
     """Register message handlers"""
+    # Document handlers (files) - register before text to handle files with captions
+    router.message.register(handlers.handle_document, F.document, StateFilter(None))
+
+    # Photo handlers - register before text to handle photos with captions
+    router.message.register(handlers.handle_photo, F.photo, StateFilter(None))
+
+    # Text messages - main handler
     # Only match text messages when NOT in any FSM state
     # This allows FSM handlers (account setup, etc.) to take priority
     router.message.register(handlers.handle_text, F.text, StateFilter(None))

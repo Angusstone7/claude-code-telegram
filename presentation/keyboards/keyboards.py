@@ -454,6 +454,33 @@ class Keyboards:
         ])
 
     @staticmethod
+    def plan_approval(user_id: int, request_id: str) -> InlineKeyboardMarkup:
+        """Keyboard for plan approval (ExitPlanMode)"""
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    text="✅ Одобрить план",
+                    callback_data=f"plan:approve:{user_id}:{request_id}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить",
+                    callback_data=f"plan:reject:{user_id}:{request_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ Уточнить план",
+                    callback_data=f"plan:clarify:{user_id}:{request_id}"
+                ),
+                InlineKeyboardButton(
+                    text="🛑 Отменить задачу",
+                    callback_data=f"plan:cancel:{user_id}:{request_id}"
+                )
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
     def project_selection(projects: List[Dict[str, str]]) -> InlineKeyboardMarkup:
         """Keyboard for project selection"""
         buttons = []

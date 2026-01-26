@@ -523,6 +523,131 @@ class CallbackHandlers:
             logger.error(f"Error continuing session: {e}")
             await callback.answer(f"❌ Ошибка: {e}")
 
+    # ============== Plan Approval Callbacks (ExitPlanMode) ==============
+
+    async def handle_plan_approve(self, callback: CallbackQuery) -> None:
+        """Handle plan approval - user approves the implementation plan"""
+        parts = callback.data.split(":")
+        user_id = int(parts[2]) if len(parts) > 2 else 0
+        request_id = parts[3] if len(parts) > 3 else ""
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ Это действие не для вас")
+            return
+
+        try:
+            # Update message to show approved
+            original_text = callback.message.text or ""
+            # Truncate if too long for Telegram
+            if len(original_text) > 3500:
+                original_text = original_text[:3500] + "\n... (truncated)"
+
+            await callback.message.edit_text(
+                original_text + "\n\n✅ **План одобрен** — начинаю выполнение!",
+                parse_mode=None
+            )
+
+            # Notify message handler to continue
+            if hasattr(self.message_handlers, 'handle_plan_response'):
+                await self.message_handlers.handle_plan_response(user_id, "approve")
+
+            await callback.answer("✅ План одобрен!")
+
+        except Exception as e:
+            logger.error(f"Error handling plan approve: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_plan_reject(self, callback: CallbackQuery) -> None:
+        """Handle plan rejection - user rejects the plan"""
+        parts = callback.data.split(":")
+        user_id = int(parts[2]) if len(parts) > 2 else 0
+        request_id = parts[3] if len(parts) > 3 else ""
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ Это действие не для вас")
+            return
+
+        try:
+            original_text = callback.message.text or ""
+            if len(original_text) > 3500:
+                original_text = original_text[:3500] + "\n... (truncated)"
+
+            await callback.message.edit_text(
+                original_text + "\n\n❌ **План отклонён**",
+                parse_mode=None
+            )
+
+            # Notify message handler
+            if hasattr(self.message_handlers, 'handle_plan_response'):
+                await self.message_handlers.handle_plan_response(user_id, "reject")
+
+            await callback.answer("❌ План отклонён")
+
+        except Exception as e:
+            logger.error(f"Error handling plan reject: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_plan_clarify(self, callback: CallbackQuery) -> None:
+        """Handle plan clarification - user wants to provide feedback"""
+        parts = callback.data.split(":")
+        user_id = int(parts[2]) if len(parts) > 2 else 0
+        request_id = parts[3] if len(parts) > 3 else ""
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ Это действие не для вас")
+            return
+
+        try:
+            original_text = callback.message.text or ""
+            if len(original_text) > 3500:
+                original_text = original_text[:3500] + "\n... (truncated)"
+
+            await callback.message.edit_text(
+                original_text + "\n\n✏️ **Уточнение плана**\n\nВведите ваши комментарии в чат:",
+                parse_mode=None
+            )
+
+            # Set state to expect clarification text
+            if hasattr(self.message_handlers, 'set_expecting_plan_clarification'):
+                self.message_handlers.set_expecting_plan_clarification(user_id, True)
+
+            await callback.answer("Введите уточнения в чат")
+
+        except Exception as e:
+            logger.error(f"Error handling plan clarify: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_plan_cancel(self, callback: CallbackQuery) -> None:
+        """Handle plan cancellation - user wants to cancel the entire task"""
+        parts = callback.data.split(":")
+        user_id = int(parts[2]) if len(parts) > 2 else 0
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ Это действие не для вас")
+            return
+
+        try:
+            await callback.message.edit_text(
+                "🛑 **Задача отменена**",
+                parse_mode=None
+            )
+
+            # Cancel the task via SDK
+            if self.sdk_service:
+                await self.sdk_service.cancel_task(user_id)
+            elif self.claude_proxy:
+                await self.claude_proxy.cancel_task(user_id)
+
+            # Notify message handler
+            if hasattr(self.message_handlers, 'handle_plan_response'):
+                await self.message_handlers.handle_plan_response(user_id, "cancel")
+
+            await callback.answer("🛑 Задача отменена")
+
+        except Exception as e:
+            logger.error(f"Error handling plan cancel: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
     async def handle_project_select(self, callback: CallbackQuery) -> None:
         """Handle project selection"""
         data = CallbackData.parse_project_callback(callback.data)
@@ -1645,6 +1770,24 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     router.callback_query.register(
         handlers.handle_claude_continue,
         F.data.startswith("claude:continue:")
+    )
+
+    # Plan approval handlers (ExitPlanMode)
+    router.callback_query.register(
+        handlers.handle_plan_approve,
+        F.data.startswith("plan:approve:")
+    )
+    router.callback_query.register(
+        handlers.handle_plan_reject,
+        F.data.startswith("plan:reject:")
+    )
+    router.callback_query.register(
+        handlers.handle_plan_clarify,
+        F.data.startswith("plan:clarify:")
+    )
+    router.callback_query.register(
+        handlers.handle_plan_cancel,
+        F.data.startswith("plan:cancel:")
     )
 
     # Project management handlers (specific first, then generic)

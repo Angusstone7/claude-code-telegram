@@ -605,6 +605,8 @@ class CommandHandlers:
         because the slash prefix alone is interpreted as a local CLI macro that expands
         but doesn't trigger an API call. By saying "run", we instruct Claude to invoke
         the Skill tool which actually executes the skill/plugin.
+
+        Supports reply to file - file content will be added to the command context.
         """
         user_id = message.from_user.id
         command_name = command.command  # e.g., "ralph-loop"
@@ -630,9 +632,35 @@ class CommandHandlers:
             )
             return
 
+        # Check for reply to file - add file context to command
+        reply = message.reply_to_message
+        file_info = ""
+        if reply and self.message_handlers.file_processor_service:
+            # Check if reply message has a cached file
+            if reply.message_id in self.message_handlers._file_cache:
+                processed_file = self.message_handlers._file_cache.pop(reply.message_id)
+                prompt = self.message_handlers.file_processor_service.format_for_prompt(
+                    processed_file, prompt
+                )
+                file_info = f"\n📎 Файл: {processed_file.filename}"
+                logger.info(f"[{user_id}] Added cached file to command: {processed_file.filename}")
+
+            # Check if reply message has document/photo
+            elif reply.document or reply.photo:
+                file_context = await self.message_handlers._extract_reply_file_context(
+reply, message.bot
+                )
+                if file_context:
+                    processed_file, _ = file_context
+                    prompt = self.message_handlers.file_processor_service.format_for_prompt(
+                        processed_file, prompt
+                    )
+                    file_info = f"\n📎 Файл: {processed_file.filename}"
+                    logger.info(f"[{user_id}] Added reply file to command: {processed_file.filename}")
+
         # Inform user that command is being passed through
         await message.answer(
-            f"🔌 <b>Команда плагина:</b> <code>{skill_command}</code>\n\n"
+            f"🔌 <b>Команда плагина:</b> <code>{skill_command}</code>{file_info}\n\n"
             f"Передаю в Claude Code...",
             parse_mode="HTML"
         )

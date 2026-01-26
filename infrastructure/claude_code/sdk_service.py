@@ -210,6 +210,10 @@ class ClaudeAgentSDKService:
         self._question_requests: dict[int, QuestionRequest] = {}
         self._question_responses: dict[int, str] = {}
 
+        # Plan approval state (ExitPlanMode)
+        self._plan_events: dict[int, asyncio.Event] = {}
+        self._plan_responses: dict[int, str] = {}  # "approve", "reject", "clarify:text", "cancel"
+
         # Task status
         self._task_status: dict[int, TaskStatus] = {}
 
@@ -456,6 +460,25 @@ class ClaudeAgentSDKService:
             return True
         return False
 
+    async def respond_to_plan(self, user_id: int, response: str) -> bool:
+        """
+        Respond to a pending plan approval (ExitPlanMode).
+
+        Args:
+            user_id: User ID
+            response: One of "approve", "reject", "cancel", or "clarify:text"
+
+        Returns:
+            True if response was accepted
+        """
+        event = self._plan_events.get(user_id)
+        if event and self._task_status.get(user_id) == TaskStatus.WAITING_PERMISSION:
+            self._plan_responses[user_id] = response
+            event.set()
+            logger.info(f"[{user_id}] Plan response: {response}")
+            return True
+        return False
+
     async def cancel_task(self, user_id: int) -> bool:
         """Cancel the active task for a user"""
         cancelled = False
@@ -474,6 +497,10 @@ class ClaudeAgentSDKService:
         question_event = self._question_events.get(user_id)
         if question_event:
             question_event.set()
+
+        plan_event = self._plan_events.get(user_id)
+        if plan_event:
+            plan_event.set()
 
         # Try to interrupt the SDK client
         client = self._clients.get(user_id)
@@ -525,6 +552,7 @@ class ClaudeAgentSDKService:
         on_permission_completed: Optional[Callable[[bool], Awaitable[None]]] = None,
         on_question: Optional[Callable[[str, list[str]], Awaitable[None]]] = None,
         on_question_completed: Optional[Callable[[str], Awaitable[None]]] = None,
+        on_plan_request: Optional[Callable[[str, dict], Awaitable[None]]] = None,  # For ExitPlanMode
         on_thinking: Optional[Callable[[str], Awaitable[None]]] = None,
         on_error: Optional[Callable[[str], Awaitable[None]]] = None,
         _retry_without_resume: bool = False,  # Internal: retry flag for 0-turns issue
@@ -559,10 +587,12 @@ class ClaudeAgentSDKService:
         cancel_event = asyncio.Event()
         permission_event = asyncio.Event()
         question_event = asyncio.Event()
+        plan_event = asyncio.Event()
 
         self._cancel_events[user_id] = cancel_event
         self._permission_events[user_id] = permission_event
         self._question_events[user_id] = question_event
+        self._plan_events[user_id] = plan_event
         self._task_status[user_id] = TaskStatus.RUNNING
 
         work_dir = working_dir or self.default_working_dir
@@ -669,6 +699,66 @@ class ClaudeAgentSDKService:
                     updated_input["answers"] = {question_text: answer}
 
                     return PermissionResultAllow(updated_input=updated_input)
+
+            # ExitPlanMode - show plan and wait for user approval
+            if tool_name == "ExitPlanMode":
+                # Extract plan info
+                plan_file = tool_input.get("planFile", "")
+
+                self._task_status[user_id] = TaskStatus.WAITING_PERMISSION
+
+                # Clear event BEFORE notifying UI
+                plan_event.clear()
+
+                # Notify UI about plan approval request
+                if on_plan_request:
+                    await on_plan_request(plan_file, tool_input)
+
+                # Wait for user response
+                try:
+                    await asyncio.wait_for(plan_event.wait(), timeout=600)  # 10 min timeout for plans
+                    # Check if woken up due to cancellation
+                    if cancel_event.is_set():
+                        return PermissionResultDeny(
+                            message="Task cancelled by user",
+                            interrupt=True
+                        )
+                    response = self._plan_responses.get(user_id, "reject")
+                except asyncio.TimeoutError:
+                    response = "reject"
+                    if on_error:
+                        await on_error("Plan approval timed out")
+
+                # Cleanup
+                self._plan_responses.pop(user_id, None)
+                self._task_status[user_id] = TaskStatus.RUNNING
+
+                # Handle response
+                if response == "approve":
+                    logger.info(f"[{user_id}] Plan approved")
+                    return PermissionResultAllow(updated_input=tool_input)
+                elif response.startswith("clarify:"):
+                    # User wants to modify the plan
+                    clarification = response[8:]  # Remove "clarify:" prefix
+                    logger.info(f"[{user_id}] Plan clarification: {clarification}")
+                    # Deny this ExitPlanMode, Claude will get feedback and revise
+                    return PermissionResultDeny(
+                        message=f"User requested clarification: {clarification}",
+                        interrupt=False
+                    )
+                elif response == "cancel":
+                    logger.info(f"[{user_id}] Plan cancelled")
+                    return PermissionResultDeny(
+                        message="User cancelled the task",
+                        interrupt=True
+                    )
+                else:
+                    # reject
+                    logger.info(f"[{user_id}] Plan rejected")
+                    return PermissionResultDeny(
+                        message="User rejected the plan",
+                        interrupt=False
+                    )
 
             # Safe tools - allow automatically
             if tool_name in safe_tools:

@@ -40,6 +40,7 @@ from application.services.project_service import ProjectService
 from application.services.context_service import ContextService
 from application.services.file_browser_service import FileBrowserService
 from application.services.account_service import AccountService
+from application.services.file_processor_service import FileProcessorService
 from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
 from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 
@@ -220,13 +221,17 @@ class Application:
         )
         register_account_handlers(self.dp, account_handlers)
 
+        # File processor service (for handling file uploads in context)
+        file_processor_service = FileProcessorService()
+
         # Message handlers (with SDK service preferred, CLI as fallback)
         msg_handlers = MessageHandlers(
             self.bot_service,
             self.claude_proxy,
             sdk_service=self.claude_sdk,  # Pass SDK service for proper HITL
             project_service=self.project_service,
-            context_service=self.context_service
+            context_service=self.context_service,
+            file_processor_service=file_processor_service  # For file context handling
         )
 
         # Link message_handlers to account_handlers for session cache clear
