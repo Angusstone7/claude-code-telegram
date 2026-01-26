@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 # Proxy for accessing claude.ai from Russia
 CLAUDE_PROXY = "http://proxyuser:!QAZ1qaz7@148.253.208.124:3128"
 
+# Local addresses that should bypass proxy
+NO_PROXY_VALUE = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
+
 # Path where credentials file should be stored
 CREDENTIALS_PATH = "/root/.claude/.credentials.json"
 
@@ -369,6 +372,10 @@ class AccountService:
             env["HTTPS_PROXY"] = CLAUDE_PROXY
             env["http_proxy"] = CLAUDE_PROXY
             env["https_proxy"] = CLAUDE_PROXY
+
+            # Bypass proxy for local network addresses
+            env["NO_PROXY"] = NO_PROXY_VALUE
+            env["no_proxy"] = NO_PROXY_VALUE
 
             # Remove ZhipuAI/model configuration (use official Claude API with SDK defaults)
             env["_REMOVE_ANTHROPIC_MODEL"] = "1"

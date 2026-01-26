@@ -54,8 +54,8 @@ def markdown_to_html(text: str, is_streaming: bool = False) -> str:
         text_before = text[:last_fence]
         unclosed_code = text[last_fence + 3:]
 
-        # Extract language hint
-        lang_match = re.match(r"(\w*)\n?", unclosed_code)
+        # Extract language hint (ASCII only to avoid capturing Cyrillic/Unicode text)
+        lang_match = re.match(r"([a-zA-Z][a-zA-Z0-9_+-]*|)\n?", unclosed_code)
         lang = lang_match.group(1) if lang_match else ""
         code_content = unclosed_code[lang_match.end():] if lang_match else unclosed_code
 
@@ -80,7 +80,7 @@ def markdown_to_html(text: str, is_streaming: bool = False) -> str:
         return key
 
     text = re.sub(
-        r"```(\w*)\n?([\s\S]*?)```",
+        r"```([a-zA-Z][a-zA-Z0-9_+-]*)?\n?([\s\S]*?)```",
         protect_code_block,
         text
     )

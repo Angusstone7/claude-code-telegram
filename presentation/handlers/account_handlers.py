@@ -61,6 +61,10 @@ class OAuthLoginSession:
         env["http_proxy"] = self.proxy_url
         env["https_proxy"] = self.proxy_url
 
+        # Bypass proxy for local network addresses
+        env["NO_PROXY"] = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
+        env["no_proxy"] = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
+
         # Remove API keys to force OAuth login
         env.pop("ANTHROPIC_API_KEY", None)
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
