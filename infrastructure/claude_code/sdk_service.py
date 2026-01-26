@@ -791,9 +791,20 @@ class ClaudeAgentSDKService:
                 os.environ[key] = value
 
         # Remove keys that should be unset for this mode
+        # IMPORTANT: Include ANTHROPIC_MODEL and default model vars to prevent
+        # z.ai model (e.g., glm-4.7) from being sent to official Claude API
+        keys_to_remove = (
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        )
         removed_keys = []
         for key in list(os.environ.keys()):
-            if key not in user_env and key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"):
+            if key not in user_env and key in keys_to_remove:
                 removed_keys.append(key)
                 del os.environ[key]
 
