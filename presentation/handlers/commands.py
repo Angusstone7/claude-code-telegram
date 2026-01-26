@@ -628,9 +628,13 @@ class CommandHandlers:
             parse_mode="HTML"
         )
 
-        # Pass the command to handle_text with prompt_override
-        # This reuses all the existing Claude Code execution logic
-        await self.message_handlers.handle_text(message, prompt_override=prompt)
+        # Pass the command to handle_text with prompt_override and force_new_session
+        # Plugin commands need a fresh session, not resume of previous conversation
+        await self.message_handlers.handle_text(
+            message,
+            prompt_override=prompt,
+            force_new_session=True
+        )
 
     async def plugins(self, message: Message) -> None:
         """

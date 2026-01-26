@@ -272,12 +272,18 @@ class MessageHandlers:
         if event:
             event.set()
 
-    async def handle_text(self, message: Message, prompt_override: str = None) -> None:
+    async def handle_text(
+        self,
+        message: Message,
+        prompt_override: str = None,
+        force_new_session: bool = False
+    ) -> None:
         """Handle text messages - main entry point
 
         Args:
             message: Telegram message
             prompt_override: If provided, use this instead of message.text (for plugin commands)
+            force_new_session: If True, don't resume previous session (for plugin commands)
         """
         user_id = message.from_user.id
         bot = message.bot
@@ -327,7 +333,8 @@ class MessageHandlers:
 
         # Get working directory and session from project/context (auto-continue)
         working_dir = self.get_working_dir(user_id)
-        session_id = self._continue_sessions.get(user_id)  # Don't pop - keep for next message
+        # Don't resume session for plugin commands (force_new_session)
+        session_id = None if force_new_session else self._continue_sessions.get(user_id)
         context_id = None
         # Use prompt_override if provided (for plugin commands), otherwise use message.text
         enriched_prompt = prompt_override if prompt_override else message.text
@@ -352,8 +359,8 @@ class MessageHandlers:
 
                     context_id = context.id
 
-                    # Auto-continue: use context's claude_session_id
-                    if not session_id and context.claude_session_id:
+                    # Auto-continue: use context's claude_session_id (unless force_new_session)
+                    if not force_new_session and not session_id and context.claude_session_id:
                         session_id = context.claude_session_id
                         logger.info(
                             f"[{user_id}] Auto-continue: loaded session {session_id[:16]}... "
@@ -361,6 +368,8 @@ class MessageHandlers:
                         )
                     elif session_id:
                         logger.info(f"[{user_id}] Using in-memory session {session_id[:16]}...")
+                    elif force_new_session:
+                        logger.info(f"[{user_id}] Starting new session (force_new_session for plugin command)")
                     else:
                         logger.info(f"[{user_id}] Starting new session (no previous session_id)")
 
