@@ -18,6 +18,7 @@ from typing import Optional, Union
 from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.enums import ParseMode
+from aiogram.filters import StateFilter
 
 from presentation.keyboards.keyboards import Keyboards
 from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker
@@ -815,7 +816,7 @@ class MessageHandlers:
 
         if result.cancelled:
             if streaming:
-                await streaming.finalize("🛑 <b>Задача отменена</b>")
+                await streaming.finalize("🛑 **Задача отменена**")
             if session:
                 session.cancel()
             return
@@ -1073,7 +1074,9 @@ class MessageHandlers:
 
 def register_handlers(router: Router, handlers: MessageHandlers) -> None:
     """Register message handlers"""
-    router.message.register(handlers.handle_text, F.text)
+    # Only match text messages when NOT in any FSM state
+    # This allows FSM handlers (account setup, etc.) to take priority
+    router.message.register(handlers.handle_text, F.text, StateFilter(None))
 
 
 def get_message_handlers(bot_service, claude_proxy: ClaudeCodeProxyService) -> MessageHandlers:
