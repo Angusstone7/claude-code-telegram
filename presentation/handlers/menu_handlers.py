@@ -798,43 +798,17 @@ class MenuHandlers:
         await callback.answer()
 
     async def _show_docker(self, callback: CallbackQuery):
-        """Show Docker containers"""
+        """Show Docker containers via SSH"""
         try:
-            # Check if docker module is installed
-            try:
-                import docker
-            except ImportError:
-                await callback.message.edit_text(
-                    "🐳 <b>Docker контейнеры</b>\n\n"
-                    "❌ Библиотека docker не установлена\n\n"
-                    "Установите: <code>pip install docker</code>",
-                    reply_markup=Keyboards.menu_back_only("menu:system"),
-                    parse_mode="HTML"
-                )
-                await callback.answer()
-                return
-
-            # Try to connect to Docker daemon
-            try:
-                client = docker.from_env()
-                containers = client.containers.list(all=True)
-            except docker.errors.DockerException as e:
-                await callback.message.edit_text(
-                    "🐳 <b>Docker контейнеры</b>\n\n"
-                    f"❌ Не удалось подключиться к Docker daemon:\n"
-                    f"<code>{str(e)[:200]}</code>\n\n"
-                    "Проверьте что Docker запущен и доступен.",
-                    reply_markup=Keyboards.menu_back_only("menu:system"),
-                    parse_mode="HTML"
-                )
-                await callback.answer()
-                return
+            from infrastructure.monitoring.system_monitor import create_system_monitor
+            monitor = create_system_monitor()
+            containers = await monitor.get_docker_containers()
 
             if not containers:
                 await callback.message.edit_text(
                     "🐳 <b>Docker контейнеры</b>\n\n"
                     "📦 Контейнеры не найдены\n\n"
-                    "Используйте <code>docker ps -a</code> для проверки.",
+                    "Проверьте что Docker запущен на сервере.",
                     reply_markup=Keyboards.menu_back_only("menu:system"),
                     parse_mode="HTML"
                 )
@@ -843,23 +817,14 @@ class MenuHandlers:
 
             # Format container list
             lines = ["🐳 <b>Docker контейнеры:</b>\n"]
-            container_list = []
             for container in containers:
-                status_emoji = "🟢" if container.status == "running" else "🔴"
-                image_tag = container.image.tags[0] if container.image.tags else str(container.image.id)[:12]
-                lines.append(f"\n{status_emoji} <b>{container.name}</b>")
-                lines.append(f"   Статус: {container.status}")
-                lines.append(f"   Образ: <code>{image_tag[:40]}</code>")
-
-                container_list.append({
-                    "id": container.short_id,
-                    "name": container.name,
-                    "status": container.status,
-                    "image": image_tag,
-                })
+                status_emoji = "🟢" if container["status"] == "running" else "🔴"
+                lines.append(f"\n{status_emoji} <b>{container['name']}</b>")
+                lines.append(f"   Статус: {container['status']}")
+                lines.append(f"   Образ: <code>{container['image'][:40]}</code>")
 
             text = "\n".join(lines)
-            keyboard = Keyboards.docker_list(container_list, show_back=True, back_to="menu:system")
+            keyboard = Keyboards.docker_list(containers, show_back=True, back_to="menu:system")
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
