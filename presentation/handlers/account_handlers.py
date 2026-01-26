@@ -81,17 +81,16 @@ class OAuthLoginSession:
             OAuth URL if found, None if failed
         """
         try:
-            # Try new syntax: "claude login" with --no-browser for headless
-            # The slash command "/login" may not work in newer CLI versions
+            # Use "claude login" - CLI outputs URL when no browser available
             self.process = await asyncio.create_subprocess_exec(
-                "claude", "login", "--no-browser",
+                "claude", "login",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,  # Merge stderr to stdout
                 env=self._get_env(),
             )
 
-            logger.info(f"[{self.user_id}] Started 'claude login --no-browser' process (PID: {self.process.pid})")
+            logger.info(f"[{self.user_id}] Started 'claude login' process (PID: {self.process.pid})")
 
             # Read output until we find the OAuth URL
             # Typical output: "Browser didn't open? Use the url below..."
