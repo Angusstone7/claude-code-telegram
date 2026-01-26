@@ -600,17 +600,26 @@ class CommandHandlers:
 
         Commands like /ralph-loop, /commit, /code-review are Claude Code commands
         that should be executed by Claude, not by the Telegram bot.
+
+        IMPORTANT: We send the command as "run /<command>" instead of just "/<command>"
+        because the slash prefix alone is interpreted as a local CLI macro that expands
+        but doesn't trigger an API call. By saying "run", we instruct Claude to invoke
+        the Skill tool which actually executes the skill/plugin.
         """
         user_id = message.from_user.id
         command_name = command.command  # e.g., "ralph-loop"
 
         logger.info(f"[{user_id}] Claude Code command passthrough: /{command_name}")
 
-        # Build the full command as a prompt for Claude
-        # Claude Code CLI expects these commands with slash prefix
-        prompt = f"/{command_name}"
+        # Build the prompt to invoke the skill via Claude's Skill tool
+        # We say "run /command" so Claude knows to invoke the Skill tool,
+        # rather than treating it as a local CLI macro
+        skill_command = f"/{command_name}"
         if command.args:
-            prompt += f" {command.args}"
+            skill_command += f" {command.args}"
+
+        # Instruct Claude to run the skill
+        prompt = f"run {skill_command}"
 
         # Check if message handlers are available
         if not self.message_handlers:
@@ -623,7 +632,7 @@ class CommandHandlers:
 
         # Inform user that command is being passed through
         await message.answer(
-            f"🔌 <b>Команда плагина:</b> <code>{prompt}</code>\n\n"
+            f"🔌 <b>Команда плагина:</b> <code>{skill_command}</code>\n\n"
             f"Передаю в Claude Code...",
             parse_mode="HTML"
         )
