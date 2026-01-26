@@ -586,7 +586,9 @@ class AccountHandlers:
         for model in [ClaudeModel.OPUS, ClaudeModel.SONNET, ClaudeModel.HAIKU]:
             display_name = ClaudeModel.get_display_name(model)
             description = ClaudeModel.get_description(model)
-            emoji = "✅" if current_model == model else "  "
+            # Compare with all possible formats: enum, value, legacy string
+            is_selected = current_model in (model, model.value, str(model))
+            emoji = "✅" if is_selected else "  "
             text += f"{emoji} <b>{display_name}</b>\n"
             text += f"   <i>{description}</i>\n\n"
 

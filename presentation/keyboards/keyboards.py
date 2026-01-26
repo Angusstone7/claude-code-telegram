@@ -1161,30 +1161,30 @@ class Keyboards:
 
         buttons = []
 
-        # Opus button
-        opus_emoji = "✅" if current_model == ClaudeModel.OPUS else "💎"
+        # Opus button - use .value to get actual model ID, not enum name
+        opus_emoji = "✅" if current_model in (ClaudeModel.OPUS, ClaudeModel.OPUS.value, "ClaudeModel.OPUS") else "💎"
         buttons.append([
             InlineKeyboardButton(
                 text=f"{opus_emoji} Opus 4.5",
-                callback_data=f"account:model:{ClaudeModel.OPUS}"
+                callback_data=f"account:model:{ClaudeModel.OPUS.value}"
             )
         ])
 
         # Sonnet button
-        sonnet_emoji = "✅" if current_model == ClaudeModel.SONNET else "⚡"
+        sonnet_emoji = "✅" if current_model in (ClaudeModel.SONNET, ClaudeModel.SONNET.value, "ClaudeModel.SONNET") else "⚡"
         buttons.append([
             InlineKeyboardButton(
                 text=f"{sonnet_emoji} Sonnet 4.5 (рекомендуется)",
-                callback_data=f"account:model:{ClaudeModel.SONNET}"
+                callback_data=f"account:model:{ClaudeModel.SONNET.value}"
             )
         ])
 
         # Haiku button
-        haiku_emoji = "✅" if current_model == ClaudeModel.HAIKU else "🚀"
+        haiku_emoji = "✅" if current_model in (ClaudeModel.HAIKU, ClaudeModel.HAIKU.value, "ClaudeModel.HAIKU") else "🚀"
         buttons.append([
             InlineKeyboardButton(
                 text=f"{haiku_emoji} Haiku 4",
-                callback_data=f"account:model:{ClaudeModel.HAIKU}"
+                callback_data=f"account:model:{ClaudeModel.HAIKU.value}"
             )
         ])
 

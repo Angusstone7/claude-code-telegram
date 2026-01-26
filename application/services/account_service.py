@@ -172,18 +172,45 @@ class AccountService:
         Get preferred model for user, respecting auth mode.
 
         Returns:
-            - None for Claude Account mode (use SDK default)
-            - User's configured model for z.ai API mode
+            - For Claude Account: user's model if it's official Claude model, else None
+            - For z.ai API: user's configured model (any)
         """
         settings = await self.get_settings(user_id)
 
-        # Claude Account mode: use SDK defaults (claude-sonnet-4-5, etc.)
-        # Do NOT pass user model to avoid sending z.ai models to official API
         if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
+            # For Claude Account, only return model if it's an official Claude model
+            # This prevents z.ai models like glm-4.7 from being sent to official API
+            if settings.model and self._is_official_claude_model(settings.model):
+                # Normalize legacy "ClaudeModel.OPUS" → "claude-opus-4-5"
+                return self._normalize_model(settings.model)
+            # No model or non-Claude model: SDK will use its default
             return None
 
         # z.ai API mode: use user's configured model (glm-4.7, etc.)
         return settings.model
+
+    def _is_official_claude_model(self, model: str) -> bool:
+        """Check if model is an official Claude model."""
+        official_models = {
+            # Actual model IDs
+            ClaudeModel.OPUS.value,
+            ClaudeModel.SONNET.value,
+            ClaudeModel.HAIKU.value,
+            # Legacy: str(Enum) returns "ClaudeModel.OPUS" not value
+            "ClaudeModel.OPUS",
+            "ClaudeModel.SONNET",
+            "ClaudeModel.HAIKU",
+        }
+        return model in official_models
+
+    def _normalize_model(self, model: str) -> str:
+        """Convert legacy model strings to actual model IDs."""
+        legacy_mapping = {
+            "ClaudeModel.OPUS": ClaudeModel.OPUS.value,
+            "ClaudeModel.SONNET": ClaudeModel.SONNET.value,
+            "ClaudeModel.HAIKU": ClaudeModel.HAIKU.value,
+        }
+        return legacy_mapping.get(model, model)
 
     async def set_model(self, user_id: int, model: Optional[str]) -> AccountSettings:
         """
