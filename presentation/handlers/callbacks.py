@@ -210,20 +210,81 @@ class CallbackHandlers:
             await callback.answer(f"❌ Ошибка: {e}")
 
     async def handle_docker_logs(self, callback: CallbackQuery) -> None:
-        """Handle docker logs"""
-        container_id = callback.data.split(":")[-1]
+        """Handle docker logs with pagination"""
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        # Parse callback: docker:logs:container_id or docker:logs:container_id:offset
+        parts = callback.data.split(":")
+        container_id = parts[2] if len(parts) > 2 else ""
+        offset = int(parts[3]) if len(parts) > 3 and parts[3].lstrip('-').isdigit() else 0
+
+        lines_per_page = 30
+
         try:
             from infrastructure.monitoring.system_monitor import create_system_monitor
             monitor = create_system_monitor()
-            success, logs = await monitor.docker_logs(container_id, lines=30)
 
-            if success:
-                if len(logs) > 3500:
-                    logs = logs[-3500:]
-                text = f"📋 Логи ({container_id})\n\n{logs}"
-                await callback.message.edit_text(text, parse_mode=None)
-            else:
-                await callback.answer(f"❌ {logs}")
+            # Get more logs to enable pagination
+            # offset=0 means latest, offset=30 means 30 lines before latest, etc.
+            total_lines = 200  # Max lines to fetch
+            success, all_logs = await monitor.docker_logs(container_id, lines=total_lines)
+
+            if not success:
+                await callback.answer(f"❌ {all_logs}")
+                return
+
+            # Split logs into lines
+            log_lines = all_logs.strip().split("\n") if all_logs.strip() else []
+            total = len(log_lines)
+
+            if total == 0:
+                text = f"📋 <b>Логи</b> ({container_id})\n\n<i>(пусто)</i>"
+                buttons = [[InlineKeyboardButton(text="🔙 К контейнерам", callback_data="menu:system:docker:0")]]
+                await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+                await callback.answer()
+                return
+
+            # Calculate pagination (from end, offset 0 = latest)
+            # offset is how many lines to skip from the end
+            offset = max(0, min(offset, total - lines_per_page))
+            start_idx = max(0, total - lines_per_page - offset)
+            end_idx = total - offset
+
+            page_logs = log_lines[start_idx:end_idx]
+            current_page = offset // lines_per_page + 1
+            total_pages = (total + lines_per_page - 1) // lines_per_page
+
+            # Format logs
+            logs_text = "\n".join(page_logs)
+            if len(logs_text) > 3500:
+                logs_text = logs_text[-3500:]
+
+            text = f"📋 <b>Логи</b> ({container_id}) — {current_page}/{total_pages}\n\n<pre>{logs_text}</pre>"
+
+            # Navigation buttons
+            buttons = []
+            nav_row = []
+
+            # "Older" = increase offset (go back in time)
+            if offset + lines_per_page < total:
+                nav_row.append(InlineKeyboardButton(text="⬅️ Старше", callback_data=f"docker:logs:{container_id}:{offset + lines_per_page}"))
+
+            # "Newer" = decrease offset (go forward in time)
+            if offset > 0:
+                new_offset = max(0, offset - lines_per_page)
+                nav_row.append(InlineKeyboardButton(text="Новее ➡️", callback_data=f"docker:logs:{container_id}:{new_offset}"))
+
+            if nav_row:
+                buttons.append(nav_row)
+
+            # Refresh and back buttons
+            buttons.append([
+                InlineKeyboardButton(text="🔄 Обновить", callback_data=f"docker:logs:{container_id}:{offset}"),
+                InlineKeyboardButton(text="🔙 Назад", callback_data="menu:system:docker:0")
+            ])
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
         except Exception as e:
             logger.error(f"Error getting logs: {e}")
