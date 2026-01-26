@@ -155,11 +155,10 @@ class AccountService:
         """
         # Validate Claude Account mode has valid credentials
         if mode == AuthMode.CLAUDE_ACCOUNT:
-            access_token = self.get_access_token_from_credentials()
-            if not access_token:
+            if not self.has_valid_credentials():
                 logger.warning(f"[{user_id}] Attempted to switch to Claude Account without valid credentials")
                 settings = await self.get_settings(user_id)
-                return False, settings, "❌ Нет файла с учётными данными. Загрузите credentials.json или войдите через OAuth."
+                return False, settings, "❌ Нет файла с учётными данными или токен истёк. Загрузите credentials.json или войдите через OAuth."
 
         settings = await self.get_settings(user_id)
         settings.auth_mode = mode
@@ -310,13 +309,11 @@ class AccountService:
             env["_REMOVE_ANTHROPIC_AUTH_TOKEN"] = "1"
             env["_REMOVE_ANTHROPIC_BASE_URL"] = "1"
 
-            # Extract access token from credentials file
-            access_token = self.get_access_token_from_credentials()
-            if access_token:
-                env["ANTHROPIC_API_KEY"] = access_token
-                logger.debug("Using access token from credentials file")
-            else:
-                logger.warning("No access token found in credentials file - Claude Account requires credentials.json")
+            # DO NOT extract or set ANTHROPIC_API_KEY for OAuth tokens!
+            # SDK/CLI will read credentials.json directly from /root/.claude/.credentials.json
+            # OAuth tokens (sk-ant-oat01-...) ONLY work when read by SDK/CLI natively, NOT via env var
+            # Setting OAuth token as ANTHROPIC_API_KEY causes "Invalid API key" error
+            logger.debug("Claude Account mode: SDK will read OAuth credentials from ~/.claude/.credentials.json")
 
             # Set proxy for accessing claude.ai
             env["HTTP_PROXY"] = CLAUDE_PROXY
