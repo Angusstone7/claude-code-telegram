@@ -853,19 +853,23 @@ class ClaudeAgentSDKService:
 
             resume_info = f"resume={session_id[:16]}..." if session_id and not _retry_without_resume else "new session"
             logger.info(f"[{user_id}] Starting SDK task in {work_dir} ({resume_info})")
-            logger.debug(f"[{user_id}] Prompt: {prompt[:200]}")
+            logger.info(f"[{user_id}] Prompt: {prompt[:200]}")
 
             # Use context manager for proper cleanup
             async with ClaudeSDKClient(options=options) as client:
                 self._clients[user_id] = client
 
                 # Send the prompt
-                logger.debug(f"[{user_id}] Sending query to Claude SDK...")
+                logger.info(f"[{user_id}] Sending query to Claude SDK...")
                 await client.query(prompt)
-                logger.debug(f"[{user_id}] Query sent, waiting for response...")
+                logger.info(f"[{user_id}] Query sent, waiting for response...")
 
                 # Process messages
+                message_count = 0
                 async for message in client.receive_response():
+                    message_count += 1
+                    logger.info(f"[{user_id}] Received message #{message_count}: {type(message).__name__}")
+
                     # Check for cancellation (use local reference to avoid race condition)
                     if cancel_event.is_set():
                         logger.info(f"[{user_id}] Task cancelled")
@@ -873,9 +877,11 @@ class ClaudeAgentSDKService:
 
                     # Handle different message types
                     if isinstance(message, AssistantMessage):
+                        logger.info(f"[{user_id}] AssistantMessage with {len(message.content)} blocks")
                         for block in message.content:
                             if isinstance(block, TextBlock):
                                 text = block.text
+                                logger.info(f"[{user_id}] TextBlock: {text[:100]}...")
                                 output_buffer.append(text)
                                 if on_text:
                                     await on_text(text)
@@ -885,6 +891,7 @@ class ClaudeAgentSDKService:
                                     await on_thinking(block.thinking)
 
                             elif isinstance(block, ToolUseBlock):
+                                logger.info(f"[{user_id}] ToolUseBlock: {block.name}")
                                 # Tool use is handled by hooks and can_use_tool
                                 pass
 
