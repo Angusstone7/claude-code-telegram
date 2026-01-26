@@ -785,6 +785,9 @@ class ClaudeAgentSDKService:
             except Exception as e:
                 logger.warning(f"[{user_id}] Error getting user model, using default: {e}")
 
+        # Prevent git from hanging waiting for credentials input
+        os.environ["GIT_TERMINAL_PROMPT"] = "0"
+
         # Apply user environment
         env_changes = []
         for key, value in user_env.items():
