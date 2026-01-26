@@ -633,12 +633,14 @@ class ClaudeAgentSDKService:
                     )
                     self._task_status[user_id] = TaskStatus.WAITING_ANSWER
 
+                    # Clear event BEFORE notifying UI (auto-answer may set it immediately)
+                    question_event.clear()
+
                     # Notify UI
                     if on_question:
                         await on_question(question_text, options)
 
                     # Wait for user response (use local reference)
-                    question_event.clear()
 
                     try:
                         await asyncio.wait_for(question_event.wait(), timeout=300)  # 5 min timeout
@@ -699,12 +701,14 @@ class ClaudeAgentSDKService:
                 )
                 self._task_status[user_id] = TaskStatus.WAITING_PERMISSION
 
+                # Clear event BEFORE notifying UI (YOLO mode may set it immediately)
+                permission_event.clear()
+
                 # Notify UI about permission request
                 if on_permission_request:
                     await on_permission_request(tool_name, details, tool_input)
 
                 # Wait for user response (use local reference)
-                permission_event.clear()
 
                 try:
                     await asyncio.wait_for(permission_event.wait(), timeout=300)  # 5 min timeout
