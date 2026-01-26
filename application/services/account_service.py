@@ -169,11 +169,20 @@ class AccountService:
 
     async def get_model(self, user_id: int) -> Optional[str]:
         """
-        Get preferred model for user.
+        Get preferred model for user, respecting auth mode.
 
-        Returns model ID or None (uses SDK/CLI default).
+        Returns:
+            - None for Claude Account mode (use SDK default)
+            - User's configured model for z.ai API mode
         """
         settings = await self.get_settings(user_id)
+
+        # Claude Account mode: use SDK defaults (claude-sonnet-4-5, etc.)
+        # Do NOT pass user model to avoid sending z.ai models to official API
+        if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
+            return None
+
+        # z.ai API mode: use user's configured model (glm-4.7, etc.)
         return settings.model
 
     async def set_model(self, user_id: int, model: Optional[str]) -> AccountSettings:
