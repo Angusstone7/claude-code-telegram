@@ -318,8 +318,8 @@ class StreamingHandler:
 
     # Telegram limits
     MAX_MESSAGE_LENGTH = 4000  # Leave buffer from 4096
-    DEBOUNCE_INTERVAL = 2.0  # Base seconds between updates
-    MIN_UPDATE_INTERVAL = 1.0  # Minimum seconds between edits
+    DEBOUNCE_INTERVAL = 1.0  # Base seconds between updates (synced with heartbeat)
+    MIN_UPDATE_INTERVAL = 0.8  # Minimum seconds between edits
 
     # Adaptive interval thresholds (bytes)
     LARGE_TEXT_BYTES = 2500  # >2.5KB → 2.5s interval
@@ -347,7 +347,7 @@ class StreamingHandler:
         self._update_lock = asyncio.Lock()
         self._pending_update: Optional[asyncio.Task] = None
         self.reply_markup = reply_markup  # Cancel button etc.
-        self._status_line = ""  # Status line shown at bottom
+        self._status_line = "🤖 Запускаю... • 0с"  # Status line shown at bottom (always visible)
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
         self._todo_message: Optional[Message] = None  # Separate message for todo list
         self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
@@ -484,15 +484,21 @@ class StreamingHandler:
         await self.append(text + "\n")
 
     async def set_status(self, status: str):
-        """Set a status line at the bottom of the current message"""
-        self._status_line = f"🤖 {status}"
+        """Set a status line at the bottom of the current message.
+
+        Status is always visible until finalize() is called.
+        """
+        self._status_line = status
         await self._schedule_update()
 
     def _get_display_buffer(self) -> str:
-        """Get buffer with status line at bottom"""
-        if self._status_line:
-            return f"{self.buffer}\n\n{self._status_line}"
-        return self.buffer
+        """Get buffer with status line at bottom.
+
+        Status line is always shown until message is finalized.
+        """
+        if self.is_finalized or not self._status_line:
+            return self.buffer
+        return f"{self.buffer}\n\n{self._status_line}"
 
     def _calc_edit_interval(self) -> float:
         """Calculate adaptive edit interval based on buffer size."""
