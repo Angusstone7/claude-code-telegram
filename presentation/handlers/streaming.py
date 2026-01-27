@@ -347,7 +347,7 @@ class StreamingHandler:
         self._update_lock = asyncio.Lock()
         self._pending_update: Optional[asyncio.Task] = None
         self.reply_markup = reply_markup  # Cancel button etc.
-        self._status_line = "🤖 Запускаю... • 0с"  # Status line shown at bottom (always visible)
+        self._status_line = "🤖 **Запускаю...** ⠋ (0с)"  # Status line shown at bottom (always visible)
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
         self._todo_message: Optional[Message] = None  # Separate message for todo list
         self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
@@ -985,29 +985,32 @@ class ProgressTracker:
 class HeartbeatTracker:
     """Periodic status updates during long operations.
 
-    Shows elapsed time and current action with dynamic emojis.
+    Shows elapsed time and current action with animated spinner.
     Updates every second for smooth animation.
     """
 
-    # Action-specific emojis that rotate
+    # Braille spinner animation (smooth rotating dots)
+    SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    # Action-specific emojis (static, one per action)
     ACTION_EMOJIS = {
-        "thinking": ["🧠", "💭", "🤔", "💡"],
-        "reading": ["📖", "👀", "🔍", "📄"],
-        "writing": ["✍️", "📝", "💾", "📄"],
-        "editing": ["✏️", "🔧", "📝", "💫"],
-        "searching": ["🔎", "🔍", "🕵️", "🧭"],
-        "executing": ["⚡", "💻", "🔄", "⚙️"],
-        "planning": ["🎯", "📋", "🗺️", "📐"],
-        "analyzing": ["🔬", "📊", "🧪", "📈"],
-        "waiting": ["⏳", "⌛", "🕐", "⏱️"],
-        "default": ["🤖", "🔄", "⚡", "✨"],
+        "thinking": "🧠",
+        "reading": "📖",
+        "writing": "✍️",
+        "editing": "✏️",
+        "searching": "🔎",
+        "executing": "⚡",
+        "planning": "🎯",
+        "analyzing": "🔬",
+        "waiting": "⏳",
+        "default": "🤖",
     }
 
     # Action labels in Russian
     ACTION_LABELS = {
         "thinking": "Думаю",
-        "reading": "Читаю файлы",
-        "writing": "Пишу код",
+        "reading": "Читаю",
+        "writing": "Пишу",
         "editing": "Редактирую",
         "searching": "Ищу",
         "executing": "Выполняю",
@@ -1023,7 +1026,7 @@ class HeartbeatTracker:
         self.start_time = time.time()
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
-        self._emoji_idx = 0
+        self._spinner_idx = 0
         self._current_action = "default"
         self._action_detail = ""  # Additional detail like filename
 
@@ -1042,8 +1045,8 @@ class HeartbeatTracker:
 
         # Truncate detail to keep status line short
         if detail:
-            if len(detail) > 25:
-                detail = "..." + detail[-22:]
+            if len(detail) > 30:
+                detail = "..." + detail[-27:]
             self._action_detail = detail
         else:
             self._action_detail = ""
@@ -1070,10 +1073,12 @@ class HeartbeatTracker:
             try:
                 elapsed = int(time.time() - self.start_time)
 
-                # Get emoji for current action (rotates)
-                emojis = self.ACTION_EMOJIS.get(self._current_action, self.ACTION_EMOJIS["default"])
-                emoji = emojis[self._emoji_idx % len(emojis)]
-                self._emoji_idx += 1
+                # Get animated spinner
+                spinner = self.SPINNERS[self._spinner_idx % len(self.SPINNERS)]
+                self._spinner_idx += 1
+
+                # Get emoji for current action
+                emoji = self.ACTION_EMOJIS.get(self._current_action, "🤖")
 
                 # Format time nicely
                 if elapsed < 60:
@@ -1086,11 +1091,12 @@ class HeartbeatTracker:
                 # Get action label
                 label = self.ACTION_LABELS.get(self._current_action, "Работаю")
 
-                # Build status line
+                # Build status line with formatting:
+                # emoji **action** spinner (time) _detail_
                 if self._action_detail:
-                    status = f"{emoji} {label}: {self._action_detail} • {time_str}"
+                    status = f"{emoji} **{label}** {spinner} ({time_str}) · _{self._action_detail}_"
                 else:
-                    status = f"{emoji} {label}... • {time_str}"
+                    status = f"{emoji} **{label}...** {spinner} ({time_str})"
 
                 await self.streaming.set_status(status)
                 await asyncio.sleep(self.interval)
