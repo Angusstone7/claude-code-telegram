@@ -710,7 +710,8 @@ class MessageHandlers:
         self._hitl.create_permission_event(user_id)
         self._hitl.create_question_event(user_id)
 
-        heartbeat = HeartbeatTracker(streaming, interval=5.0)
+        heartbeat = HeartbeatTracker(streaming, interval=1.0)
+        self._state.set_heartbeat(user_id, heartbeat)
         await heartbeat.start()
 
         try:
@@ -774,6 +775,7 @@ class MessageHandlers:
             await heartbeat.stop()
             self._hitl.cleanup(user_id)
             self._state.remove_streaming_handler(user_id)
+            self._state.remove_heartbeat(user_id)
 
     # === Callback Handlers ===
 
@@ -784,9 +786,51 @@ class MessageHandlers:
             streaming.add_tokens(text)
             await streaming.append(text)
 
+        # Update heartbeat to show Claude is thinking/writing
+        heartbeat = self._state.get_heartbeat(user_id)
+        if heartbeat:
+            heartbeat.set_action("thinking")
+
     async def _on_tool_use(self, user_id: int, tool_name: str, tool_input: dict, message: Message):
         """Handle tool use notification"""
         streaming = self._state.get_streaming_handler(user_id)
+        heartbeat = self._state.get_heartbeat(user_id)
+
+        # Update heartbeat with current action
+        if heartbeat:
+            tool_lower = tool_name.lower()
+            action_map = {
+                "read": "reading",
+                "glob": "searching",
+                "grep": "searching",
+                "ls": "searching",
+                "write": "writing",
+                "edit": "editing",
+                "notebookedit": "editing",
+                "bash": "executing",
+                "task": "thinking",
+                "webfetch": "reading",
+                "websearch": "searching",
+                "todowrite": "planning",
+                "enterplanmode": "planning",
+                "exitplanmode": "planning",
+                "askuserquestion": "waiting",
+            }
+            action = action_map.get(tool_lower, "thinking")
+
+            # Get detail (filename, command, pattern)
+            detail = ""
+            if tool_lower in ("read", "write", "edit", "notebookedit"):
+                detail = tool_input.get("file_path", "")
+                if detail:
+                    detail = detail.split("/")[-1]  # Just filename
+            elif tool_lower == "bash":
+                cmd = tool_input.get("command", "")
+                detail = cmd[:30] if cmd else ""
+            elif tool_lower in ("glob", "grep"):
+                detail = tool_input.get("pattern", "")[:30]
+
+            heartbeat.set_action(action, detail)
 
         if tool_name.lower() == "bash":
             command = tool_input.get("command", "")
@@ -838,6 +882,11 @@ class MessageHandlers:
         if streaming and output:
             streaming.add_tokens(output, multiplier=0.5)
             await streaming.show_tool_result(output, success=True)
+
+        # Reset heartbeat to "thinking" after tool completes
+        heartbeat = self._state.get_heartbeat(user_id)
+        if heartbeat:
+            heartbeat.set_action("analyzing")
 
     async def _on_permission(self, user_id: int, tool_name: str, details: str, message: Message) -> bool:
         """Handle permission request (CLI mode)"""

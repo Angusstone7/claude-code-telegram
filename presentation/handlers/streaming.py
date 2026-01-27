@@ -173,11 +173,11 @@ def get_open_html_tags(text: str) -> list[str]:
 
 def prepare_html_for_telegram(text: str, is_final: bool = False) -> str:
     """
-    Prepare HTML text for Telegram - close unclosed tags, add cursor.
+    Prepare HTML text for Telegram - close unclosed tags.
 
     Args:
         text: HTML text to prepare
-        is_final: If False, adds blinking cursor █ at the end
+        is_final: If True, this is the final message (no longer used for cursor)
     """
     # Remove incomplete opening tag at the end (e.g. "<b" without ">")
     last_open = text.rfind('<')
@@ -189,10 +189,7 @@ def prepare_html_for_telegram(text: str, is_final: bool = False) -> str:
     open_tags = get_open_html_tags(text)
     closing_tags = "".join([f"</{tag}>" for tag in reversed(open_tags)])
 
-    # Add blinking cursor for non-final messages
-    suffix = "" if is_final else " █"
-
-    return text + closing_tags + suffix
+    return text + closing_tags
 
 
 class IncrementalFormatter:
@@ -982,22 +979,73 @@ class ProgressTracker:
 class HeartbeatTracker:
     """Periodic status updates during long operations.
 
-    Shows elapsed time and animated spinner to indicate the bot is still working.
+    Shows elapsed time and current action with dynamic emojis.
+    Updates every second for smooth animation.
     """
 
-    SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    # Action-specific emojis that rotate
+    ACTION_EMOJIS = {
+        "thinking": ["🧠", "💭", "🤔", "💡"],
+        "reading": ["📖", "👀", "🔍", "📄"],
+        "writing": ["✍️", "📝", "💾", "📄"],
+        "editing": ["✏️", "🔧", "📝", "💫"],
+        "searching": ["🔎", "🔍", "🕵️", "🧭"],
+        "executing": ["⚡", "💻", "🔄", "⚙️"],
+        "planning": ["🎯", "📋", "🗺️", "📐"],
+        "analyzing": ["🔬", "📊", "🧪", "📈"],
+        "waiting": ["⏳", "⌛", "🕐", "⏱️"],
+        "default": ["🤖", "🔄", "⚡", "✨"],
+    }
 
-    def __init__(self, streaming: StreamingHandler, interval: float = 5.0):
+    # Action labels in Russian
+    ACTION_LABELS = {
+        "thinking": "Думаю",
+        "reading": "Читаю файлы",
+        "writing": "Пишу код",
+        "editing": "Редактирую",
+        "searching": "Ищу",
+        "executing": "Выполняю",
+        "planning": "Планирую",
+        "analyzing": "Анализирую",
+        "waiting": "Жду ответа",
+        "default": "Работаю",
+    }
+
+    def __init__(self, streaming: StreamingHandler, interval: float = 1.0):
         self.streaming = streaming
         self.interval = interval
         self.start_time = time.time()
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
-        self._spinner_idx = 0
+        self._emoji_idx = 0
+        self._current_action = "default"
+        self._action_detail = ""  # Additional detail like filename
+
+    def set_action(self, action: str, detail: str = ""):
+        """Set current action being performed.
+
+        Args:
+            action: One of: thinking, reading, writing, editing, searching,
+                   executing, planning, analyzing, waiting, default
+            detail: Optional detail like filename (will be truncated)
+        """
+        if action in self.ACTION_EMOJIS:
+            self._current_action = action
+        else:
+            self._current_action = "default"
+
+        # Truncate detail to keep status line short
+        if detail:
+            if len(detail) > 25:
+                detail = "..." + detail[-22:]
+            self._action_detail = detail
+        else:
+            self._action_detail = ""
 
     async def start(self):
         """Start heartbeat updates"""
         self.is_running = True
+        self.start_time = time.time()
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self):
@@ -1011,28 +1059,33 @@ class HeartbeatTracker:
                 pass
 
     async def _loop(self):
-        """Periodic status update loop"""
+        """Periodic status update loop - updates every second"""
         while self.is_running:
             try:
                 elapsed = int(time.time() - self.start_time)
-                spinner = self.SPINNERS[self._spinner_idx % len(self.SPINNERS)]
-                self._spinner_idx += 1
+
+                # Get emoji for current action (rotates)
+                emojis = self.ACTION_EMOJIS.get(self._current_action, self.ACTION_EMOJIS["default"])
+                emoji = emojis[self._emoji_idx % len(emojis)]
+                self._emoji_idx += 1
 
                 # Format time nicely
                 if elapsed < 60:
-                    time_str = f"{elapsed} сек"
+                    time_str = f"{elapsed}с"
                 else:
                     mins = elapsed // 60
                     secs = elapsed % 60
-                    time_str = f"{mins}:{secs:02d}"
+                    time_str = f"{mins}м {secs}с"
 
-                # Get context usage stats
-                tokens, limit, pct = self.streaming.get_context_usage()
-                tokens_k = tokens // 1000
-                limit_k = limit // 1000
+                # Get action label
+                label = self.ACTION_LABELS.get(self._current_action, "Работаю")
 
-                # Format status with context info
-                status = f"Работаю... {spinner} ({time_str}) | ~{tokens_k}K/{limit_k}K ({pct}%)"
+                # Build status line
+                if self._action_detail:
+                    status = f"{emoji} {label}: {self._action_detail} • {time_str}"
+                else:
+                    status = f"{emoji} {label}... • {time_str}"
+
                 await self.streaming.set_status(status)
                 await asyncio.sleep(self.interval)
             except asyncio.CancelledError:

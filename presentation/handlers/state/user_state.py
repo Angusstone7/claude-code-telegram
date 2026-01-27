@@ -14,7 +14,7 @@ from typing import Optional, Dict
 from datetime import datetime
 
 from domain.entities.claude_code_session import ClaudeCodeSession
-from presentation.handlers.streaming import StreamingHandler
+from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ class UserStateManager:
         self._default_working_dir = default_working_dir
         self._sessions: Dict[int, UserSession] = {}
         self._streaming_handlers: Dict[int, StreamingHandler] = {}
+        self._heartbeat_trackers: Dict[int, HeartbeatTracker] = {}
 
     def get_or_create(self, user_id: int) -> UserSession:
         """Get existing user session or create new one"""
@@ -165,6 +166,20 @@ class UserStateManager:
         """Remove streaming handler"""
         self._streaming_handlers.pop(user_id, None)
 
+    # === Heartbeat Tracker ===
+
+    def get_heartbeat(self, user_id: int) -> Optional[HeartbeatTracker]:
+        """Get active heartbeat tracker"""
+        return self._heartbeat_trackers.get(user_id)
+
+    def set_heartbeat(self, user_id: int, tracker: HeartbeatTracker) -> None:
+        """Set heartbeat tracker"""
+        self._heartbeat_trackers[user_id] = tracker
+
+    def remove_heartbeat(self, user_id: int) -> None:
+        """Remove heartbeat tracker"""
+        self._heartbeat_trackers.pop(user_id, None)
+
     # === Context ===
 
     def get_context_id(self, user_id: int) -> Optional[str]:
@@ -182,6 +197,7 @@ class UserStateManager:
     def cleanup(self, user_id: int) -> None:
         """Clean up all state for user (after task completion)"""
         self._streaming_handlers.pop(user_id, None)
+        self._heartbeat_trackers.pop(user_id, None)
         # Keep session for state continuity
         session = self.get(user_id)
         if session and session.claude_session:
