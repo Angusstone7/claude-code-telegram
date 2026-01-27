@@ -33,6 +33,7 @@ class ProcessedFile:
     mime_type: str
     size_bytes: int
     error: Optional[str] = None
+    saved_path: Optional[str] = None  # Путь к сохраненному файлу в рабочей директории
 
     @property
     def is_valid(self) -> bool:
@@ -290,10 +291,51 @@ class FileProcessorService:
             logger.error(f"PDF extraction error: {e}")
             return f"[PDF: ошибка извлечения текста - {str(e)}]"
 
+    def save_to_working_dir(
+        self,
+        processed_file: ProcessedFile,
+        working_dir: str
+    ) -> Optional[str]:
+        """
+        Сохранить файл в рабочую директорию проекта.
+
+        Args:
+            processed_file: Обработанный файл
+            working_dir: Рабочая директория проекта
+
+        Returns:
+            Путь к сохраненному файлу или None при ошибке
+        """
+        try:
+            # Создаём папку .uploads для временных файлов
+            uploads_dir = os.path.join(working_dir, ".uploads")
+            os.makedirs(uploads_dir, exist_ok=True)
+
+            file_path = os.path.join(uploads_dir, processed_file.filename)
+
+            if processed_file.file_type == FileType.IMAGE:
+                # Декодируем base64 и сохраняем
+                image_data = base64.b64decode(processed_file.content)
+                with open(file_path, "wb") as f:
+                    f.write(image_data)
+            else:
+                # Текстовые файлы сохраняем как есть
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(processed_file.content)
+
+            processed_file.saved_path = file_path
+            logger.info(f"File saved to {file_path}")
+            return file_path
+
+        except Exception as e:
+            logger.error(f"Error saving file to working dir: {e}")
+            return None
+
     def format_for_prompt(
         self,
         processed_file: ProcessedFile,
-        task_text: str = ""
+        task_text: str = "",
+        working_dir: Optional[str] = None
     ) -> str:
         """
         Форматировать обработанный файл для добавления в prompt.
@@ -301,6 +343,7 @@ class FileProcessorService:
         Args:
             processed_file: Обработанный файл
             task_text: Текст задачи пользователя
+            working_dir: Рабочая директория для сохранения изображений
 
         Returns:
             Отформатированный prompt с файлом
@@ -321,10 +364,21 @@ class FileProcessorService:
             return file_block
 
         elif processed_file.file_type == FileType.IMAGE:
-            # Для изображений - специальная пометка
-            # Claude SDK может обрабатывать base64 изображения
-            image_marker = f"[Изображение: {processed_file.filename}]"
+            # Для изображений - сохраняем в рабочую директорию и указываем путь
+            if working_dir:
+                saved_path = self.save_to_working_dir(processed_file, working_dir)
+                if saved_path:
+                    image_instruction = (
+                        f"📎 **Изображение сохранено:** `{saved_path}`\n\n"
+                        f"Используй Read tool чтобы прочитать и проанализировать это изображение.\n"
+                        f"Путь к файлу: {saved_path}"
+                    )
+                    if task_text:
+                        return f"{image_instruction}\n\n---\n\n**Задача пользователя:** {task_text}"
+                    return image_instruction
 
+            # Fallback если не удалось сохранить
+            image_marker = f"[Изображение: {processed_file.filename} - не удалось сохранить для анализа]"
             if task_text:
                 return f"{image_marker}\n\n{task_text}"
             return image_marker

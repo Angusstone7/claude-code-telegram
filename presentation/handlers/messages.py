@@ -347,7 +347,8 @@ class MessageHandlers:
                     skill_command += f" {command_args}"
 
                 prompt = f"run {skill_command}"
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt)
+                working_dir = self.get_working_dir(user_id)
+                enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt, working_dir=working_dir)
 
                 file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
                 await message.answer(
@@ -357,7 +358,8 @@ class MessageHandlers:
                 )
                 await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
             else:
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption)
+                working_dir = self.get_working_dir(user_id)
+                enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption, working_dir=working_dir)
                 file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
                 task_preview = caption[:50] + "..." if len(caption) > 50 else caption
                 await message.answer(f"Получен файл: {file_info}\nЗадача: {task_preview}")
@@ -435,7 +437,8 @@ class MessageHandlers:
                     skill_command += f" {command_args}"
 
                 prompt = f"run {skill_command}"
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt)
+                working_dir = self.get_working_dir(user_id)
+                enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt, working_dir=working_dir)
 
                 await message.answer(
                     f"<b>Команда плагина:</b> <code>{skill_command}</code>\n"
@@ -444,7 +447,8 @@ class MessageHandlers:
                 )
                 await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
             else:
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption)
+                working_dir = self.get_working_dir(user_id)
+                enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption, working_dir=working_dir)
                 task_preview = caption[:50] + "..." if len(caption) > 50 else caption
                 await message.answer(f"Изображение получено. Задача: {task_preview}")
                 await self._execute_task_with_prompt(message, enriched_prompt)
@@ -534,8 +538,10 @@ class MessageHandlers:
         reply = message.reply_to_message
         if reply and self._files.has_file(reply.message_id) and self.file_processor_service:
             processed_file = self._files.pop_file(reply.message_id)
+            # Get working directory for saving images
+            working_dir = self.get_working_dir(user_id)
             enriched_prompt = self.file_processor_service.format_for_prompt(
-                processed_file, message.text
+                processed_file, message.text, working_dir=working_dir
             )
             task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
             await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
@@ -547,8 +553,10 @@ class MessageHandlers:
             file_context = await self._extract_reply_file_context(reply, bot)
             if file_context:
                 processed_file, _ = file_context
+                # Get working directory for saving images
+                working_dir = self.get_working_dir(user_id)
                 enriched_prompt = self.file_processor_service.format_for_prompt(
-                    processed_file, message.text
+                    processed_file, message.text, working_dir=working_dir
                 )
                 task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
                 await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
