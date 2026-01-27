@@ -15,6 +15,7 @@ Key features:
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Awaitable, Optional
@@ -658,6 +659,71 @@ class ClaudeAgentSDKService:
                     message="Task cancelled by user",
                     interrupt=True
                 )
+
+            # =====================================================
+            # PROJECT ISOLATION: Check file paths are within project
+            # =====================================================
+            def is_path_within_project(path: str, project_dir: str) -> bool:
+                """Check if path is within the project directory."""
+                try:
+                    # Normalize both paths
+                    normalized_path = os.path.normpath(os.path.abspath(path))
+                    normalized_project = os.path.normpath(os.path.abspath(project_dir))
+                    # Check if path starts with project dir
+                    return normalized_path.startswith(normalized_project + os.sep) or normalized_path == normalized_project
+                except Exception:
+                    return False
+
+            # Tools that work with file paths - need isolation check
+            path_tools = {"Read", "Write", "Edit", "NotebookEdit", "Glob", "Grep", "LS"}
+
+            if tool_name in path_tools:
+                # Get path from tool input
+                file_path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path")
+
+                if file_path:
+                    # If relative path, it's relative to work_dir - that's fine
+                    if not os.path.isabs(file_path):
+                        full_path = os.path.join(work_dir, file_path)
+                    else:
+                        full_path = file_path
+
+                    if not is_path_within_project(full_path, work_dir):
+                        logger.warning(
+                            f"[{user_id}] ISOLATION BLOCK: {tool_name} tried to access "
+                            f"{full_path} outside project {work_dir}"
+                        )
+                        return PermissionResultDeny(
+                            message=f"Access denied: Path '{file_path}' is outside the current project. "
+                                    f"You can only access files within: {work_dir}",
+                            interrupt=False
+                        )
+
+            # Bash commands need special handling for path isolation
+            if tool_name == "Bash":
+                command = tool_input.get("command", "")
+                # Check for dangerous patterns that might access files outside project
+                # List of patterns that clearly indicate file access outside current dir
+                dangerous_patterns = [
+                    # Absolute paths to sensitive directories
+                    r'/etc/',
+                    r'/var/',
+                    r'/usr/',
+                    r'/home/',
+                    r'/tmp/',
+                    # Parent directory traversal outside project
+                    r'\.\./\.\.',  # More than one level up (suspicious)
+                ]
+                for pattern in dangerous_patterns:
+                    if re.search(pattern, command):
+                        # Allow read-only commands even to sensitive paths
+                        read_only_commands = ['cat', 'less', 'head', 'tail', 'grep', 'find', 'ls', 'tree']
+                        is_read_only = any(command.strip().startswith(cmd) for cmd in read_only_commands)
+                        if not is_read_only:
+                            logger.warning(
+                                f"[{user_id}] BASH ISOLATION: Potentially dangerous command detected: {command[:100]}"
+                            )
+                            # Don't block, but warn user in permission request
 
             # Tools that always need approval
             dangerous_tools = {"Bash", "Write", "Edit", "NotebookEdit"}

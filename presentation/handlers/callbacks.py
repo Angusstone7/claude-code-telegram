@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, F
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 from presentation.keyboards.keyboards import CallbackData
 from typing import Optional
@@ -931,14 +931,24 @@ class CallbackHandlers:
             if hasattr(self.message_handlers, 'set_working_dir'):
                 self.message_handlers.set_working_dir(user_id, folder_path)
 
+            # Create keyboard with project actions
+            project_created_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📁 К списку проектов", callback_data="project:back"),
+                    InlineKeyboardButton(text="📂 Главное меню", callback_data="menu:main")
+                ]
+            ])
+
             await callback.message.edit_text(
-                f"✅ Проект создан:\n\n"
-                f"{project.name}\n"
-                f"Путь: {project.working_dir}\n\n"
-                f"Готово к работе! Отправьте первое сообщение.",
-                parse_mode=None
+                f"✅ <b>Проект создан:</b>\n\n"
+                f"📁 {project.name}\n"
+                f"📂 Путь: <code>{project.working_dir}</code>\n\n"
+                f"✨ Готово к работе! Отправьте первое сообщение.\n\n"
+                f"<i>Используйте кнопки ниже для навигации:</i>",
+                parse_mode="HTML",
+                reply_markup=project_created_keyboard
             )
-            await callback.answer(f"Создан {project.name}")
+            await callback.answer(f"✅ Создан {project.name}")
 
         except Exception as e:
             logger.error(f"Error creating project from folder: {e}")
@@ -1007,14 +1017,25 @@ class CallbackHandlers:
                 if hasattr(self.message_handlers, 'set_working_dir'):
                     self.message_handlers.set_working_dir(user_id, folder_path)
 
+                # Create keyboard with project actions
+                project_created_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="📁 К списку проектов", callback_data="project:back"),
+                        InlineKeyboardButton(text="📂 Главное меню", callback_data="menu:main")
+                    ]
+                ])
+
                 await message.reply(
-                    f"✅ Проект создан:\n\n"
+                    f"✅ <b>Проект создан:</b>\n\n"
                     f"📁 {folder_name}\n"
-                    f"Путь: {folder_path}\n\n"
-                    f"Готово к работе!"
+                    f"📂 Путь: <code>{folder_path}</code>\n\n"
+                    f"✨ Готово к работе! Отправьте первое сообщение.\n\n"
+                    f"<i>Используйте кнопки ниже для навигации:</i>",
+                    parse_mode="HTML",
+                    reply_markup=project_created_keyboard
                 )
             else:
-                await message.reply(f"✅ Папка создана: {folder_path}")
+                await message.reply(f"✅ Папка создана: <code>{folder_path}</code>", parse_mode="HTML")
 
             return True
 
