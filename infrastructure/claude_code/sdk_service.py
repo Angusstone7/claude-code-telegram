@@ -632,6 +632,9 @@ class ClaudeAgentSDKService:
             """
             nonlocal user_id
 
+            # Log ALL tool permission requests for debugging
+            logger.info(f"[{user_id}] can_use_tool called: tool={tool_name}")
+
             # Check if cancelled (use local reference to avoid race condition)
             if cancel_event.is_set():
                 return PermissionResultDeny(
@@ -705,8 +708,10 @@ class ClaudeAgentSDKService:
             # This is intentional - plans should always be reviewed by user before execution.
             # This check comes BEFORE permission_mode check to ensure it's never bypassed.
             if tool_name == "ExitPlanMode":
+                logger.info(f"[{user_id}] ExitPlanMode detected - starting plan approval flow")
                 # Extract plan info
                 plan_file = tool_input.get("planFile", "")
+                logger.info(f"[{user_id}] Plan file: {plan_file}, on_plan_request callback: {on_plan_request is not None}")
 
                 self._task_status[user_id] = TaskStatus.WAITING_PERMISSION
 
@@ -715,7 +720,11 @@ class ClaudeAgentSDKService:
 
                 # Notify UI about plan approval request
                 if on_plan_request:
+                    logger.info(f"[{user_id}] Calling on_plan_request callback...")
                     await on_plan_request(plan_file, tool_input)
+                    logger.info(f"[{user_id}] on_plan_request callback completed, waiting for user response...")
+                else:
+                    logger.warning(f"[{user_id}] on_plan_request callback is None - plan approval UI will not be shown!")
 
                 # Wait for user response
                 try:

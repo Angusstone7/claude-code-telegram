@@ -981,6 +981,7 @@ class MessageHandlers:
         NOTE: Plan approval is ALWAYS shown with inline keyboard, even in YOLO mode.
         Plans should always be reviewed by user before execution - this is intentional.
         """
+        logger.info(f"[{user_id}] _on_plan_request called: plan_file={plan_file}")
         request_id = str(uuid.uuid4())[:8]
 
         plan_content = ""
