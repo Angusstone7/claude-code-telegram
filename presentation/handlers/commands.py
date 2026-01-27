@@ -850,6 +850,29 @@ reply, message.bot
         )
 
 
+    async def test_question(self, message: Message) -> None:
+        """Test AskUserQuestion keyboard - shows sample question with inline buttons"""
+        user_id = message.from_user.id
+
+        # Sample options like Claude would send
+        options = [
+            "Python + FastAPI",
+            "Node.js + Express",
+            "Go + Gin",
+            "Rust + Actix"
+        ]
+
+        request_id = "test123"
+
+        await message.answer(
+            "<b>❓ Тестовый вопрос от Claude</b>\n\n"
+            "Какой стек технологий использовать для API?\n\n"
+            "<i>Выберите вариант или введите свой:</i>",
+            parse_mode="HTML",
+            reply_markup=Keyboards.claude_question(user_id, options, request_id)
+        )
+
+
 def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     """
     Register command handlers.
@@ -862,6 +885,9 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
 
     # Emergency cancel command (always available)
     router.message.register(handlers.cancel, Command("cancel"))
+
+    # Test command for AskUserQuestion keyboard
+    router.message.register(handlers.test_question, Command("test_question"))
 
     # Claude Code plugin commands passthrough
     # These are forwarded to Claude Code SDK/CLI instead of being handled by bot
