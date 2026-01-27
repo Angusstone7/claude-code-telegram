@@ -538,8 +538,10 @@ class MessageHandlers:
                 processed_file, message.text
             )
             task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
-            await message.answer(f"Файл: {processed_file.filename}\nЗадача: {task_preview}")
-            message.text = enriched_prompt
+            await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
+            # Execute task with file context and return
+            await self.handle_text(message, prompt_override=enriched_prompt)
+            return
 
         elif reply and (reply.document or reply.photo) and self.file_processor_service:
             file_context = await self._extract_reply_file_context(reply, bot)
@@ -549,8 +551,10 @@ class MessageHandlers:
                     processed_file, message.text
                 )
                 task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
-                await message.answer(f"Файл: {processed_file.filename}\nЗадача: {task_preview}")
-                message.text = enriched_prompt
+                await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
+                # Execute task with file context and return
+                await self.handle_text(message, prompt_override=enriched_prompt)
+                return
 
         # === SPECIAL INPUT MODES ===
         if self._hitl.is_expecting_answer(user_id):
