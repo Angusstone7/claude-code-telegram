@@ -363,8 +363,9 @@ class MessageHandlers:
                 await message.answer(f"Получен файл: {file_info}\nЗадача: {task_preview}")
                 await self._execute_task_with_prompt(message, enriched_prompt)
         else:
-            self._files.cache_file(message.message_id, processed)
-            await message.answer(
+            # Send confirmation and cache file with the BOT's message ID
+            # (user will reply to bot's message, not original document)
+            bot_msg = await message.answer(
                 f"<b>Файл получен:</b> {processed.filename}\n"
                 f"<b>Размер:</b> {processed.size_bytes // 1024} KB\n"
                 f"<b>Тип:</b> {processed.file_type.value}\n\n"
@@ -372,6 +373,9 @@ class MessageHandlers:
                 f"или командой плагина (например, <code>/ralph-loop</code>)",
                 parse_mode="HTML"
             )
+            # Cache file with bot's response message ID so reply lookup works
+            self._files.cache_file(bot_msg.message_id, processed)
+            logger.info(f"[{user_id}] Document cached with bot message ID: {bot_msg.message_id}")
 
     async def handle_photo(self, message: Message) -> None:
         """Handle photo messages"""
@@ -445,12 +449,16 @@ class MessageHandlers:
                 await message.answer(f"Изображение получено. Задача: {task_preview}")
                 await self._execute_task_with_prompt(message, enriched_prompt)
         else:
-            self._files.cache_file(message.message_id, processed)
-            await message.answer(
+            # Send confirmation and cache file with the BOT's message ID
+            # (user will reply to bot's message, not original photo)
+            bot_msg = await message.answer(
                 "<b>Изображение получено</b>\n\n"
                 "Сделайте <b>reply</b> на это сообщение с текстом задачи.",
                 parse_mode="HTML"
             )
+            # Cache file with bot's response message ID so reply lookup works
+            self._files.cache_file(bot_msg.message_id, processed)
+            logger.info(f"[{user_id}] Photo cached with bot message ID: {bot_msg.message_id}")
 
     async def _extract_reply_file_context(
         self, reply_message: Message, bot: Bot
