@@ -192,117 +192,148 @@ def prepare_html_for_telegram(text: str, is_final: bool = False) -> str:
     return text + closing_tags
 
 
-class IncrementalFormatter:
+class StableHTMLFormatter:
     """
-    Incremental formatter with stable block caching.
+    Stable HTML formatter that ONLY outputs valid HTML.
 
-    Caches HTML for already-processed closed constructs,
-    only re-formats the unstable "tail" of the text.
+    Strategy:
+    - Find the last stable point in markdown (closed code blocks, paragraphs)
+    - Only format and return content up to that stable point
+    - Never return partial/broken HTML
 
-    This prevents flickering by ensuring stable parts
-    produce identical HTML on every call.
-
-    IMPORTANT: Preserves initial text (header) to avoid cutting first letters.
+    This completely eliminates flickering by only sending valid HTML.
     """
 
     def __init__(self):
-        self.stable_html = ""  # Cached HTML for stable parts
-        self.stable_raw_length = 0  # Length of processed raw text
-        self._initial_formatted = False  # Track if we've formatted initial content
-        self._min_stable_chars = 50  # Minimum chars before considering stable boundary
+        self._last_sent_html = ""  # Last HTML we actually sent
+        self._last_sent_length = 0  # Length of raw text that produced it
 
-    def format(self, raw_text: str, is_final: bool = False) -> str:
+    def format(self, raw_text: str, is_final: bool = False) -> tuple[str, bool]:
         """
-        Incremental formatting.
+        Format markdown to valid HTML.
 
         Args:
             raw_text: Full raw Markdown text
-            is_final: Whether this is the final format (closes all blocks)
+            is_final: Whether this is the final format (force output all)
 
         Returns:
-            stable_html + newly_formatted_unstable_html
+            Tuple of (html_text, should_update)
+            - html_text: Valid HTML string
+            - should_update: True if content changed and should be sent
         """
         if not raw_text:
-            return ""
+            return "", False
 
-        if len(raw_text) < self.stable_raw_length:
-            # Text got shorter (rare) - reset cache
-            self.reset()
+        if is_final:
+            # Final - format everything and force close tags
+            html_text = markdown_to_html(raw_text, is_streaming=False)
+            html_text = prepare_html_for_telegram(html_text, is_final=True)
+            changed = html_text != self._last_sent_html
+            self._last_sent_html = html_text
+            self._last_sent_length = len(raw_text)
+            return html_text, changed
 
-        # For very short text, format everything without caching
-        # This prevents cutting off initial characters
-        if len(raw_text) < self._min_stable_chars:
-            return markdown_to_html(raw_text, is_streaming=not is_final)
+        # Find stable boundary - point where all markdown constructs are closed
+        stable_end = self._find_stable_end(raw_text)
 
-        # Find stability boundary
-        stable_boundary = self._find_stable_boundary(raw_text)
+        if stable_end == 0:
+            # Nothing stable yet - return last sent or empty
+            return self._last_sent_html, False
 
-        if stable_boundary > self.stable_raw_length:
-            # New stable parts appeared - format and cache them
-            new_stable = raw_text[self.stable_raw_length:stable_boundary]
-            new_stable_html = markdown_to_html(new_stable, is_streaming=False)
-            self.stable_html += new_stable_html
-            self.stable_raw_length = stable_boundary
+        # Only format the stable part
+        stable_text = raw_text[:stable_end]
 
-        # Format unstable tail
-        unstable_part = raw_text[stable_boundary:]
-        if unstable_part:
-            unstable_html = markdown_to_html(unstable_part, is_streaming=not is_final)
-        else:
-            unstable_html = ""
+        # Check if we have new stable content
+        if stable_end <= self._last_sent_length:
+            # No new stable content
+            return self._last_sent_html, False
 
-        return self.stable_html + unstable_html
+        # Format the stable part
+        html_text = markdown_to_html(stable_text, is_streaming=False)
+        html_text = prepare_html_for_telegram(html_text, is_final=True)
 
-    def _find_stable_boundary(self, text: str) -> int:
+        # Verify it's valid
+        if not self._is_valid_html(html_text):
+            # Something went wrong - don't update
+            return self._last_sent_html, False
+
+        # Update cache and return
+        self._last_sent_html = html_text
+        self._last_sent_length = stable_end
+        return html_text, True
+
+    def _find_stable_end(self, text: str) -> int:
         """
-        Find position up to which text is stable.
+        Find the end position of stable (complete) content.
 
-        Text is stable when:
-        - All ``` are paired (code blocks closed)
-        - After last closed block there's a paragraph separator \\n\\n
-        - We have enough content to safely cache (min_stable_chars)
+        Content is stable when:
+        - All code blocks (```) are closed
+        - All inline formatting (**bold**, *italic*, `code`) is closed
+        - We're at a paragraph boundary (double newline)
         """
-        # Find all closed code blocks
-        closed_blocks = list(re.finditer(r'```[\s\S]*?```', text))
+        # Check for unclosed code blocks
+        code_fence_count = text.count('```')
+        if code_fence_count % 2 != 0:
+            # Find last complete code block
+            last_open = text.rfind('```')
+            # Search backwards for the opening fence
+            text = text[:last_open]
 
-        if closed_blocks:
-            last_closed_end = closed_blocks[-1].end()
-        else:
-            last_closed_end = 0
-
-        # After last closed block, look for paragraph separator
-        after_blocks = text[last_closed_end:]
-
-        # Find last \n\n (end of paragraph)
-        last_para = after_blocks.rfind('\n\n')
+        # Find last paragraph boundary (double newline)
+        last_para = text.rfind('\n\n')
         if last_para > 0:
-            # Check that paragraph is "stable" (all markers paired)
-            para_text = after_blocks[:last_para]
-            if self._is_paragraph_stable(para_text):
-                boundary = last_closed_end + last_para + 2
-                # Only return if we have enough content cached
-                if boundary >= self._min_stable_chars:
-                    return boundary
+            candidate = text[:last_para]
+            # Verify all inline markers are paired
+            if self._are_markers_paired(candidate):
+                return last_para
 
-        # If we have closed code blocks, that's a stable point
-        if last_closed_end >= self._min_stable_chars:
-            return last_closed_end
+        # Try to find last complete line
+        last_newline = text.rfind('\n')
+        if last_newline > 0:
+            candidate = text[:last_newline]
+            if self._are_markers_paired(candidate):
+                return last_newline
 
-        return 0  # Nothing stable yet
+        # Check if entire text is stable
+        if self._are_markers_paired(text):
+            return len(text)
 
-    def _is_paragraph_stable(self, text: str) -> bool:
-        """Check that all inline markers are paired."""
-        markers = ['**', '__', '~~', '`']
+        return 0
+
+    def _are_markers_paired(self, text: str) -> bool:
+        """Check that all markdown markers are paired."""
+        # Check code blocks
+        if text.count('```') % 2 != 0:
+            return False
+
+        # For inline markers, we need smarter checking
+        # because * can be in text naturally
+        markers = ['**', '__', '~~']
         for marker in markers:
             if text.count(marker) % 2 != 0:
                 return False
+
+        # Check backticks (but not triple)
+        # Remove code blocks first
+        text_no_blocks = re.sub(r'```[\s\S]*?```', '', text)
+        if text_no_blocks.count('`') % 2 != 0:
+            return False
+
         return True
 
+    def _is_valid_html(self, html_text: str) -> bool:
+        """Verify HTML has all tags closed."""
+        open_tags = get_open_html_tags(html_text)
+        return len(open_tags) == 0
+
     def reset(self):
-        """Reset cache for new message."""
-        self.stable_html = ""
-        self.stable_raw_length = 0
-        self._initial_formatted = False
+        """Reset formatter state for new message."""
+        self._last_sent_html = ""
+        self._last_sent_length = 0
+
+
+# Alias for backward compatibility
+IncrementalFormatter = StableHTMLFormatter
 
 
 class StreamingHandler:
@@ -787,42 +818,57 @@ class StreamingHandler:
             logger.error(f"Error updating message: {e}")
 
     async def _edit_current_message(self, text: str, is_final: bool = False):
-        """Edit the current message with new text using incremental formatting"""
-        if self.current_message:
-            # Use incremental formatter to prevent flickering
-            if is_final:
-                # Final message - full format for reliability, then reset formatter
-                html_text = markdown_to_html(text, is_streaming=False)
-                self._formatter.reset()
-            else:
-                # Streaming - use incremental formatter (caches stable parts)
-                html_text = self._formatter.format(text, is_final=False)
+        """Edit the current message with valid HTML only.
 
-            # Prepare for Telegram - close unclosed tags
-            html_text = prepare_html_for_telegram(html_text, is_final=is_final)
+        Uses StableHTMLFormatter to ensure we only send properly closed HTML.
+        This prevents flickering from broken/partial tags.
+        """
+        if not self.current_message:
+            return
 
-            # Add status line AFTER HTML formatting (status is already HTML)
-            status = self._get_status_line()
-            if status:
+        # Get status line (already HTML formatted)
+        status = self._get_status_line()
+
+        # Use formatter to get valid HTML
+        html_text, should_update = self._formatter.format(text, is_final=is_final)
+
+        # If nothing changed in content, still update for status line changes
+        # (status changes every second with spinner)
+        if not should_update and not status:
+            return
+
+        # If we have no HTML yet but have status, show just status
+        if not html_text and status:
+            html_text = ""
+
+        # Add status line
+        if status:
+            if html_text:
                 html_text = f"{html_text}\n\n{status}"
+            else:
+                html_text = status
 
-            try:
-                await self.current_message.edit_text(
-                    html_text,
-                    parse_mode="HTML",
-                    reply_markup=self.reply_markup
-                )
-            except TelegramBadRequest:
-                # Fallback without formatting
-                plain_text = text
-                if status:
-                    # Strip HTML from status for plain text
-                    import re
-                    plain_status = re.sub(r'<[^>]+>', '', status)
-                    plain_text = f"{text}\n\n{plain_status}"
-                await self.current_message.edit_text(
-                    plain_text, parse_mode=None, reply_markup=self.reply_markup
-                )
+        if not html_text:
+            return
+
+        try:
+            await self.current_message.edit_text(
+                html_text,
+                parse_mode="HTML",
+                reply_markup=self.reply_markup
+            )
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass  # Same content, ignore
+            else:
+                # Fallback - strip all HTML and send plain
+                plain_text = re.sub(r'<[^>]+>', '', html_text)
+                try:
+                    await self.current_message.edit_text(
+                        plain_text, parse_mode=None, reply_markup=self.reply_markup
+                    )
+                except Exception:
+                    pass  # Give up on this update
 
     async def _send_new_message(self, text: str, is_final: bool = False) -> Message:
         """Send a new message (converts Markdown to HTML)"""
