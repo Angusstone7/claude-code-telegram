@@ -347,7 +347,7 @@ class StreamingHandler:
         self._update_lock = asyncio.Lock()
         self._pending_update: Optional[asyncio.Task] = None
         self.reply_markup = reply_markup  # Cancel button etc.
-        self._status_line = "🤖 **Запускаю...** ⠋ (0с)"  # Status line shown at bottom (always visible)
+        self._status_line = "🤖 <b>Запускаю...</b> ⠋ (0с)"  # Status line shown at bottom (always visible, HTML formatted)
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
         self._todo_message: Optional[Message] = None  # Separate message for todo list
         self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
@@ -492,13 +492,20 @@ class StreamingHandler:
         await self._schedule_update()
 
     def _get_display_buffer(self) -> str:
-        """Get buffer with status line at bottom.
+        """Get buffer content only (without status).
 
-        Status line is always shown until message is finalized.
+        Status line is added separately after HTML formatting.
+        """
+        return self.buffer
+
+    def _get_status_line(self) -> str:
+        """Get status line (already HTML formatted).
+
+        Returns empty string if finalized or no status.
         """
         if self.is_finalized or not self._status_line:
-            return self.buffer
-        return f"{self.buffer}\n\n{self._status_line}"
+            return ""
+        return self._status_line
 
     def _calc_edit_interval(self) -> float:
         """Calculate adaptive edit interval based on buffer size."""
@@ -791,8 +798,14 @@ class StreamingHandler:
                 # Streaming - use incremental formatter (caches stable parts)
                 html_text = self._formatter.format(text, is_final=False)
 
-            # Prepare for Telegram - close unclosed tags, add cursor if not final
+            # Prepare for Telegram - close unclosed tags
             html_text = prepare_html_for_telegram(html_text, is_final=is_final)
+
+            # Add status line AFTER HTML formatting (status is already HTML)
+            status = self._get_status_line()
+            if status:
+                html_text = f"{html_text}\n\n{status}"
+
             try:
                 await self.current_message.edit_text(
                     html_text,
@@ -801,8 +814,14 @@ class StreamingHandler:
                 )
             except TelegramBadRequest:
                 # Fallback without formatting
+                plain_text = text
+                if status:
+                    # Strip HTML from status for plain text
+                    import re
+                    plain_status = re.sub(r'<[^>]+>', '', status)
+                    plain_text = f"{text}\n\n{plain_status}"
                 await self.current_message.edit_text(
-                    text, parse_mode=None, reply_markup=self.reply_markup
+                    plain_text, parse_mode=None, reply_markup=self.reply_markup
                 )
 
     async def _send_new_message(self, text: str, is_final: bool = False) -> Message:
@@ -1091,12 +1110,12 @@ class HeartbeatTracker:
                 # Get action label
                 label = self.ACTION_LABELS.get(self._current_action, "Работаю")
 
-                # Build status line with formatting:
-                # emoji **action** spinner (time) _detail_
+                # Build status line with HTML formatting (stable, no flickering):
+                # emoji <b>action</b> spinner (time) <i>detail</i>
                 if self._action_detail:
-                    status = f"{emoji} **{label}** {spinner} ({time_str}) · _{self._action_detail}_"
+                    status = f"{emoji} <b>{label}</b> {spinner} ({time_str}) · <i>{self._action_detail}</i>"
                 else:
-                    status = f"{emoji} **{label}...** {spinner} ({time_str})"
+                    status = f"{emoji} <b>{label}...</b> {spinner} ({time_str})"
 
                 await self.streaming.set_status(status)
                 await asyncio.sleep(self.interval)

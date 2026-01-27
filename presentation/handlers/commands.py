@@ -886,6 +886,9 @@ def register_handlers(router: Router, handlers: CommandHandlers) -> None:
     # Emergency cancel command (always available)
     router.message.register(handlers.cancel, Command("cancel"))
 
+    # YOLO mode toggle
+    router.message.register(handlers.yolo, Command("yolo"))
+
     # Test command for AskUserQuestion keyboard
     router.message.register(handlers.test_question, Command("test_question"))
 
