@@ -13,6 +13,7 @@ Follows Single Responsibility Principle by separating:
 """
 
 import asyncio
+import html
 import logging
 import os
 import re
@@ -810,10 +811,11 @@ class MessageHandlers:
             session.set_waiting_approval(request_id, tool_name, details)
 
         text = f"<b>Запрос разрешения</b>\n\n"
-        text += f"<b>Инструмент:</b> <code>{tool_name}</code>\n"
+        text += f"<b>Инструмент:</b> <code>{html.escape(tool_name)}</code>\n"
         if details:
             display_details = details if len(details) < 500 else details[:500] + "..."
-            text += f"<b>Детали:</b>\n<pre>{display_details}</pre>"
+            # Escape HTML entities to prevent parse errors (e.g., <<'EOF' -> &lt;&lt;'EOF')
+            text += f"<b>Детали:</b>\n<pre>{html.escape(display_details)}</pre>"
 
         await message.answer(
             text,
@@ -849,7 +851,7 @@ class MessageHandlers:
 
         self._hitl.set_question_context(user_id, request_id, question, options)
 
-        text = f"<b>Вопрос</b>\n\n{question}"
+        text = f"<b>Вопрос</b>\n\n{html.escape(question)}"
 
         if options:
             await message.answer(
@@ -859,7 +861,7 @@ class MessageHandlers:
             )
         else:
             self._hitl.set_expecting_answer(user_id, True)
-            await message.answer(text + "\n\nВведите ваш ответ:", parse_mode=None)
+            await message.answer(f"<b>Вопрос</b>\n\n{html.escape(question)}\n\nВведите ваш ответ:", parse_mode="HTML")
 
         event = self._hitl.get_question_event(user_id)
         if event:
@@ -923,10 +925,11 @@ class MessageHandlers:
             session.set_waiting_approval(request_id, tool_name, details)
 
         text = f"<b>Запрос разрешения</b>\n\n"
-        text += f"<b>Инструмент:</b> <code>{tool_name}</code>\n"
+        text += f"<b>Инструмент:</b> <code>{html.escape(tool_name)}</code>\n"
         if details:
             display_details = details if len(details) < 500 else details[:500] + "..."
-            text += f"<b>Детали:</b>\n<pre>{display_details}</pre>"
+            # Escape HTML entities to prevent parse errors (e.g., <<'EOF' -> &lt;&lt;'EOF')
+            text += f"<b>Детали:</b>\n<pre>{html.escape(display_details)}</pre>"
 
         perm_msg = await message.answer(
             text,
@@ -951,7 +954,7 @@ class MessageHandlers:
 
         self._hitl.set_question_context(user_id, request_id, question, options)
 
-        text = f"<b>Вопрос</b>\n\n{question}"
+        text = f"<b>Вопрос</b>\n\n{html.escape(question)}"
 
         if options:
             q_msg = await message.answer(
@@ -962,7 +965,7 @@ class MessageHandlers:
             self._hitl.set_question_context(user_id, request_id, question, options, q_msg)
         else:
             self._hitl.set_expecting_answer(user_id, True)
-            q_msg = await message.answer(text + "\n\nВведите ваш ответ:", parse_mode=None)
+            q_msg = await message.answer(f"<b>Вопрос</b>\n\n{html.escape(question)}\n\nВведите ваш ответ:", parse_mode="HTML")
             self._hitl.set_question_context(user_id, request_id, question, options, q_msg)
 
     async def _on_plan_request(
@@ -1112,7 +1115,7 @@ class MessageHandlers:
 
             if result.error and not result.cancelled:
                 await message.answer(
-                    f"<b>Завершено с ошибкой:</b>\n<pre>{result.error[:1000]}</pre>",
+                    f"<b>Завершено с ошибкой:</b>\n<pre>{html.escape(result.error[:1000])}</pre>",
                     parse_mode="HTML"
                 )
 
