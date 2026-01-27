@@ -129,6 +129,20 @@ class MessageHandlers:
         """Get user's working directory"""
         return self._state.get_working_dir(user_id)
 
+    async def get_project_working_dir(self, user_id: int) -> str:
+        """Get working directory from current project (async, more accurate)"""
+        if self.project_service:
+            try:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self.project_service.get_current(uid)
+                if project and project.working_dir:
+                    return project.working_dir
+            except Exception as e:
+                logger.warning(f"Error getting project working_dir: {e}")
+        # Fallback to state
+        return self._state.get_working_dir(user_id)
+
     def set_working_dir(self, user_id: int, path: str):
         """Set user's working directory"""
         self._state.set_working_dir(user_id, path)
@@ -347,7 +361,7 @@ class MessageHandlers:
                     skill_command += f" {command_args}"
 
                 prompt = f"run {skill_command}"
-                working_dir = self.get_working_dir(user_id)
+                working_dir = await self.get_project_working_dir(user_id)
                 enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt, working_dir=working_dir)
 
                 file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
@@ -358,7 +372,7 @@ class MessageHandlers:
                 )
                 await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
             else:
-                working_dir = self.get_working_dir(user_id)
+                working_dir = await self.get_project_working_dir(user_id)
                 enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption, working_dir=working_dir)
                 file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
                 task_preview = caption[:50] + "..." if len(caption) > 50 else caption
@@ -437,7 +451,7 @@ class MessageHandlers:
                     skill_command += f" {command_args}"
 
                 prompt = f"run {skill_command}"
-                working_dir = self.get_working_dir(user_id)
+                working_dir = await self.get_project_working_dir(user_id)
                 enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt, working_dir=working_dir)
 
                 await message.answer(
@@ -447,7 +461,7 @@ class MessageHandlers:
                 )
                 await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
             else:
-                working_dir = self.get_working_dir(user_id)
+                working_dir = await self.get_project_working_dir(user_id)
                 enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption, working_dir=working_dir)
                 task_preview = caption[:50] + "..." if len(caption) > 50 else caption
                 await message.answer(f"Изображение получено. Задача: {task_preview}")
@@ -536,8 +550,8 @@ class MessageHandlers:
         reply = message.reply_to_message
         if reply and self._files.has_file(reply.message_id) and self.file_processor_service:
             processed_file = self._files.pop_file(reply.message_id)
-            # Get working directory for saving images
-            working_dir = self.get_working_dir(user_id)
+            # Get working directory for saving images (from project)
+            working_dir = await self.get_project_working_dir(user_id)
             enriched_prompt = self.file_processor_service.format_for_prompt(
                 processed_file, message.text, working_dir=working_dir
             )
@@ -551,8 +565,8 @@ class MessageHandlers:
             file_context = await self._extract_reply_file_context(reply, bot)
             if file_context:
                 processed_file, _ = file_context
-                # Get working directory for saving images
-                working_dir = self.get_working_dir(user_id)
+                # Get working directory for saving images (from project)
+                working_dir = await self.get_project_working_dir(user_id)
                 enriched_prompt = self.file_processor_service.format_for_prompt(
                     processed_file, message.text, working_dir=working_dir
                 )
