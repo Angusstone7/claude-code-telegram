@@ -685,16 +685,32 @@ class Keyboards:
                 )
             ])
 
-        # Back button if not at root
+        # Navigation row
+        nav_row = []
+
+        # Back/Up button
         if current_path != "/root/projects":
             parent = os.path.dirname(current_path)
-            buttons.append([
+            nav_row.append(
                 InlineKeyboardButton(text="⬆️ Наверх", callback_data=f"project:browse:{parent}")
+            )
+
+        # Refresh button
+        nav_row.append(
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="project:browse")
+        )
+
+        buttons.append(nav_row)
+
+        # Create folder button (only at root level)
+        if current_path == "/root/projects":
+            buttons.append([
+                InlineKeyboardButton(text="📁 Создать папку", callback_data="project:mkdir")
             ])
 
-        # Refresh
+        # Back to menu button
         buttons.append([
-            InlineKeyboardButton(text="🔄 Обновить", callback_data="project:browse")
+            InlineKeyboardButton(text="◀️ Назад", callback_data="menu:projects")
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)

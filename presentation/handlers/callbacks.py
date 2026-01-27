@@ -29,6 +29,29 @@ class CallbackHandlers:
         self.project_service = project_service
         self.context_service = context_service
         self.file_browser_service = file_browser_service
+        self._user_states = {}  # For tracking user input states (e.g., waiting for folder name)
+
+    def get_user_state(self, user_id: int) -> dict | None:
+        """Get current user state if any"""
+        return self._user_states.get(user_id)
+
+    async def process_user_input(self, message) -> bool:
+        """
+        Process user input based on current state.
+        Returns True if input was consumed, False otherwise.
+        """
+        user_id = message.from_user.id
+        state = self._user_states.get(user_id)
+
+        if not state:
+            return False
+
+        state_name = state.get("state")
+
+        if state_name == "waiting_project_mkdir":
+            return await self.handle_project_mkdir_input(message, message.text.strip())
+
+        return False
 
     async def handle_command_approve(self, callback: CallbackQuery) -> None:
         """Handle command approval callback"""
@@ -920,6 +943,85 @@ class CallbackHandlers:
         except Exception as e:
             logger.error(f"Error creating project from folder: {e}")
             await callback.answer(f"❌ Ошибка: {e}")
+
+    async def handle_project_mkdir(self, callback: CallbackQuery) -> None:
+        """Handle create folder - prompt for folder name"""
+        from presentation.keyboards.keyboards import Keyboards
+
+        user_id = callback.from_user.id
+
+        # Set state to wait for folder name
+        self._user_states[user_id] = {
+            "state": "waiting_project_mkdir",
+            "message_id": callback.message.message_id
+        }
+
+        text = (
+            "📁 <b>Создание папки проекта</b>\n\n"
+            "Введите название новой папки:\n"
+            "<i>(латиница, цифры, дефис, подчёркивание)</i>"
+        )
+
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=Keyboards.menu_back_only("project:browse")
+        )
+        await callback.answer()
+
+    async def handle_project_mkdir_input(self, message, folder_name: str) -> bool:
+        """Process folder name input for project creation"""
+        import os
+        import re
+        from presentation.keyboards.keyboards import Keyboards
+
+        user_id = message.from_user.id
+
+        # Validate folder name
+        if not re.match(r'^[a-zA-Z0-9_-]+$', folder_name):
+            await message.reply(
+                "❌ Недопустимое имя папки.\n"
+                "Используйте только латиницу, цифры, дефис и подчёркивание."
+            )
+            return True  # Consumed, but keep waiting
+
+        folder_path = f"/root/projects/{folder_name}"
+
+        if os.path.exists(folder_path):
+            await message.reply(f"❌ Папка '{folder_name}' уже существует.")
+            return True
+
+        try:
+            os.makedirs(folder_path, exist_ok=True)
+
+            # Clear state
+            self._user_states.pop(user_id, None)
+
+            # Create project from this folder
+            if self.project_service:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self.project_service.get_or_create(uid, folder_path, folder_name)
+                await self.project_service.switch_project(uid, project.id)
+
+                if hasattr(self.message_handlers, 'set_working_dir'):
+                    self.message_handlers.set_working_dir(user_id, folder_path)
+
+                await message.reply(
+                    f"✅ Проект создан:\n\n"
+                    f"📁 {folder_name}\n"
+                    f"Путь: {folder_path}\n\n"
+                    f"Готово к работе!"
+                )
+            else:
+                await message.reply(f"✅ Папка создана: {folder_path}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error creating folder: {e}")
+            await message.reply(f"❌ Ошибка создания папки: {e}")
+            return True
 
     async def handle_project_delete(self, callback: CallbackQuery) -> None:
         """Handle project delete - show confirmation dialog"""
@@ -2248,6 +2350,10 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     router.callback_query.register(
         handlers.handle_project_create,
         F.data == "project:create"
+    )
+    router.callback_query.register(
+        handlers.handle_project_mkdir,
+        F.data == "project:mkdir"
     )
     router.callback_query.register(
         handlers.handle_project_browse,

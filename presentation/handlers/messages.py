@@ -580,6 +580,12 @@ class MessageHandlers:
                 if handled:
                     return
 
+            # Check for other callback handler states (e.g., folder creation)
+            if self.callback_handlers.get_user_state(user_id):
+                handled = await self.callback_handlers.process_user_input(message)
+                if handled:
+                    return
+
         # === CHECK IF TASK RUNNING ===
         if self._is_task_running(user_id):
             await message.answer(
