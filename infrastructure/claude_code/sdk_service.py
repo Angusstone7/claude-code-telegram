@@ -457,7 +457,9 @@ class ClaudeAgentSDKService:
             True if response was accepted
         """
         event = self._permission_events.get(user_id)
-        if event and self._task_status.get(user_id) == TaskStatus.WAITING_PERMISSION:
+        current_status = self._task_status.get(user_id, TaskStatus.IDLE)
+
+        if event and current_status == TaskStatus.WAITING_PERMISSION:
             self._permission_responses[user_id] = approved
             if clarification_text:
                 # Store clarification text for can_use_tool callback
@@ -466,15 +468,31 @@ class ClaudeAgentSDKService:
                 self._clarification_texts[user_id] = clarification_text
             event.set()
             return True
+
+        # Log why we couldn't respond - helps debug "nothing happens" issues
+        logger.warning(
+            f"[{user_id}] respond_to_permission failed: "
+            f"event={event is not None}, status={current_status}, "
+            f"clarification={clarification_text[:50] if clarification_text else None}"
+        )
         return False
 
     async def respond_to_question(self, user_id: int, answer: str) -> bool:
         """Respond to a pending question"""
         event = self._question_events.get(user_id)
-        if event and self._task_status.get(user_id) == TaskStatus.WAITING_ANSWER:
+        current_status = self._task_status.get(user_id, TaskStatus.IDLE)
+
+        if event and current_status == TaskStatus.WAITING_ANSWER:
             self._question_responses[user_id] = answer
             event.set()
             return True
+
+        # Log why we couldn't respond
+        logger.warning(
+            f"[{user_id}] respond_to_question failed: "
+            f"event={event is not None}, status={current_status}, "
+            f"answer={answer[:50] if answer else None}"
+        )
         return False
 
     async def respond_to_plan(self, user_id: int, response: str) -> bool:

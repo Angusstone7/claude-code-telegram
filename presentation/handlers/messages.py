@@ -155,15 +155,16 @@ class MessageHandlers:
         """Get option text by index from pending question"""
         return self._hitl.get_option_by_index(user_id, index)
 
-    async def handle_permission_response(self, user_id: int, approved: bool, clarification_text: str = None):
-        """Handle permission response from callback"""
+    async def handle_permission_response(self, user_id: int, approved: bool, clarification_text: str = None) -> bool:
+        """Handle permission response from callback. Returns True if response was accepted."""
         if self.use_sdk and self.sdk_service:
             success = await self.sdk_service.respond_to_permission(user_id, approved, clarification_text)
             if success:
-                return
+                return True
 
         # Fall back to HITL manager handling
-        await self._hitl.respond_to_permission(user_id, approved, clarification_text)
+        result = await self._hitl.respond_to_permission(user_id, approved, clarification_text)
+        return result if result is not None else False
 
     async def handle_question_response(self, user_id: int, answer: str):
         """Handle question response from callback"""
@@ -217,14 +218,15 @@ class MessageHandlers:
 
     # === Plan Approval State (delegated to PlanApprovalManager) ===
 
-    async def handle_plan_response(self, user_id: int, response: str):
-        """Handle plan approval response from callback"""
+    async def handle_plan_response(self, user_id: int, response: str) -> bool:
+        """Handle plan approval response from callback. Returns True if response was accepted."""
         if self.use_sdk and self.sdk_service:
             success = await self.sdk_service.respond_to_plan(user_id, response)
             if success:
                 self._plans.cleanup(user_id)
-                return
+                return True
         logger.warning(f"[{user_id}] Failed to respond to plan: {response}")
+        return False
 
     def set_expecting_plan_clarification(self, user_id: int, expecting: bool):
         """Set whether we're expecting plan clarification text"""
@@ -1152,10 +1154,19 @@ class MessageHandlers:
         clarification = message.text.strip()
         preview = clarification[:50] + "..." if len(clarification) > 50 else clarification
 
-        await message.answer(f"💬 Уточнение отправлено: {preview}")
-
         # Send clarification through permission response with approved=False
-        await self.handle_permission_response(user_id, False, clarification)
+        success = await self.handle_permission_response(user_id, False, clarification)
+
+        if success:
+            await message.answer(f"💬 Уточнение отправлено: {preview}")
+        else:
+            # No active permission request - clarification was ignored
+            await message.answer(
+                f"⚠️ Нет активного запроса на подтверждение.\n\n"
+                f"Ваше уточнение: {preview}\n\n"
+                f"Отправьте это как новый запрос или дождитесь запроса от Claude.",
+                parse_mode=None
+            )
 
     async def _handle_plan_clarification(self, message: Message):
         """Handle text input for plan clarification"""
@@ -1165,9 +1176,17 @@ class MessageHandlers:
         clarification = message.text.strip()
         preview = clarification[:50] + "..." if len(clarification) > 50 else clarification
 
-        await message.answer(f"Уточнение отправлено: {preview}")
+        success = await self.handle_plan_response(user_id, f"clarify:{clarification}")
 
-        await self.handle_plan_response(user_id, f"clarify:{clarification}")
+        if success:
+            await message.answer(f"💬 Уточнение плана отправлено: {preview}")
+        else:
+            await message.answer(
+                f"⚠️ Нет активного запроса на утверждение плана.\n\n"
+                f"Ваше уточнение: {preview}\n\n"
+                f"Отправьте это как новый запрос.",
+                parse_mode=None
+            )
 
     async def _handle_path_input(self, message: Message):
         """Handle text input for path"""
