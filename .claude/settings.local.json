@@ -18,11 +18,13 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Fix OAuth token handling for Claude Account mode\n\nThe bot was incorrectly trying to use OAuth tokens \\(sk-ant-oat01-...\\)\nas ANTHROPIC_API_KEY environment variable, which caused \"Invalid API key\"\nerrors because SDK cannot convert OAuth tokens from env var to proper\nAuthorization headers.\n\nChanges:\n- Remove extraction and setting of OAuth token as ANTHROPIC_API_KEY\n- Let SDK/CLI read credentials.json directly from ~/.claude/.credentials.json\n- OAuth tokens now work correctly with automatic refresh\n- Replace token check with has_valid_credentials\\(\\) to validate expiration\n\nThis makes Claude Account mode work exactly like official Claude Code CLI\nwith proper OAuth authorization and automatic token refresh.\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(python -m py_compile:*)",
+      "Bash(python3 -m py_compile:*)",
       "Bash(git push)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(python:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Restore ICommandExecutionService interface removed during refactoring\n\nSSHCommandExecutor depends on this interface but it was removed as \"dead code\".\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Restore ICommandExecutionService interface removed during refactoring\n\nSSHCommandExecutor depends on this interface but it was removed as \"dead code\".\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(docker-compose logs:*)"
     ]
   }
 }

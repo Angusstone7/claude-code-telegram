@@ -1900,7 +1900,7 @@ class CallbackHandlers:
                     "Используйте только буквы, цифры и подчёркивание.",
                     reply_markup=Keyboards.global_variable_cancel()
                 )
-return True
+                return True
 
             state["name"] = var_name
             state["step"] = "value"
