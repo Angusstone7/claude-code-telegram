@@ -145,6 +145,7 @@ class Application:
         """Register bot commands in Telegram menu"""
         commands = [
             BotCommand(command="start", description="📱 Открыть меню"),
+            BotCommand(command="yolo", description="⚡ Вкл/выкл авто-подтверждение"),
             BotCommand(command="cancel", description="🛑 Отменить задачу"),
         ]
 
