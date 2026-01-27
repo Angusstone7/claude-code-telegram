@@ -514,10 +514,8 @@ class MessageHandlers:
 
     async def _execute_task_with_prompt(self, message: Message, prompt: str) -> None:
         """Execute Claude task with given prompt"""
-        original_text = message.text
-        message.text = prompt
-        await self.handle_text(message)
-        message.text = original_text
+        # Use prompt_override instead of modifying frozen Message object
+        await self.handle_text(message, prompt_override=prompt)
 
     async def handle_text(
         self,
