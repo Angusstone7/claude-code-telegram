@@ -1002,9 +1002,11 @@ class MessageHandlers:
         if plan_content:
             if len(plan_content) > 3500:
                 plan_content = plan_content[:3500] + "\n\n... (план сокращён)"
-            text = f"<b>План готов к выполнению</b>\n\n<pre>{plan_content}</pre>"
+            # Escape HTML entities in plan content to prevent parse errors
+            escaped_content = html.escape(plan_content)
+            text = f"<b>📋 План готов к выполнению</b>\n\n<pre>{escaped_content}</pre>"
         else:
-            text = "<b>План готов к выполнению</b>\n\n<i>Содержимое плана недоступно</i>"
+            text = "<b>📋 План готов к выполнению</b>\n\n<i>Содержимое плана недоступно</i>"
 
         plan_msg = await message.answer(
             text,

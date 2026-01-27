@@ -772,6 +772,75 @@ class ClaudeAgentSDKService:
                         interrupt=False
                     )
 
+            # Auto-detect plan files: if Write/Edit writes to .claude/plans/, treat as plan
+            # This catches cases where Claude creates a plan without using ExitPlanMode
+            if tool_name in {"Write", "Edit"}:
+                file_path = tool_input.get("file_path", "")
+                if ".claude/plans/" in file_path or "/.claude/plans/" in file_path:
+                    logger.info(f"[{user_id}] Auto-detected plan file write: {file_path}")
+
+                    # Get plan content
+                    plan_content = tool_input.get("content", "")
+                    if tool_name == "Edit":
+                        # For Edit, we show what's being changed
+                        old_str = tool_input.get("old_string", "")
+                        new_str = tool_input.get("new_string", "")
+                        plan_content = f"Редактирование плана:\n\nБыло:\n{old_str[:500]}\n\nСтало:\n{new_str[:500]}"
+
+                    self._task_status[user_id] = TaskStatus.WAITING_PERMISSION
+                    plan_event.clear()
+
+                    # Notify UI about plan (reuse on_plan_request callback)
+                    if on_plan_request:
+                        logger.info(f"[{user_id}] Showing auto-detected plan for approval...")
+                        # Pass file path as plan_file, content in tool_input
+                        plan_tool_input = {"planContent": plan_content, "planFile": file_path}
+                        await on_plan_request(file_path, plan_tool_input)
+                    else:
+                        logger.warning(f"[{user_id}] on_plan_request callback is None - auto-detected plan will not be shown!")
+
+                    # Wait for user response
+                    try:
+                        await asyncio.wait_for(plan_event.wait(), timeout=600)
+                        if cancel_event.is_set():
+                            return PermissionResultDeny(
+                                message="Task cancelled by user",
+                                interrupt=True
+                            )
+                        response = self._plan_responses.get(user_id, "reject")
+                    except asyncio.TimeoutError:
+                        response = "reject"
+                        if on_error:
+                            await on_error("Plan approval timed out")
+
+                    # Cleanup
+                    self._plan_responses.pop(user_id, None)
+                    self._task_status[user_id] = TaskStatus.RUNNING
+
+                    # Handle response
+                    if response == "approve":
+                        logger.info(f"[{user_id}] Auto-detected plan approved")
+                        return PermissionResultAllow(updated_input=tool_input)
+                    elif response.startswith("clarify:"):
+                        clarification = response[8:]
+                        logger.info(f"[{user_id}] Auto-detected plan clarification: {clarification}")
+                        return PermissionResultDeny(
+                            message=f"User requested clarification: {clarification}",
+                            interrupt=False
+                        )
+                    elif response == "cancel":
+                        logger.info(f"[{user_id}] Auto-detected plan cancelled")
+                        return PermissionResultDeny(
+                            message="User cancelled the task",
+                            interrupt=True
+                        )
+                    else:
+                        logger.info(f"[{user_id}] Auto-detected plan rejected")
+                        return PermissionResultDeny(
+                            message="User rejected the plan",
+                            interrupt=False
+                        )
+
             # Safe tools - allow automatically
             if tool_name in safe_tools:
                 return PermissionResultAllow(updated_input=tool_input)
