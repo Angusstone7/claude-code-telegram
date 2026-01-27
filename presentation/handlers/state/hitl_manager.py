@@ -29,6 +29,7 @@ class HITLState(str, Enum):
     WAITING_PERMISSION = "waiting_permission"
     WAITING_ANSWER = "waiting_answer"
     WAITING_PATH = "waiting_path"
+    WAITING_CLARIFICATION = "waiting_clarification"
 
 
 @dataclass
@@ -68,6 +69,7 @@ class HITLManager:
         self._permission_responses: Dict[int, bool] = {}
         self._permission_contexts: Dict[int, PermissionContext] = {}
         self._permission_messages: Dict[int, Message] = {}
+        self._clarification_texts: Dict[int, str] = {}  # For clarification text input
 
         # Question state
         self._question_events: Dict[int, asyncio.Event] = {}
@@ -79,6 +81,7 @@ class HITLManager:
         # Input state
         self._expecting_answer: Dict[int, bool] = {}
         self._expecting_path: Dict[int, bool] = {}
+        self._expecting_clarification: Dict[int, bool] = {}  # For clarification text input
 
         # General HITL state
         self._states: Dict[int, HITLState] = {}
@@ -137,17 +140,24 @@ class HITLManager:
         """Get the permission message to edit after response"""
         return self._permission_messages.get(user_id)
 
-    async def respond_to_permission(self, user_id: int, approved: bool) -> bool:
+    async def respond_to_permission(self, user_id: int, approved: bool, clarification_text: Optional[str] = None) -> bool:
         """
         Respond to pending permission request.
+
+        Args:
+            user_id: User ID
+            approved: Whether operation is approved
+            clarification_text: Optional clarification text (if provided, operation will be denied with feedback)
 
         Returns True if response was accepted.
         """
         event = self._permission_events.get(user_id)
         if event and self.get_state(user_id) == HITLState.WAITING_PERMISSION:
             self._permission_responses[user_id] = approved
+            if clarification_text:
+                self._clarification_texts[user_id] = clarification_text
             event.set()
-            logger.debug(f"[{user_id}] Permission response: {approved}")
+            logger.debug(f"[{user_id}] Permission response: {approved}, clarification: {bool(clarification_text)}")
             return True
         return False
 
@@ -155,13 +165,19 @@ class HITLManager:
         """Get the permission response (after event is set)"""
         return self._permission_responses.get(user_id, False)
 
+    def get_clarification_text(self, user_id: int) -> Optional[str]:
+        """Get clarification text (if provided with permission response)"""
+        return self._clarification_texts.get(user_id)
+
     def clear_permission_state(self, user_id: int) -> None:
         """Clear permission-related state"""
         self._permission_events.pop(user_id, None)
         self._permission_responses.pop(user_id, None)
         self._permission_contexts.pop(user_id, None)
         self._permission_messages.pop(user_id, None)
-        if self.get_state(user_id) == HITLState.WAITING_PERMISSION:
+        self._clarification_texts.pop(user_id, None)
+        self._expecting_clarification.pop(user_id, None)
+        if self.get_state(user_id) in (HITLState.WAITING_PERMISSION, HITLState.WAITING_CLARIFICATION):
             self.set_state(user_id, HITLState.IDLE)
 
     # === Question Handling ===
@@ -269,6 +285,18 @@ class HITLManager:
         """Check if expecting path input"""
         return self._expecting_path.get(user_id, False)
 
+    def set_expecting_clarification(self, user_id: int, expecting: bool) -> None:
+        """Set whether expecting clarification text input"""
+        self._expecting_clarification[user_id] = expecting
+        if expecting:
+            self.set_state(user_id, HITLState.WAITING_CLARIFICATION)
+        elif self.get_state(user_id) == HITLState.WAITING_CLARIFICATION:
+            self.set_state(user_id, HITLState.IDLE)
+
+    def is_expecting_clarification(self, user_id: int) -> bool:
+        """Check if expecting clarification text"""
+        return self._expecting_clarification.get(user_id, False)
+
     # === Cleanup ===
 
     def cleanup(self, user_id: int) -> None:
@@ -277,6 +305,7 @@ class HITLManager:
         self.clear_question_state(user_id)
         self._expecting_answer.pop(user_id, None)
         self._expecting_path.pop(user_id, None)
+        self._expecting_clarification.pop(user_id, None)
         self._states.pop(user_id, None)
 
     def cancel_all_waits(self, user_id: int) -> None:

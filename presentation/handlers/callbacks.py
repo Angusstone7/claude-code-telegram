@@ -457,6 +457,38 @@ class CallbackHandlers:
             logger.error(f"Error handling claude reject: {e}")
             await callback.answer(f"❌ Ошибка: {e}")
 
+    async def handle_claude_clarify(self, callback: CallbackQuery) -> None:
+        """Handle Claude Code permission clarification request"""
+        data = CallbackData.parse_claude_callback(callback.data)
+        user_id = int(data.get("user_id", 0))
+
+        if user_id != callback.from_user.id:
+            await callback.answer("❌ Это действие не для вас")
+            return
+
+        try:
+            # Get HITL manager
+            hitl = self.message_handlers._hitl if hasattr(self.message_handlers, '_hitl') else None
+            if not hitl:
+                await callback.answer("❌ HITL manager недоступен")
+                return
+
+            # Set state to expecting clarification input
+            hitl.set_expecting_clarification(user_id, True)
+
+            # Update message to prompt for clarification
+            original_text = callback.message.text or ""
+            await callback.message.edit_text(
+                original_text + "\n\n💬 Введите уточнение:",
+                parse_mode=None
+            )
+
+            await callback.answer("✏️ Введите текст уточнения")
+
+        except Exception as e:
+            logger.error(f"Error handling claude clarify: {e}")
+            await callback.answer(f"❌ Ошибка: {e}")
+
     async def handle_claude_answer(self, callback: CallbackQuery) -> None:
         """Handle Claude Code question answer (selected option)"""
         data = CallbackData.parse_claude_callback(callback.data)
@@ -2156,6 +2188,10 @@ def register_handlers(router: Router, handlers: CallbackHandlers) -> None:
     router.callback_query.register(
         handlers.handle_claude_reject,
         F.data.startswith("claude:reject:")
+    )
+    router.callback_query.register(
+        handlers.handle_claude_clarify,
+        F.data.startswith("claude:clarify:")
     )
     router.callback_query.register(
         handlers.handle_claude_answer,

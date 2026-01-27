@@ -407,6 +407,12 @@ class Keyboards:
                     text="❌ Отклонить",
                     callback_data=f"claude:reject:{user_id}:{request_id}"
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💬 Уточнить",
+                    callback_data=f"claude:clarify:{user_id}:{request_id}"
+                )
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1528,6 +1534,10 @@ class CallbackData:
         return callback_data.startswith("claude:other:")
 
     @staticmethod
+    def is_claude_clarify(callback_data: str) -> bool:
+        return callback_data.startswith("claude:clarify:")
+
+    @staticmethod
     def is_claude_cancel(callback_data: str) -> bool:
         return callback_data.startswith("claude:cancel:")
 
@@ -1541,9 +1551,9 @@ class CallbackData:
         Parse Claude Code callback data.
 
         Returns dict with:
-        - action: approve/reject/answer/other/cancel/continue
+        - action: approve/reject/answer/other/cancel/continue/clarify
         - user_id: User ID
-        - request_id: Request ID (for approve/reject/answer)
+        - request_id: Request ID (for approve/reject/answer/clarify)
         - option_index: Option index (for answer)
         - session_id: Session ID (for continue)
         """

@@ -205,6 +205,7 @@ class ClaudeAgentSDKService:
         self._permission_events: dict[int, asyncio.Event] = {}
         self._permission_requests: dict[int, PermissionRequest] = {}
         self._permission_responses: dict[int, bool] = {}
+        self._clarification_texts: dict[int, str] = {}  # For clarification feedback
 
         self._question_events: dict[int, asyncio.Event] = {}
         self._question_requests: dict[int, QuestionRequest] = {}
@@ -442,11 +443,26 @@ class ClaudeAgentSDKService:
         """Get pending question for a user"""
         return self._question_requests.get(user_id)
 
-    async def respond_to_permission(self, user_id: int, approved: bool) -> bool:
-        """Respond to a pending permission request"""
+    async def respond_to_permission(self, user_id: int, approved: bool, clarification_text: Optional[str] = None) -> bool:
+        """
+        Respond to a pending permission request.
+
+        Args:
+            user_id: User ID
+            approved: Whether operation is approved
+            clarification_text: Optional clarification text (will deny operation but provide feedback to agent)
+
+        Returns:
+            True if response was accepted
+        """
         event = self._permission_events.get(user_id)
         if event and self._task_status.get(user_id) == TaskStatus.WAITING_PERMISSION:
             self._permission_responses[user_id] = approved
+            if clarification_text:
+                # Store clarification text for can_use_tool callback
+                if not hasattr(self, '_clarification_texts'):
+                    self._clarification_texts = {}
+                self._clarification_texts[user_id] = clarification_text
             event.set()
             return True
         return False
@@ -536,6 +552,7 @@ class ClaudeAgentSDKService:
         self._question_requests.pop(user_id, None)
         self._permission_responses.pop(user_id, None)
         self._question_responses.pop(user_id, None)
+        self._clarification_texts.pop(user_id, None)
 
         return cancelled
 
@@ -899,6 +916,9 @@ class ClaudeAgentSDKService:
                 self._permission_requests.pop(user_id, None)
                 self._task_status[user_id] = TaskStatus.RUNNING
 
+                # Check for clarification text
+                clarification = self._clarification_texts.pop(user_id, None)
+
                 # Notify UI that permission was handled (for moving streaming to bottom)
                 if on_permission_completed:
                     await on_permission_completed(approved)
@@ -906,8 +926,10 @@ class ClaudeAgentSDKService:
                 if approved:
                     return PermissionResultAllow(updated_input=tool_input)
                 else:
+                    # If clarification provided, include it in the deny message
+                    message = f"User provided additional context: {clarification}" if clarification else "User rejected the operation"
                     return PermissionResultDeny(
-                        message="User rejected the operation",
+                        message=message,
                         interrupt=False  # Continue but skip this tool
                     )
 
@@ -1193,4 +1215,5 @@ class ClaudeAgentSDKService:
             self._question_requests.pop(user_id, None)
             self._permission_responses.pop(user_id, None)
             self._question_responses.pop(user_id, None)
+            self._clarification_texts.pop(user_id, None)
             self._task_status[user_id] = TaskStatus.IDLE

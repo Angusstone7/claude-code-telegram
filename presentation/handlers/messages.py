@@ -155,15 +155,15 @@ class MessageHandlers:
         """Get option text by index from pending question"""
         return self._hitl.get_option_by_index(user_id, index)
 
-    async def handle_permission_response(self, user_id: int, approved: bool):
+    async def handle_permission_response(self, user_id: int, approved: bool, clarification_text: str = None):
         """Handle permission response from callback"""
         if self.use_sdk and self.sdk_service:
-            success = await self.sdk_service.respond_to_permission(user_id, approved)
+            success = await self.sdk_service.respond_to_permission(user_id, approved, clarification_text)
             if success:
                 return
 
         # Fall back to HITL manager handling
-        await self._hitl.respond_to_permission(user_id, approved)
+        await self._hitl.respond_to_permission(user_id, approved, clarification_text)
 
     async def handle_question_response(self, user_id: int, answer: str):
         """Handle question response from callback"""
@@ -545,6 +545,10 @@ class MessageHandlers:
         # === SPECIAL INPUT MODES ===
         if self._hitl.is_expecting_answer(user_id):
             await self._handle_answer_input(message)
+            return
+
+        if self._hitl.is_expecting_clarification(user_id):
+            await self._handle_clarification_input(message)
             return
 
         if self._hitl.is_expecting_path(user_id):
@@ -1133,6 +1137,19 @@ class MessageHandlers:
         await message.answer(f"Ответ: {answer[:50]}...")
 
         await self.handle_question_response(user_id, answer)
+
+    async def _handle_clarification_input(self, message: Message):
+        """Handle text input for permission clarification"""
+        user_id = message.from_user.id
+        self._hitl.set_expecting_clarification(user_id, False)
+
+        clarification = message.text.strip()
+        preview = clarification[:50] + "..." if len(clarification) > 50 else clarification
+
+        await message.answer(f"💬 Уточнение отправлено: {preview}")
+
+        # Send clarification through permission response with approved=False
+        await self.handle_permission_response(user_id, False, clarification)
 
     async def _handle_plan_clarification(self, message: Message):
         """Handle text input for plan clarification"""
