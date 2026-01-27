@@ -643,7 +643,7 @@ class MessageHandlers:
         cancel_keyboard = Keyboards.claude_cancel(user_id)
         streaming = StreamingHandler(bot, message.chat.id, reply_markup=cancel_keyboard)
 
-        yolo_indicator = " YOLO" if self.is_yolo_mode(user_id) else ""
+        yolo_indicator = " ⚡" if self.is_yolo_mode(user_id) else ""
         header = ""
         if self.project_service:
             try:
