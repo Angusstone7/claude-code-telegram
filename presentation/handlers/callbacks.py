@@ -498,6 +498,7 @@ class CallbackHandlers:
 
             # Set state to expecting clarification input
             hitl.set_expecting_clarification(user_id, True)
+            logger.info(f"[{user_id}] Set expecting_clarification=True for permission clarification")
 
             # Update message to prompt for clarification
             original_text = callback.message.text or ""

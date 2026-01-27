@@ -577,11 +577,17 @@ class MessageHandlers:
                 return
 
         # === SPECIAL INPUT MODES ===
+        logger.debug(f"[{user_id}] Checking special input modes: "
+                    f"expecting_answer={self._hitl.is_expecting_answer(user_id)}, "
+                    f"expecting_clarification={self._hitl.is_expecting_clarification(user_id)}")
+
         if self._hitl.is_expecting_answer(user_id):
+            logger.info(f"[{user_id}] Handling answer input")
             await self._handle_answer_input(message)
             return
 
         if self._hitl.is_expecting_clarification(user_id):
+            logger.info(f"[{user_id}] Handling clarification input: {message.text[:50]}")
             await self._handle_clarification_input(message)
             return
 
@@ -1230,18 +1236,23 @@ class MessageHandlers:
     async def _handle_clarification_input(self, message: Message):
         """Handle text input for permission clarification"""
         user_id = message.from_user.id
+        logger.info(f"[{user_id}] _handle_clarification_input called with: {message.text[:100]}")
+
         self._hitl.set_expecting_clarification(user_id, False)
 
         clarification = message.text.strip()
         preview = clarification[:50] + "..." if len(clarification) > 50 else clarification
 
         # Send clarification through permission response with approved=False
+        logger.info(f"[{user_id}] Calling handle_permission_response with clarification")
         success = await self.handle_permission_response(user_id, False, clarification)
+        logger.info(f"[{user_id}] handle_permission_response returned: {success}")
 
         if success:
             await message.answer(f"💬 Уточнение отправлено: {preview}")
         else:
             # No active permission request - clarification was ignored
+            logger.warning(f"[{user_id}] Clarification was not accepted - no active permission request")
             await message.answer(
                 f"⚠️ Нет активного запроса на подтверждение.\n\n"
                 f"Ваше уточнение: {preview}\n\n"
