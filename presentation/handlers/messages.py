@@ -1206,17 +1206,23 @@ class MessageHandlers:
                 tool_name = self._hitl.get_pending_tool_name(user_id) or "tool"
                 await step_handler.on_permission_granted(tool_name)
 
-        if perm_msg and streaming:
-            status = "✅ Одобрено" if approved else "❌ Отклонено"
-            try:
-                await perm_msg.edit_text(status, parse_mode=None)
-                # НЕ переключаем streaming на permission message в step streaming mode
-                if not self.is_step_streaming_mode(user_id):
+        if perm_msg:
+            # В step streaming mode удаляем сообщение о разрешении - информация уже в основном сообщении
+            if self.is_step_streaming_mode(user_id):
+                try:
+                    await perm_msg.delete()
+                except Exception as e:
+                    logger.debug(f"Could not delete permission message: {e}")
+            elif streaming:
+                # В обычном режиме - редактируем сообщение
+                status = "✅ Одобрено" if approved else "❌ Отклонено"
+                try:
+                    await perm_msg.edit_text(status, parse_mode=None)
                     streaming.current_message = perm_msg
                     streaming.buffer = f"{status}\n\nПродолжаю...\n"
                     streaming.is_finalized = False
-            except Exception as e:
-                logger.debug(f"Could not edit permission message: {e}")
+                except Exception as e:
+                    logger.debug(f"Could not edit permission message: {e}")
 
         self._hitl.clear_permission_state(user_id)
 
