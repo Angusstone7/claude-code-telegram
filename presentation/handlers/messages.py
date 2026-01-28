@@ -813,20 +813,21 @@ class MessageHandlers:
     # === Callback Handlers ===
 
     async def _on_text(self, user_id: int, text: str):
-        """Handle streaming text output"""
+        """Handle streaming text output.
+
+        ВАЖНО: TextBlock от Claude — это ОСНОВНОЙ ответ (content), не thinking!
+        ThinkingBlock — это отдельный тип, который приходит в on_thinking.
+
+        Step streaming mode: текст идёт в buffer через append(),
+        а UI state синхронизируется при добавлении tools через sync_from_buffer().
+        """
         streaming = self._state.get_streaming_handler(user_id)
 
         if streaming:
             streaming.add_tokens(text)
-
-            # Step streaming mode: выделяем рассуждения Claude через step_handler
-            if self.is_step_streaming_mode(user_id):
-                step_handler = self._get_step_handler(user_id)
-                if step_handler:
-                    await step_handler.on_thinking(text)
-            else:
-                # Обычный режим - просто стримим текст
-                await streaming.append(text)
+            # Текст ВСЕГДА идёт в основной буфер — это ответ Claude!
+            # Step streaming и обычный режим используют одинаковую логику
+            await streaming.append(text)
 
         # Update heartbeat to show Claude is thinking/writing
         heartbeat = self._state.get_heartbeat(user_id)
@@ -1063,9 +1064,22 @@ class MessageHandlers:
             session.fail(error)
 
     async def _on_thinking(self, user_id: int, thinking: str):
-        """Handle thinking output"""
+        """Handle thinking output.
+
+        ThinkingBlock — это внутренние рассуждения Claude (extended thinking).
+        В step streaming mode показываем в сворачиваемом блоке.
+        """
         streaming = self._state.get_streaming_handler(user_id)
-        if streaming and thinking:
+        if not streaming or not thinking:
+            return
+
+        # Step streaming mode: показываем thinking в сворачиваемом блоке
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                await step_handler.on_thinking(thinking)
+        else:
+            # Обычный режим - показываем как курсив
             preview = thinking[:200] + "..." if len(thinking) > 200 else thinking
             await streaming.append(f"\n*{preview}*\n")
 

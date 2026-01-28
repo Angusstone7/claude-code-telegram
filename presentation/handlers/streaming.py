@@ -956,9 +956,19 @@ class StreamingHandler:
         logger.info(f"Streaming: _do_update called, display_text={len(display_text)} chars")
 
         try:
+            # Sync buffer to UI state to get accurate rendered length
+            if display_text:
+                self.ui.sync_from_buffer(display_text)
+
             # Check if we need to split into multiple messages
-            if len(display_text) > self.MAX_MESSAGE_LENGTH:
-                logger.info(f"Streaming: overflow detected, handling...")
+            # ВАЖНО: проверяем отрендеренный HTML, не raw buffer!
+            rendered_html = self.ui.render_non_content()
+            status = self._get_status_line()
+            if status:
+                rendered_html = f"{rendered_html}\n\n{status}" if rendered_html else status
+
+            if len(rendered_html) > self.MAX_MESSAGE_LENGTH:
+                logger.info(f"Streaming: overflow detected ({len(rendered_html)} chars), handling...")
                 await self._handle_overflow()
             else:
                 logger.debug(f"Streaming: editing message via coordinator...")
@@ -1098,7 +1108,9 @@ class StreamingHandler:
             await self._handle_overflow_trim(is_final=True)
             return
 
-        logger.info(f"Buffer overflow ({len(self.buffer)} chars), creating new message")
+        # Получаем размер отрендеренного HTML для логирования
+        rendered_html = self.ui.render_non_content()
+        logger.info(f"Buffer overflow (rendered={len(rendered_html)} chars), creating new message")
 
         # 1. Финализировать текущее сообщение (без статуса, без кнопок)
         old_status = self._status_line
@@ -1116,8 +1128,9 @@ class StreamingHandler:
         # 3. Увеличиваем счётчик сообщений
         self._message_index += 1
 
-        # 4. Сбрасываем форматтер для нового сообщения
+        # 4. Сбрасываем форматтер и UI state для нового сообщения
         self._formatter.reset()
+        self.ui.reset()  # КРИТИЧНО: сбросить UI state для нового сообщения!
 
         # 5. Создаём новый буфер с индикатором продолжения
         continuation_header = f"📨 <b>Часть {self._message_index}</b>\n\n"

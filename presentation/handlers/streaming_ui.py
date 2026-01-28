@@ -200,11 +200,21 @@ class StreamingUIState:
 
     def _flush_content_buffer(self) -> None:
         """Save accumulated content as an element."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         if self._content_buffer.strip():
+            logger.info(
+                f"UI _flush_content_buffer: flushing {len(self._content_buffer)}ch, "
+                f"adding CONTENT element #{len(self.elements)}"
+            )
             self.elements.append(UIElement(
                 type=ElementType.CONTENT,
                 data=self._content_buffer
             ))
+        else:
+            logger.debug(f"UI _flush_content_buffer: empty buffer, not flushing")
+
         # Track how much we've flushed for sync_from_buffer
         self._flushed_length += len(self._content_buffer)
         self._content_buffer = ""
@@ -295,11 +305,23 @@ class StreamingUIState:
         Only takes the NEW part that hasn't been flushed to elements yet.
         This prevents duplication when tool flushes part of content.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Only sync the part after what was already flushed
+        old_buffer = self._content_buffer
         if len(full_buffer) > self._flushed_length:
             self._content_buffer = full_buffer[self._flushed_length:]
         else:
             self._content_buffer = ""
+
+        # Debug logging
+        if old_buffer != self._content_buffer:
+            logger.debug(
+                f"UI sync_from_buffer: full={len(full_buffer)}, "
+                f"flushed={self._flushed_length}, new_buffer={len(self._content_buffer)}ch, "
+                f"elements={len(self.elements)}, tools={len(self.tools)}"
+            )
 
     def add_tool(self, name: str, detail: str = "", status: ToolStatus = ToolStatus.EXECUTING) -> ToolState:
         """
@@ -310,6 +332,14 @@ class StreamingUIState:
 
         Returns the created ToolState for further modification.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(
+            f"UI add_tool({name}): buffer={len(self._content_buffer)}ch, "
+            f"flushed={self._flushed_length}, elements={len(self.elements)}"
+        )
+
         # Flush accumulated content BEFORE adding tool
         self._flush_content_buffer()
 
