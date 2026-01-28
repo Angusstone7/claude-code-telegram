@@ -538,6 +538,30 @@ class StreamingHandler:
         """Append text followed by a newline"""
         await self.append(text + "\n")
 
+    async def replace_last_line(self, old_line: str, new_line: str) -> bool:
+        """
+        Replace the last occurrence of old_line with new_line in the buffer.
+
+        Used for in-place updates like changing progress icons to completion icons.
+
+        Args:
+            old_line: The line to replace (without newline)
+            new_line: The replacement line (without newline)
+
+        Returns:
+            True if replacement was made, False otherwise
+        """
+        if self.is_finalized:
+            return False
+
+        # Find and replace the last occurrence
+        idx = self.buffer.rfind(old_line)
+        if idx != -1:
+            self.buffer = self.buffer[:idx] + new_line + self.buffer[idx + len(old_line):]
+            await self._schedule_update()
+            return True
+        return False
+
     async def set_status(self, status: str):
         """Set a status line at the bottom of the current message.
 
@@ -1441,12 +1465,13 @@ class StepStreamingHandler:
     Обёртка для краткого стриминга шагов без кода.
 
     Показывает только:
-    - Название операции и файл
-    - Статус выполнения (✏️ → ✅)
+    - Название операции и файл (с иконкой прогресса, которая меняется на ✅)
     - Сводку изменений (+5 -3 lines)
+    - Рассуждения Claude в отдельных блоках с 💭
     """
 
-    TOOL_ICONS = {
+    # Иконки для прогресса (во время выполнения)
+    PROGRESS_ICONS = {
         "bash": "🔧",
         "write": "📝",
         "edit": "✏️",
@@ -1459,17 +1484,18 @@ class StepStreamingHandler:
         "notebookedit": "📓",
     }
 
+    # Действия: (в процессе, завершено)
     TOOL_ACTIONS = {
-        "bash": ("Running", "Completed"),
-        "write": ("Writing", "Wrote"),
-        "edit": ("Editing", "Edited"),
-        "read": ("Reading", "Read"),
-        "glob": ("Finding files", "Found"),
-        "grep": ("Searching", "Found"),
-        "webfetch": ("Fetching", "Fetched"),
-        "websearch": ("Searching web", "Found"),
-        "task": ("Running agent", "Agent done"),
-        "notebookedit": ("Editing notebook", "Edited notebook"),
+        "bash": ("Выполняю", "Выполнено"),
+        "write": ("Записываю", "Записано"),
+        "edit": ("Редактирую", "Отредактировано"),
+        "read": ("Читаю", "Прочитано"),
+        "glob": ("Ищу файлы", "Найдено"),
+        "grep": ("Ищу в коде", "Найдено"),
+        "webfetch": ("Загружаю", "Загружено"),
+        "websearch": ("Ищу в сети", "Найдено"),
+        "task": ("Запускаю агента", "Агент завершил"),
+        "notebookedit": ("Редактирую notebook", "Notebook отредактирован"),
     }
 
     def __init__(self, base: StreamingHandler):
@@ -1477,9 +1503,10 @@ class StepStreamingHandler:
         self._current_tool: str = ""
         self._current_file: str = ""
         self._current_tool_input: dict = {}
+        self._progress_line: str = ""  # Текущая строка прогресса для замены
 
     async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
-        """Запомнить начало инструмента (не показываем, ждём завершения)."""
+        """Показать строку прогресса с иконкой инструмента."""
         tool_lower = tool_name.lower()
 
         # Извлечь имя файла/команду
@@ -1487,7 +1514,19 @@ class StepStreamingHandler:
         self._current_tool = tool_lower
         self._current_file = detail
         self._current_tool_input = tool_input
-        # Не показываем ничего - покажем при завершении
+
+        # Получить иконку и действие
+        icon = self.PROGRESS_ICONS.get(tool_lower, "⏳")
+        actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
+
+        # Формируем строку прогресса
+        if detail:
+            self._progress_line = f"{icon} {actions[0]} `{detail}`..."
+        else:
+            self._progress_line = f"{icon} {actions[0]}..."
+
+        # Показываем строку прогресса
+        await self.base.append(f"\n{self._progress_line}")
 
     async def on_tool_complete(
         self,
@@ -1495,10 +1534,10 @@ class StepStreamingHandler:
         tool_input: Optional[dict] = None,
         success: bool = True
     ) -> None:
-        """Показать одну строку результата операции."""
+        """Заменить строку прогресса на строку завершения (in-place)."""
         tool_lower = tool_name.lower() if tool_name else self._current_tool
         icon = "✅" if success else "❌"
-        actions = self.TOOL_ACTIONS.get(tool_lower, ("Processing", "Done"))
+        actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
 
         # Use saved tool_input if not provided
         if tool_input is None:
@@ -1521,22 +1560,42 @@ class StepStreamingHandler:
                 if parts:
                     change_str = f" ({' '.join(parts)} lines)"
 
+        # Формируем строку завершения
         if detail:
-            msg = f"\n{icon} {actions[1]} `{detail}`{change_str}"
+            complete_line = f"{icon} {actions[1]} `{detail}`{change_str}"
         else:
-            msg = f"\n{icon} {actions[1]}{change_str}"
+            complete_line = f"{icon} {actions[1]}{change_str}"
 
-        await self.base.append(msg)
+        # Пытаемся заменить строку прогресса на строку завершения
+        if self._progress_line:
+            replaced = await self.base.replace_last_line(self._progress_line, complete_line)
+            if not replaced:
+                # Если замена не удалась, просто добавим новую строку
+                await self.base.append(f"\n{complete_line}")
+        else:
+            # Нет строки прогресса - просто добавляем
+            await self.base.append(f"\n{complete_line}")
+
+        # Сбросить состояние
         self._current_tool = ""
         self._current_file = ""
         self._current_tool_input = {}
+        self._progress_line = ""
 
     async def on_thinking(self, text: str) -> None:
-        """Показать краткое рассуждение (первые 80 символов)."""
-        preview = text.replace('\n', ' ')[:80]
-        if len(text) > 80:
-            preview += "..."
-        await self.base.append(f"\n💭 _{preview}_")
+        """Показать рассуждения Claude в отдельном блоке с 💭."""
+        # Очистить от лишних пробелов
+        text = text.strip()
+        if not text:
+            return
+
+        # Показываем полный текст рассуждений в блоке кода для выделения
+        # Ограничиваем 300 символами чтобы не было слишком много
+        if len(text) > 300:
+            text = text[:300] + "..."
+
+        # Форматируем как блок с облачком
+        await self.base.append(f"\n\n💭 *{text}*\n")
 
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
         """Извлечь краткую деталь (имя файла, команду)."""

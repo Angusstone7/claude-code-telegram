@@ -815,11 +815,17 @@ class MessageHandlers:
         """Handle streaming text output"""
         streaming = self._state.get_streaming_handler(user_id)
 
-        # Step streaming mode: still show text output (Claude's responses)
-        # We only hide tool results, not the actual text responses
         if streaming:
             streaming.add_tokens(text)
-            await streaming.append(text)
+
+            # Step streaming mode: выделяем рассуждения Claude через step_handler
+            if self.is_step_streaming_mode(user_id):
+                step_handler = self._get_step_handler(user_id)
+                if step_handler:
+                    await step_handler.on_thinking(text)
+            else:
+                # Обычный режим - просто стримим текст
+                await streaming.append(text)
 
         # Update heartbeat to show Claude is thinking/writing
         heartbeat = self._state.get_heartbeat(user_id)
