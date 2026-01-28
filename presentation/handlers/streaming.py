@@ -980,8 +980,7 @@ class StreamingHandler:
         ВАЖНО: Все обновления проходят через MessageUpdateCoordinator!
         Координатор гарантирует минимум 2 секунды между обновлениями.
 
-        Uses StableHTMLFormatter to ensure we only send properly closed HTML.
-        This prevents flickering from broken/partial tags.
+        Uses StreamingUIState.render_non_content() for interleaved content+tools.
         """
         if not self.current_message:
             logger.debug("_edit_current_message: no current_message, skipping")
@@ -990,29 +989,24 @@ class StreamingHandler:
         # Get status line (already HTML formatted)
         status = self._get_status_line()
 
-        # Use formatter to get valid HTML
-        html_text, should_update = self._formatter.format(text, is_final=is_final)
+        # Sync buffer to UI state for interleaved rendering
+        # UI state handles content + tools in correct order
+        if text and text != self.ui._content_buffer:
+            # Set the content buffer directly (don't use append to avoid doubling)
+            self.ui._content_buffer = text
+
+        # If finalizing, flush the buffer
+        if is_final:
+            self.ui.finalize()
+
+        # Render everything through UI state (content + tools interleaved)
+        html_text = self.ui.render_non_content()
 
         # Логируем для отладки
         logger.debug(
             f"_edit_current_message: text={len(text)}ch, html={len(html_text)}ch, "
-            f"should_update={should_update}, is_final={is_final}"
+            f"is_final={is_final}"
         )
-
-        # CRITICAL: Always show SOMETHING to the user!
-        # If formatter couldn't produce HTML but we have text, escape it and show
-        if not html_text and text:
-            # Formatter couldn't find stable point - force show escaped text
-            html_text = html_module.escape(text)
-            logger.debug(f"Formatter produced no HTML, using escaped text ({len(text)} chars)")
-
-        # Add UI components (tools, thinking) from structured state
-        ui_html = self.ui.render_non_content()
-        if ui_html:
-            if html_text:
-                html_text = f"{html_text}\n\n{ui_html}"
-            else:
-                html_text = ui_html
 
         # If still nothing but we need to update status, that's ok
         if not html_text and not status:

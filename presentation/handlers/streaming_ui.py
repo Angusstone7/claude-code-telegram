@@ -15,9 +15,22 @@ Key benefits:
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 from enum import Enum
 import html as html_module
+
+
+class ElementType(Enum):
+    """Type of UI element in the streaming message"""
+    CONTENT = "content"  # Text content block
+    TOOL = "tool"        # Tool execution status
+
+
+@dataclass
+class UIElement:
+    """A single element in the streaming message (content or tool)"""
+    type: ElementType
+    data: Union[str, "ToolState"]  # str for CONTENT, ToolState for TOOL
 
 
 class ToolStatus(Enum):
@@ -138,11 +151,18 @@ class StreamingUIState:
 
     This is the single source of truth for what should be displayed.
     Call render() to get the HTML representation.
-    """
-    # Main content (Claude's text response)
-    content: str = ""
 
-    # List of tool executions
+    Key design: elements list maintains order of content and tools.
+    When a tool is added, accumulated content is flushed first.
+    This ensures correct interleaving: content → tool → content → tool
+    """
+    # Unified list of elements in order of addition
+    elements: List[UIElement] = field(default_factory=list)
+
+    # Buffer for accumulating content (flushed when tool is added)
+    _content_buffer: str = ""
+
+    # List of tools (for lookup by name - elements also has them)
     tools: List[ToolState] = field(default_factory=list)
 
     # Thinking blocks (completed)
@@ -163,53 +183,55 @@ class StreamingUIState:
     # Whether the message is finalized
     finalized: bool = False
 
+    # Legacy: keep content for backward compatibility
+    @property
+    def content(self) -> str:
+        """Get all content (for backward compatibility)"""
+        content_parts = []
+        for element in self.elements:
+            if element.type == ElementType.CONTENT:
+                content_parts.append(element.data)
+        if self._content_buffer:
+            content_parts.append(self._content_buffer)
+        return "".join(content_parts)
+
+    def _flush_content_buffer(self) -> None:
+        """Save accumulated content as an element."""
+        if self._content_buffer.strip():
+            self.elements.append(UIElement(
+                type=ElementType.CONTENT,
+                data=self._content_buffer
+            ))
+        self._content_buffer = ""
+
     def render(self) -> str:
         """
         Render the complete UI state to HTML.
 
-        Order:
-        1. Main content
-        2. Thinking blocks
-        3. Current thinking buffer
-        4. Tool statuses
-        5. Status line
+        Order (interleaved):
+        1. Thinking blocks
+        2. Elements in order (content and tools interleaved)
+        3. Current content buffer (not yet flushed)
+        4. Completion info/status
         """
-        parts = []
-
-        # 1. Main content (with markdown to HTML conversion)
-        if self.content:
-            # Import here to avoid circular imports
-            from presentation.handlers.streaming import markdown_to_html, prepare_html_for_telegram
-            html_content = markdown_to_html(self.content, is_streaming=not self.finalized)
-            html_content = prepare_html_for_telegram(html_content, is_final=self.finalized)
-            if html_content:
-                parts.append(html_content)
-
-        # Add non-content components
-        non_content = self.render_non_content()
-        if non_content:
-            parts.append(non_content)
-
-        # Status line is handled separately in StreamingHandler
-        return "\n\n".join(parts)
+        # Use render_non_content which now handles everything
+        return self.render_non_content()
 
     def render_non_content(self) -> str:
         """
-        Render only tools and thinking (no content).
-
-        Used by StreamingHandler to append to formatted content.
-        Returns HTML ready for Telegram.
+        Render all UI elements in correct order (interleaved).
 
         Order:
-        1. Thinking blocks
+        1. Thinking blocks (at the top)
         2. Current thinking buffer
-        3. Tool statuses
-        4. Completion info (cost, tokens) - AT THE BOTTOM
-        5. Completion status (✅ Готово) - AT THE VERY BOTTOM
+        3. Elements in order of addition (CONTENT and TOOL interleaved)
+        4. Current content buffer (not yet flushed)
+        5. Completion info (cost, tokens) - AT THE BOTTOM
+        6. Completion status (✅ Готово) - AT THE VERY BOTTOM
         """
         parts = []
 
-        # 1. Thinking blocks
+        # 1. Thinking blocks (at the top)
         for block in self.thinking:
             parts.append(block.render())
 
@@ -221,15 +243,31 @@ class StreamingUIState:
             escaped = html_module.escape(display)
             parts.append(f"💭 <i>{escaped}</i>")
 
-        # 3. Tool statuses
-        for tool in self.tools:
-            parts.append(tool.render())
+        # 3. Elements in order of addition (CONTENT and TOOL interleaved)
+        from presentation.handlers.streaming import markdown_to_html, prepare_html_for_telegram
+        for element in self.elements:
+            if element.type == ElementType.CONTENT:
+                # Format content block
+                html = markdown_to_html(element.data, is_streaming=not self.finalized)
+                html = prepare_html_for_telegram(html, is_final=self.finalized)
+                if html:
+                    parts.append(html)
+            elif element.type == ElementType.TOOL:
+                # Render tool status
+                parts.append(element.data.render())
 
-        # 4. Completion info (cost, tokens) - at the bottom
+        # 4. Current content buffer (not yet flushed, still streaming)
+        if self._content_buffer:
+            html = markdown_to_html(self._content_buffer, is_streaming=True)
+            html = prepare_html_for_telegram(html, is_final=False)
+            if html:
+                parts.append(html)
+
+        # 5. Completion info (cost, tokens) - at the bottom
         if self.completion_info:
             parts.append(self.completion_info)
 
-        # 5. Completion status (✅ Готово) - at the very bottom
+        # 6. Completion status (✅ Готово) - at the very bottom
         if self.completion_status:
             parts.append(self.completion_status)
 
@@ -238,19 +276,26 @@ class StreamingUIState:
     # === API for updating state ===
 
     def append_content(self, text: str) -> None:
-        """Append text to main content"""
-        self.content += text
+        """Append text to content buffer (will be flushed when tool is added)"""
+        self._content_buffer += text
 
     def set_content(self, text: str) -> None:
-        """Set main content (replaces existing)"""
-        self.content = text
+        """Set content buffer (replaces existing buffer, not flushed elements)"""
+        self._content_buffer = text
 
     def add_tool(self, name: str, detail: str = "", status: ToolStatus = ToolStatus.EXECUTING) -> ToolState:
         """
         Add a new tool to the list.
 
+        IMPORTANT: This flushes the content buffer first, ensuring correct order:
+        content → tool → content → tool
+
         Returns the created ToolState for further modification.
         """
+        # Flush accumulated content BEFORE adding tool
+        self._flush_content_buffer()
+
+        # Create tool
         tool = ToolState(
             id=f"tool_{len(self.tools)}",
             name=name.lower(),
@@ -258,6 +303,13 @@ class StreamingUIState:
             detail=detail
         )
         self.tools.append(tool)
+
+        # Add to elements for correct ordering
+        self.elements.append(UIElement(
+            type=ElementType.TOOL,
+            data=tool
+        ))
+
         return tool
 
     def get_current_tool(self) -> Optional[ToolState]:
@@ -380,7 +432,8 @@ class StreamingUIState:
 
     def reset(self) -> None:
         """Reset state for new message"""
-        self.content = ""
+        self.elements = []
+        self._content_buffer = ""
         self.tools = []
         self.thinking = []
         self.thinking_buffer = ""
@@ -391,6 +444,9 @@ class StreamingUIState:
 
     def finalize(self) -> None:
         """Mark message as finalized"""
+        # Flush remaining content buffer
+        self._flush_content_buffer()
+
         self.finalized = True
         # Flush any remaining thinking
         if self.thinking_buffer:
