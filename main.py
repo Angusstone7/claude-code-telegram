@@ -33,6 +33,7 @@ from shared.config.settings import settings
 from shared.container import Container, Config
 from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 from presentation.middleware.auth import AuthMiddleware, CallbackAuthMiddleware
+from presentation.handlers.state.update_coordinator import init_coordinator
 
 # Configure logging
 Path("logs").mkdir(exist_ok=True)
@@ -104,6 +105,11 @@ class Application:
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         self.dp = Dispatcher()
+
+        # ВАЖНО: Инициализировать координатор обновлений ПЕРЕД хэндлерами!
+        # Координатор гарантирует минимум 2 секунды между обновлениями сообщений
+        coordinator = init_coordinator(self.bot)
+        logger.info(f"✓ MessageUpdateCoordinator initialized (min interval: {coordinator.MIN_UPDATE_INTERVAL}s)")
 
         # Register handlers (using container)
         self._register_handlers()

@@ -13,10 +13,13 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from aiogram import Bot
 from aiogram.types import Message, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
+
+if TYPE_CHECKING:
+    from presentation.handlers.state.update_coordinator import MessageUpdateCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -402,6 +405,8 @@ class StreamingHandler:
     """
     Manages streaming output to Telegram with rate limiting.
 
+    ВАЖНО: Все обновления теперь проходят через MessageUpdateCoordinator!
+
     Handles the complexities of:
     - Debouncing updates to avoid API rate limits
     - Splitting long messages that exceed Telegram's 4096 char limit
@@ -413,7 +418,7 @@ class StreamingHandler:
     # With heartbeat every 3s + content updates, we need careful timing
     MAX_MESSAGE_LENGTH = 4000  # Leave buffer from 4096
     DEBOUNCE_INTERVAL = 2.0  # Base seconds between updates (avoid rate limits)
-    MIN_UPDATE_INTERVAL = 1.5  # Minimum seconds between edits
+    MIN_UPDATE_INTERVAL = 2.0  # УВЕЛИЧЕНО до 2 секунд! Синхронизировано с координатором
 
     # Adaptive interval thresholds (bytes) - increase interval for large messages
     LARGE_TEXT_BYTES = 2500  # >2.5KB → 2.5s interval
@@ -433,7 +438,8 @@ class StreamingHandler:
         chat_id: int,
         initial_message: Optional[Message] = None,
         reply_markup: Optional[InlineKeyboardMarkup] = None,
-        context_limit: int = DEFAULT_CONTEXT_LIMIT
+        context_limit: int = DEFAULT_CONTEXT_LIMIT,
+        coordinator: Optional["MessageUpdateCoordinator"] = None
     ):
         self.bot = bot
         self.chat_id = chat_id
@@ -459,6 +465,13 @@ class StreamingHandler:
 
         # File change tracking for end-of-session summary
         self._file_change_tracker: Optional["FileChangeTracker"] = None
+
+        # ЦЕНТРАЛИЗОВАННЫЙ КООРДИНАТОР ОБНОВЛЕНИЙ
+        # Если не передан - получаем глобальный
+        self._coordinator = coordinator
+        if self._coordinator is None:
+            from presentation.handlers.state.update_coordinator import get_coordinator
+            self._coordinator = get_coordinator()
 
         if initial_message:
             self.messages.append(initial_message)
@@ -761,6 +774,8 @@ class StreamingHandler:
     async def show_todo_list(self, todos: list[dict]) -> None:
         """Show/update todo list in a separate message.
 
+        ВАЖНО: Обновления проходят через координатор!
+
         Creates a dedicated message for the task plan that updates
         in-place as tasks progress. Shows:
         - ✅ Completed tasks (strikethrough)
@@ -804,49 +819,43 @@ class StreamingHandler:
 
         try:
             if self._todo_message:
-                # Update existing message
-                try:
-                    await self._todo_message.edit_text(html_text, parse_mode="HTML")
-                except TelegramBadRequest as e:
-                    if "message is not modified" not in str(e).lower():
-                        logger.warning(f"Error updating todo message: {e}")
-                except TelegramRetryAfter as e:
-                    # Don't wait long for todo updates - just log and skip
-                    if e.retry_after > 10:
-                        logger.warning(f"Rate limited for todo update ({e.retry_after}s), skipping")
-                    else:
-                        await asyncio.sleep(e.retry_after + 0.5)
-                        try:
-                            await self._todo_message.edit_text(html_text, parse_mode="HTML")
-                        except Exception:
-                            pass
+                # Update existing message через координатор
+                if self._coordinator:
+                    await self._coordinator.update(
+                        self._todo_message,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                else:
+                    # Fallback
+                    try:
+                        await self._todo_message.edit_text(html_text, parse_mode="HTML")
+                    except TelegramBadRequest as e:
+                        if "message is not modified" not in str(e).lower():
+                            logger.warning(f"Error updating todo message: {e}")
             else:
-                # Create new message
-                self._todo_message = await self.bot.send_message(
-                    self.chat_id,
-                    html_text,
-                    parse_mode="HTML"
-                )
-                logger.info(f"Created todo message: {self._todo_message.message_id}")
-        except TelegramRetryAfter as e:
-            # Don't wait long for todo creation - log and skip
-            if e.retry_after > 10:
-                logger.warning(f"Rate limited for todo creation ({e.retry_after}s), skipping")
-            else:
-                await asyncio.sleep(e.retry_after + 0.5)
-                try:
+                # Create new message через координатор
+                if self._coordinator:
+                    self._todo_message = await self._coordinator.send_new(
+                        self.chat_id,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                else:
                     self._todo_message = await self.bot.send_message(
                         self.chat_id,
                         html_text,
                         parse_mode="HTML"
                     )
-                except Exception as ex:
-                    logger.error(f"Failed to create todo message after retry: {ex}")
+                if self._todo_message:
+                    logger.info(f"Created todo message: {self._todo_message.message_id}")
         except Exception as e:
             logger.error(f"Error in show_todo_list: {e}")
 
     async def show_plan_mode_enter(self) -> None:
         """Show that Claude entered plan mode.
+
+        ВАЖНО: Обновления проходят через координатор!
 
         Displays a visual indicator that Claude is analyzing
         the task and creating a plan before execution.
@@ -860,39 +869,40 @@ class StreamingHandler:
 
         try:
             if self._plan_mode_message:
-                try:
-                    await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
-                except TelegramBadRequest as e:
-                    if "message is not modified" not in str(e).lower():
-                        logger.warning(f"Error updating plan mode message: {e}")
-                except TelegramRetryAfter as e:
-                    await asyncio.sleep(e.retry_after + 0.5)
+                if self._coordinator:
+                    await self._coordinator.update(
+                        self._plan_mode_message,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                else:
                     try:
                         await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
-                    except Exception:
-                        pass
+                    except TelegramBadRequest as e:
+                        if "message is not modified" not in str(e).lower():
+                            logger.warning(f"Error updating plan mode message: {e}")
             else:
-                self._plan_mode_message = await self.bot.send_message(
-                    self.chat_id,
-                    html_text,
-                    parse_mode="HTML"
-                )
-                logger.info(f"Created plan mode message: {self._plan_mode_message.message_id}")
-        except TelegramRetryAfter as e:
-            await asyncio.sleep(e.retry_after + 0.5)
-            try:
-                self._plan_mode_message = await self.bot.send_message(
-                    self.chat_id,
-                    html_text,
-                    parse_mode="HTML"
-                )
-            except Exception as ex:
-                logger.error(f"Failed to create plan mode message after retry: {ex}")
+                if self._coordinator:
+                    self._plan_mode_message = await self._coordinator.send_new(
+                        self.chat_id,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                else:
+                    self._plan_mode_message = await self.bot.send_message(
+                        self.chat_id,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                if self._plan_mode_message:
+                    logger.info(f"Created plan mode message: {self._plan_mode_message.message_id}")
         except Exception as e:
             logger.error(f"Error in show_plan_mode_enter: {e}")
 
     async def show_plan_mode_exit(self, plan_approved: bool = False) -> None:
         """Show that Claude exited plan mode.
+
+        ВАЖНО: Обновления проходят через координатор!
 
         Args:
             plan_approved: Whether the plan was approved (True) or just ready (False)
@@ -906,34 +916,33 @@ class StreamingHandler:
 
         try:
             if self._plan_mode_message:
-                try:
-                    await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
-                except TelegramBadRequest as e:
-                    if "message is not modified" not in str(e).lower():
-                        logger.warning(f"Error updating plan mode exit: {e}")
-                except TelegramRetryAfter as e:
-                    await asyncio.sleep(e.retry_after + 0.5)
+                if self._coordinator:
+                    await self._coordinator.update(
+                        self._plan_mode_message,
+                        html_text,
+                        parse_mode="HTML",
+                        is_final=True
+                    )
+                else:
                     try:
                         await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
-                    except Exception:
-                        pass
+                    except TelegramBadRequest as e:
+                        if "message is not modified" not in str(e).lower():
+                            logger.warning(f"Error updating plan mode exit: {e}")
                 self._plan_mode_message = None
             else:
-                await self.bot.send_message(
-                    self.chat_id,
-                    html_text,
-                    parse_mode="HTML"
-                )
-        except TelegramRetryAfter as e:
-            await asyncio.sleep(e.retry_after + 0.5)
-            try:
-                await self.bot.send_message(
-                    self.chat_id,
-                    html_text,
-                    parse_mode="HTML"
-                )
-            except Exception as ex:
-                logger.error(f"Failed to show plan mode exit after retry: {ex}")
+                if self._coordinator:
+                    await self._coordinator.send_new(
+                        self.chat_id,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                else:
+                    await self.bot.send_message(
+                        self.chat_id,
+                        html_text,
+                        parse_mode="HTML"
+                    )
         except Exception as e:
             logger.error(f"Error in show_plan_mode_exit: {e}")
 
@@ -988,12 +997,21 @@ class StreamingHandler:
             keyboard = Keyboards.question_options(questions, question_id)
 
         try:
-            msg = await self.bot.send_message(
-                self.chat_id,
-                html_text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+            # Вопросы важны - используем координатор для надёжной доставки
+            if self._coordinator:
+                msg = await self._coordinator.send_new(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            else:
+                msg = await self.bot.send_message(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
             return msg
         except Exception as e:
             logger.error(f"Error showing question: {e}")
@@ -1032,8 +1050,11 @@ class StreamingHandler:
     async def _do_update(self, _retry_count: int = 0):
         """Actually perform the update to Telegram.
 
+        ВАЖНО: Все обновления теперь проходят через координатор!
+        Координатор гарантирует интервал 2 секунды между обновлениями.
+
         Args:
-            _retry_count: Internal retry counter for rate limit handling
+            _retry_count: Internal retry counter for rate limit handling (deprecated)
         """
         if not self.buffer or self.is_finalized:
             logger.debug(f"Streaming: _do_update skipped (buffer={bool(self.buffer)}, finalized={self.is_finalized})")
@@ -1048,47 +1069,21 @@ class StreamingHandler:
                 logger.info(f"Streaming: overflow detected, handling...")
                 await self._handle_overflow()
             else:
-                logger.debug(f"Streaming: editing message...")
+                logger.debug(f"Streaming: editing message via coordinator...")
                 await self._edit_current_message(display_text)
 
             self.last_update_time = time.time()
             logger.debug(f"Streaming: update completed")
 
-        except TelegramRetryAfter as e:
-            # Rate limited - DON'T wait long times, just skip the update
-            # Telegram rate limits can be 200+ seconds - we can't block that long
-            if e.retry_after > 10:
-                logger.warning(f"Rate limited for {e.retry_after}s - skipping update (will retry on next append)")
-                # Update last_update_time to prevent immediate retry
-                self.last_update_time = time.time()
-                return
-
-            # Short rate limits - wait and retry once
-            if _retry_count >= 1:  # Only retry once for short limits
-                logger.warning(f"Rate limit retry failed, skipping")
-                return
-
-            wait_time = e.retry_after + 0.5
-            logger.info(f"Rate limited for {e.retry_after}s, waiting {wait_time:.1f}s")
-            await asyncio.sleep(wait_time)
-            await self._do_update(_retry_count=_retry_count + 1)
-
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                # Same content, ignore
-                pass
-            elif "message to edit not found" in str(e):
-                # Message deleted, send new one
-                logger.info("Message was deleted, sending new one")
-                await self._send_new_message(display_text)
-            else:
-                logger.error(f"Telegram error: {e}")
-
         except Exception as e:
+            # Координатор обрабатывает rate limits внутри
             logger.error(f"Error updating message: {e}")
 
     async def _edit_current_message(self, text: str, is_final: bool = False):
         """Edit the current message with valid HTML only.
+
+        ВАЖНО: Все обновления проходят через MessageUpdateCoordinator!
+        Координатор гарантирует минимум 2 секунды между обновлениями.
 
         Uses StableHTMLFormatter to ensure we only send properly closed HTML.
         This prevents flickering from broken/partial tags.
@@ -1136,24 +1131,36 @@ class StreamingHandler:
         if not html_text:
             return
 
-        try:
-            await self.current_message.edit_text(
+        # === ИСПОЛЬЗОВАТЬ КООРДИНАТОР ===
+        if self._coordinator:
+            await self._coordinator.update(
+                self.current_message,
                 html_text,
                 parse_mode="HTML",
-                reply_markup=self.reply_markup
+                reply_markup=self.reply_markup,
+                is_final=is_final
             )
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass  # Same content, ignore
-            else:
-                # Fallback - strip all HTML and send plain
-                plain_text = re.sub(r'<[^>]+>', '', html_text)
-                try:
-                    await self.current_message.edit_text(
-                        plain_text, parse_mode=None, reply_markup=self.reply_markup
-                    )
-                except Exception:
-                    pass  # Give up on this update
+        else:
+            # Fallback: прямой вызов (не рекомендуется)
+            logger.warning("Streaming: coordinator not available, using direct edit")
+            try:
+                await self.current_message.edit_text(
+                    html_text,
+                    parse_mode="HTML",
+                    reply_markup=self.reply_markup
+                )
+            except TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass  # Same content, ignore
+                else:
+                    # Fallback - strip all HTML and send plain
+                    plain_text = re.sub(r'<[^>]+>', '', html_text)
+                    try:
+                        await self.current_message.edit_text(
+                            plain_text, parse_mode=None, reply_markup=self.reply_markup
+                        )
+                    except Exception:
+                        pass  # Give up on this update
 
     async def _send_new_message(self, text: str, is_final: bool = False) -> Message:
         """Send a new message (converts Markdown to HTML)"""
@@ -1387,7 +1394,11 @@ class HeartbeatTracker:
     """Periodic status updates during long operations.
 
     Shows elapsed time and current action with animated spinner.
-    Updates every second for smooth animation.
+
+    ВАЖНО: Интервал увеличен до 3 секунд чтобы синхронизироваться
+    с MessageUpdateCoordinator (минимум 2с между обновлениями).
+    Heartbeat только обновляет _status_line, а фактическое
+    обновление сообщения происходит через координатор.
     """
 
     # Braille spinner animation (smooth rotating dots)
@@ -1421,9 +1432,13 @@ class HeartbeatTracker:
         "default": "Работаю",
     }
 
-    def __init__(self, streaming: StreamingHandler, interval: float = 1.0):
+    # УВЕЛИЧЕН ИНТЕРВАЛ: 3 секунды вместо 1
+    # Это даёт координатору время между обновлениями (2с) + буфер
+    DEFAULT_INTERVAL = 3.0
+
+    def __init__(self, streaming: StreamingHandler, interval: float = DEFAULT_INTERVAL):
         self.streaming = streaming
-        self.interval = interval
+        self.interval = max(interval, self.DEFAULT_INTERVAL)  # Не меньше 3 секунд!
         self.start_time = time.time()
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
@@ -1469,7 +1484,12 @@ class HeartbeatTracker:
                 pass
 
     async def _loop(self):
-        """Periodic status update loop - updates every second"""
+        """Periodic status update loop.
+
+        ВАЖНО: Интервал 3 секунды синхронизирован с координатором (2с).
+        Heartbeat НЕ вызывает _do_update напрямую - только обновляет
+        _status_line, который будет включён в следующее обновление контента.
+        """
         while self.is_running:
             try:
                 elapsed = int(time.time() - self.start_time)
@@ -1499,6 +1519,8 @@ class HeartbeatTracker:
                 else:
                     status = f"{emoji} <b>{label}...</b> {spinner} ({time_str})"
 
+                # ВАЖНО: set_status НЕ вызывает обновление напрямую!
+                # Статус будет включён в следующее обновление контента
                 await self.streaming.set_status(status)
                 await asyncio.sleep(self.interval)
             except asyncio.CancelledError:
