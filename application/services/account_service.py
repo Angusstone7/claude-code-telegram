@@ -104,6 +104,7 @@ class AccountSettings:
     model: Optional[str] = None  # Preferred model (e.g., "claude-sonnet-4-5" or "glm-4.7")
     proxy_url: str = CLAUDE_PROXY
     local_model_config: Optional[LocalModelConfig] = None  # Config for LOCAL_MODEL mode
+    yolo_mode: bool = False  # Auto-approve all operations
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

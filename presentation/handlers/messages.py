@@ -571,6 +571,12 @@ class MessageHandlers:
             await message.answer("Вы не авторизованы для использования этого бота.")
             return
 
+        # Load yolo_mode from DB if not already loaded
+        session = self._state.get(user_id)
+        if session is None:
+            # First interaction - load persisted settings
+            await self._state.load_yolo_mode(user_id)
+
         # === FILE REPLY HANDLING ===
         reply = message.reply_to_message
         if reply and self._files.has_file(reply.message_id) and self.file_processor_service:

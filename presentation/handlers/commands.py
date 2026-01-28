@@ -431,6 +431,8 @@ class CommandHandlers:
         YOLO mode auto-approves all operations without waiting for confirmation.
         Use with caution!
         """
+        import asyncio
+
         user_id = message.from_user.id
 
         if not self.message_handlers:
@@ -442,19 +444,29 @@ class CommandHandlers:
         self.message_handlers.set_yolo_mode(user_id, new_state)
 
         if new_state:
-            await message.answer(
-                "🚀 <b>YOLO Mode: ON</b>\n\n"
-                "⚡ Все операции будут выполняться автоматически!\n"
-                "⚠️ Будьте осторожны - нет подтверждений!\n\n"
-                "Используйте `/yolo` снова чтобы выключить.",
+            response = await message.answer(
+                "🚀 <b>YOLO Mode: ON</b> ⚡",
                 parse_mode="HTML"
             )
         else:
-            await message.answer(
-                "🛡️ <b>YOLO Mode: OFF</b>\n\n"
-                "Операции снова требуют подтверждения.",
+            response = await message.answer(
+                "🛡️ <b>YOLO Mode: OFF</b>",
                 parse_mode="HTML"
             )
+
+        # Delete command and response after 2 seconds
+        async def delete_messages():
+            await asyncio.sleep(2)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            try:
+                await response.delete()
+            except Exception:
+                pass
+
+        asyncio.create_task(delete_messages())
 
     async def cd(self, message: Message, command: CommandObject) -> None:
         """

@@ -54,6 +54,15 @@ class SQLiteAccountRepository:
                 # Column already exists, that's fine
                 pass
 
+            # Add yolo_mode column if it doesn't exist (migration)
+            try:
+                await db.execute("ALTER TABLE account_settings ADD COLUMN yolo_mode INTEGER DEFAULT 0")
+                await db.commit()
+                logger.info("Added yolo_mode column to account_settings table")
+            except Exception:
+                # Column already exists, that's fine
+                pass
+
             logger.info("Account settings table initialized")
 
     async def find_by_user_id(self, user_id: int) -> Optional["AccountSettings"]:
@@ -81,18 +90,47 @@ class SQLiteAccountRepository:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO account_settings
-                (user_id, auth_mode, model, proxy_url, local_model_config, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (user_id, auth_mode, model, proxy_url, local_model_config, yolo_mode, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 settings.user_id,
                 settings.auth_mode.value,
                 settings.model,
                 settings.proxy_url,
                 local_config_json,
+                1 if getattr(settings, 'yolo_mode', False) else 0,
                 settings.created_at.isoformat() if settings.created_at else None,
                 settings.updated_at.isoformat() if settings.updated_at else None,
             ))
             await db.commit()
+
+    async def set_yolo_mode(self, user_id: int, enabled: bool) -> None:
+        """Set yolo mode for user (quick update without full save)"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # First ensure row exists
+            await db.execute("""
+                INSERT OR IGNORE INTO account_settings (user_id, auth_mode, yolo_mode, created_at)
+                VALUES (?, 'zai_api', ?, ?)
+            """, (user_id, 1 if enabled else 0, datetime.utcnow().isoformat()))
+
+            # Then update
+            await db.execute(
+                "UPDATE account_settings SET yolo_mode = ?, updated_at = ? WHERE user_id = ?",
+                (1 if enabled else 0, datetime.utcnow().isoformat(), user_id)
+            )
+            await db.commit()
+
+    async def get_yolo_mode(self, user_id: int) -> bool:
+        """Get yolo mode for user"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT yolo_mode FROM account_settings WHERE user_id = ?",
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return bool(row[0])
+        return False
 
     async def delete(self, user_id: int) -> None:
         """Delete account settings for user"""
@@ -117,12 +155,18 @@ class SQLiteAccountRepository:
             except (json.JSONDecodeError, TypeError, KeyError) as e:
                 logger.warning(f"Failed to deserialize local_model_config: {e}")
 
+        # Get yolo_mode (may not exist in old rows)
+        yolo_mode = False
+        if "yolo_mode" in row.keys() and row["yolo_mode"]:
+            yolo_mode = bool(row["yolo_mode"])
+
         return AccountSettings(
             user_id=row["user_id"],
             auth_mode=AuthMode(row["auth_mode"]),
             model=row["model"] if "model" in row.keys() else None,  # May be None for existing records
             proxy_url=row["proxy_url"],
             local_model_config=local_model_config,
+            yolo_mode=yolo_mode,
             created_at=(
                 datetime.fromisoformat(row["created_at"])
                 if row["created_at"] else None

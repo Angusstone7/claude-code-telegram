@@ -79,6 +79,15 @@ class UserStateManager:
         self._sessions: Dict[int, UserSession] = {}
         self._streaming_handlers: Dict[int, StreamingHandler] = {}
         self._heartbeat_trackers: Dict[int, HeartbeatTracker] = {}
+        # Lazy-loaded repository for persistent settings
+        self._account_repo = None
+
+    def _get_account_repo(self):
+        """Get or create account repository (lazy init)"""
+        if self._account_repo is None:
+            from infrastructure.persistence.sqlite_account_repository import SQLiteAccountRepository
+            self._account_repo = SQLiteAccountRepository()
+        return self._account_repo
 
     def get_or_create(self, user_id: int) -> UserSession:
         """Get existing user session or create new one"""
@@ -154,6 +163,39 @@ class UserStateManager:
         session = self.get_or_create(user_id)
         session.yolo_mode = enabled
         logger.info(f"[{user_id}] YOLO mode: {enabled}")
+        # Persist to database asynchronously
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._persist_yolo_mode(user_id, enabled))
+            else:
+                loop.run_until_complete(self._persist_yolo_mode(user_id, enabled))
+        except Exception as e:
+            logger.warning(f"Could not persist yolo mode: {e}")
+
+    async def _persist_yolo_mode(self, user_id: int, enabled: bool) -> None:
+        """Persist yolo mode to database"""
+        try:
+            repo = self._get_account_repo()
+            await repo.set_yolo_mode(user_id, enabled)
+            logger.debug(f"[{user_id}] YOLO mode persisted: {enabled}")
+        except Exception as e:
+            logger.warning(f"Failed to persist yolo mode: {e}")
+
+    async def load_yolo_mode(self, user_id: int) -> bool:
+        """Load yolo mode from database"""
+        try:
+            repo = self._get_account_repo()
+            enabled = await repo.get_yolo_mode(user_id)
+            if enabled:
+                session = self.get_or_create(user_id)
+                session.yolo_mode = enabled
+                logger.info(f"[{user_id}] YOLO mode loaded from DB: {enabled}")
+            return enabled
+        except Exception as e:
+            logger.warning(f"Failed to load yolo mode: {e}")
+            return False
 
     # === Step Streaming Mode ===
 
