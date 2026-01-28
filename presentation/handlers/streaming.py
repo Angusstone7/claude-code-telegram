@@ -1217,12 +1217,16 @@ class StreamingHandler:
         await self.append(f"\n\n{error_text}")
         await self.finalize()
 
+    def set_completion_info(self, info: str):
+        """Set completion info (cost, tokens) - rendered at the BOTTOM after tools"""
+        self.ui.set_completion_info(info)
+
     async def send_completion(self, success: bool = True):
-        """Send a completion indicator"""
+        """Send a completion indicator - rendered at the BOTTOM after tools"""
         if success:
-            await self.append("\n\n✅ **Готово**")
+            self.ui.set_completion_status("✅ <b>Готово</b>")
         else:
-            await self.append("\n\n⚠️ **Завершено с проблемами**")
+            self.ui.set_completion_status("⚠️ <b>Завершено с проблемами</b>")
         await self.finalize()
 
     async def move_to_bottom(self, header: str = ""):

@@ -154,6 +154,12 @@ class StreamingUIState:
     # Status line at the bottom
     status_line: str = ""
 
+    # Completion info (cost, tokens) - shown at the very bottom
+    completion_info: str = ""  # e.g., "$0.0978 | ~5K токенов"
+
+    # Completion status - shown after completion_info
+    completion_status: str = ""  # e.g., "✅ Готово"
+
     # Whether the message is finalized
     finalized: bool = False
 
@@ -193,6 +199,13 @@ class StreamingUIState:
 
         Used by StreamingHandler to append to formatted content.
         Returns HTML ready for Telegram.
+
+        Order:
+        1. Thinking blocks
+        2. Current thinking buffer
+        3. Tool statuses
+        4. Completion info (cost, tokens) - AT THE BOTTOM
+        5. Completion status (✅ Готово) - AT THE VERY BOTTOM
         """
         parts = []
 
@@ -211,6 +224,14 @@ class StreamingUIState:
         # 3. Tool statuses
         for tool in self.tools:
             parts.append(tool.render())
+
+        # 4. Completion info (cost, tokens) - at the bottom
+        if self.completion_info:
+            parts.append(self.completion_info)
+
+        # 5. Completion status (✅ Готово) - at the very bottom
+        if self.completion_status:
+            parts.append(self.completion_status)
 
         return "\n\n".join(parts)
 
@@ -349,6 +370,14 @@ class StreamingUIState:
         """Clear the status line"""
         self.status_line = ""
 
+    def set_completion_info(self, info: str) -> None:
+        """Set completion info (cost, tokens) - shown at the bottom"""
+        self.completion_info = info
+
+    def set_completion_status(self, status: str) -> None:
+        """Set completion status (✅ Готово) - shown at the very bottom"""
+        self.completion_status = status
+
     def reset(self) -> None:
         """Reset state for new message"""
         self.content = ""
@@ -356,6 +385,8 @@ class StreamingUIState:
         self.thinking = []
         self.thinking_buffer = ""
         self.status_line = ""
+        self.completion_info = ""
+        self.completion_status = ""
         self.finalized = False
 
     def finalize(self) -> None:

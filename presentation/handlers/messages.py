@@ -772,7 +772,8 @@ class MessageHandlers:
                         tokens, _, _ = streaming.get_context_usage()
                         tokens_k = tokens // 1000
                         cost_str = f"${result.total_cost_usd:.4f}"
-                        await streaming.append(f"\n\n{cost_str} | ~{tokens_k}K токенов")
+                        # Use set_completion_info to render at the BOTTOM after tools
+                        streaming.set_completion_info(f"{cost_str} | ~{tokens_k}K токенов")
 
                 cli_result = TaskResult(
                     success=result.success,
