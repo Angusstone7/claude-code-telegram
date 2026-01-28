@@ -959,12 +959,10 @@ class StreamingHandler:
 
         ВАЖНО: Все обновления теперь проходят через координатор!
         Координатор гарантирует интервал 2 секунды между обновлениями.
-
-        Args:
-            _retry_count: Internal retry counter for rate limit handling (deprecated)
         """
-        if not self.buffer or self.is_finalized:
-            logger.debug(f"Streaming: _do_update skipped (buffer={bool(self.buffer)}, finalized={self.is_finalized})")
+        # Обновляем если есть буфер ИЛИ статус (heartbeat)
+        if (not self.buffer and not self._status_line) or self.is_finalized:
+            logger.debug(f"Streaming: _do_update skipped (buffer={bool(self.buffer)}, status={bool(self._status_line)}, finalized={self.is_finalized})")
             return
 
         display_text = self._get_display_buffer()
@@ -1301,11 +1299,7 @@ class HeartbeatTracker:
     """Periodic status updates during long operations.
 
     Shows elapsed time and current action with animated spinner.
-
-    ВАЖНО: Интервал увеличен до 3 секунд чтобы синхронизироваться
-    с MessageUpdateCoordinator (минимум 2с между обновлениями).
-    Heartbeat только обновляет _status_line, а фактическое
-    обновление сообщения происходит через координатор.
+    Интервал = 2 секунды, синхронизирован с координатором.
     """
 
     # Braille spinner animation (smooth rotating dots)
@@ -1390,12 +1384,7 @@ class HeartbeatTracker:
                 pass
 
     async def _loop(self):
-        """Periodic status update loop.
-
-        ВАЖНО: Интервал 3 секунды синхронизирован с координатором (2с).
-        Heartbeat НЕ вызывает _do_update напрямую - только обновляет
-        _status_line, который будет включён в следующее обновление контента.
-        """
+        """Periodic status update loop - каждые 2 секунды."""
         while self.is_running:
             try:
                 elapsed = int(time.time() - self.start_time)
@@ -1425,8 +1414,7 @@ class HeartbeatTracker:
                 else:
                     status = f"{emoji} <b>{label}...</b> {spinner} ({time_str})"
 
-                # ВАЖНО: set_status НЕ вызывает обновление напрямую!
-                # Статус будет включён в следующее обновление контента
+                # set_status() вызывает _do_update() -> координатор (2с интервал)
                 await self.streaming.set_status(status)
                 await asyncio.sleep(self.interval)
             except asyncio.CancelledError:
