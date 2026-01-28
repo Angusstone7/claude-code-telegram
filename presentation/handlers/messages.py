@@ -775,11 +775,26 @@ class MessageHandlers:
 
                         # Add real token usage if available
                         if result.usage:
+                            # Full context = direct input + cached reads + cache creation
                             input_tokens = result.usage.get("input_tokens", 0)
+                            cache_read = result.usage.get("cache_read_input_tokens", 0)
+                            cache_create = result.usage.get("cache_creation_input_tokens", 0)
                             output_tokens = result.usage.get("output_tokens", 0)
-                            total_tokens = input_tokens + output_tokens
-                            if total_tokens > 0:
-                                info_parts.append(f"{total_tokens:,} tok")
+
+                            # Total context used (input side)
+                            total_input = input_tokens + cache_read + cache_create
+                            total_all = total_input + output_tokens
+
+                            if total_all > 0:
+                                # Show as "199K ctx | 1.2K out" for clarity
+                                ctx_k = total_input / 1000
+                                out_k = output_tokens / 1000
+                                if ctx_k >= 1:
+                                    info_parts.append(f"{ctx_k:.0f}K ctx")
+                                if out_k >= 1:
+                                    info_parts.append(f"{out_k:.1f}K out")
+                                elif output_tokens > 0:
+                                    info_parts.append(f"{output_tokens} out")
 
                         # Add duration if available
                         if result.duration_ms:
