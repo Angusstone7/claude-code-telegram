@@ -1432,13 +1432,12 @@ class HeartbeatTracker:
         "default": "Работаю",
     }
 
-    # УВЕЛИЧЕН ИНТЕРВАЛ: 3 секунды вместо 1
-    # Это даёт координатору время между обновлениями (2с) + буфер
-    DEFAULT_INTERVAL = 3.0
+    # Интервал heartbeat = 2 секунды (синхронизирован с координатором)
+    DEFAULT_INTERVAL = 2.0
 
     def __init__(self, streaming: StreamingHandler, interval: float = DEFAULT_INTERVAL):
         self.streaming = streaming
-        self.interval = max(interval, self.DEFAULT_INTERVAL)  # Не меньше 3 секунд!
+        self.interval = max(interval, self.DEFAULT_INTERVAL)  # Не меньше 2 секунд!
         self.start_time = time.time()
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
