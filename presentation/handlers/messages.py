@@ -967,9 +967,10 @@ class MessageHandlers:
         """Handle permission request (CLI mode)"""
         if self.is_yolo_mode(user_id):
             streaming = self._state.get_streaming_handler(user_id)
-            if streaming:
+            # В step streaming mode не показываем "Авто-одобрено" - step handler уже показывает операции
+            if streaming and not self.is_step_streaming_mode(user_id):
                 truncated = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n**Авто-одобрено:** `{tool_name}`\n`{truncated}`\n")
+                await streaming.append(f"\n**Авто-одобрено:** `{tool_name}`\n```\n{truncated}\n```\n")
             return True
 
         session = self._state.get_claude_session(user_id)
@@ -1078,9 +1079,10 @@ class MessageHandlers:
         """Handle permission request from SDK"""
         if self.is_yolo_mode(user_id):
             streaming = self._state.get_streaming_handler(user_id)
-            if streaming:
+            # В step streaming mode не показываем "Авто-одобрено" - step handler уже показывает операции
+            if streaming and not self.is_step_streaming_mode(user_id):
                 truncated = details[:100] + "..." if len(details) > 100 else details
-                await streaming.append(f"\n**Авто-одобрено:** `{tool_name}`\n`{truncated}`\n")
+                await streaming.append(f"\n**Авто-одобрено:** `{tool_name}`\n```\n{truncated}\n```\n")
 
             if self.sdk_service:
                 await self.sdk_service.respond_to_permission(user_id, True)
