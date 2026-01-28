@@ -1479,23 +1479,15 @@ class StepStreamingHandler:
         self._current_tool_input: dict = {}
 
     async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
-        """Показать начало инструмента кратко."""
+        """Запомнить начало инструмента (не показываем, ждём завершения)."""
         tool_lower = tool_name.lower()
-        icon = self.TOOL_ICONS.get(tool_lower, "🔧")
-        actions = self.TOOL_ACTIONS.get(tool_lower, ("Processing", "Done"))
 
         # Извлечь имя файла/команду
         detail = self._extract_detail(tool_lower, tool_input)
         self._current_tool = tool_lower
         self._current_file = detail
         self._current_tool_input = tool_input
-
-        if detail:
-            msg = f"\n{icon} {actions[0]} `{detail}`..."
-        else:
-            msg = f"\n{icon} {actions[0]}..."
-
-        await self.base.append(msg)
+        # Не показываем ничего - покажем при завершении
 
     async def on_tool_complete(
         self,
@@ -1503,8 +1495,8 @@ class StepStreamingHandler:
         tool_input: Optional[dict] = None,
         success: bool = True
     ) -> None:
-        """Показать завершение со сводкой изменений."""
-        tool_lower = tool_name.lower()
+        """Показать одну строку результата операции."""
+        tool_lower = tool_name.lower() if tool_name else self._current_tool
         icon = "✅" if success else "❌"
         actions = self.TOOL_ACTIONS.get(tool_lower, ("Processing", "Done"))
 
@@ -1512,11 +1504,11 @@ class StepStreamingHandler:
         if tool_input is None:
             tool_input = self._current_tool_input
 
-        detail = self._current_file or self._extract_detail(tool_lower, tool_input)
+        detail = self._current_file or self._extract_detail(tool_lower, tool_input or {})
 
         # Для файловых операций - показать +/- строк
         change_str = ""
-        if tool_lower in ("write", "edit"):
+        if tool_lower in ("write", "edit") and tool_input:
             tracker = self.base.get_file_tracker()
             file_path = tool_input.get("file_path", "")
             changes = tracker._changes.get(file_path)
