@@ -300,18 +300,23 @@ class StableHTMLFormatter:
         if self._are_markers_paired(text):
             return len(text)
 
-        # FALLBACK: If text is long but we can't find stable point,
-        # find ANY newline and use text up to there.
-        # This prevents updates from freezing during long unstable content.
-        if len(original_text) > 500:
-            # Find a newline in the text we've processed
-            for i in range(len(text) - 1, 0, -1):
-                if text[i] == '\n':
-                    # Use content up to this newline
-                    return i
-            # Last resort: use first 80% of processed text
-            if len(text) > 100:
-                return int(len(text) * 0.8)
+        # FALLBACK: If we can't find a stable point, still show something
+        # to prevent the UI from appearing frozen.
+        # Priority: find any newline, then use 80% of text, then use all
+
+        # Try to find any newline in the processed text
+        for i in range(len(text) - 1, 0, -1):
+            if text[i] == '\n':
+                return i
+
+        # No newlines - use 80% of text if it's long enough
+        if len(text) > 50:
+            return int(len(text) * 0.8)
+
+        # For very short text, just return everything
+        # Better to show something than nothing!
+        if len(text) > 10:
+            return len(text)
 
         return 0
 
@@ -882,15 +887,21 @@ class StreamingHandler:
                 f"last_sent_len={self._formatter._last_sent_length}"
             )
 
-        # If formatter has no stable content yet, we still want to show status
-        # This ensures the spinner keeps updating even during unstable markdown
-        if not should_update and not status:
-            return
+        # CRITICAL: Always show SOMETHING to the user!
+        # If formatter couldn't produce HTML but we have text, escape it and show
+        if not html_text and text:
+            # Formatter couldn't find stable point - force show escaped text
+            html_text = html_module.escape(text)
+            logger.debug(f"Formatter produced no HTML, using escaped text ({len(text)} chars)")
 
         # If we got no HTML from formatter but have previous HTML, use that
         # This prevents blank messages when formatter returns empty
         if not html_text and self._formatter._last_sent_html:
             html_text = self._formatter._last_sent_html
+
+        # If still nothing but we need to update status, that's ok
+        if not html_text and not status:
+            return
 
         # Add status line
         if status:
