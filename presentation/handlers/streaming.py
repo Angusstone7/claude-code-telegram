@@ -1662,11 +1662,17 @@ class StepStreamingHandler:
             if len(self._thinking_buffer) > 800:
                 display_text += "..."
 
-            # Сворачиваем предыдущий если был
+            # Сворачиваем предыдущий если был (thinking блоки добавляются с \n\n)
             if self._last_thinking_line:
-                old_line = f"💭 <i>{self._last_thinking_line}</i>"
-                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                await self.base.replace_last_line(old_line, collapsed)
+                old_line = f"\n\n💭 <i>{self._last_thinking_line}</i>"
+                collapsed = f"\n\n<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                replaced = await self.base.replace_last_line(old_line, collapsed)
+                if not replaced:
+                    # Пробуем без \n\n
+                    await self.base.replace_last_line(
+                        f"💭 <i>{self._last_thinking_line}</i>",
+                        f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                    )
 
             # Добавляем текущий сразу свёрнутым (т.к. начинается tool)
             collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
@@ -1676,9 +1682,15 @@ class StepStreamingHandler:
 
         # Сворачиваем последний открытый блок если есть
         elif self._last_thinking_line:
-            old_line = f"💭 <i>{self._last_thinking_line}</i>"
-            collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-            await self.base.replace_last_line(old_line, collapsed)
+            old_line = f"\n\n💭 <i>{self._last_thinking_line}</i>"
+            collapsed = f"\n\n<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+            replaced = await self.base.replace_last_line(old_line, collapsed)
+            if not replaced:
+                # Пробуем без \n\n
+                await self.base.replace_last_line(
+                    f"💭 <i>{self._last_thinking_line}</i>",
+                    f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                )
             self._last_thinking_line = ""
 
     async def on_permission_request(self, tool_name: str, tool_input: dict) -> None:
@@ -1729,8 +1741,13 @@ class StepStreamingHandler:
         # Формируем строку "Выполняю" (без деталей пока - они будут в on_tool_start)
         progress_line = f"{icon} {actions[0]}..."
 
-        # Заменяем "Ожидаю разрешение" на "Выполняю"
-        replaced = await self.base.replace_last_line(self._waiting_permission_line, progress_line)
+        # Заменяем "Ожидаю разрешение" на "Выполняю" (с учётом \n)
+        search_line = f"\n{self._waiting_permission_line}"
+        replace_line = f"\n{progress_line}"
+        replaced = await self.base.replace_last_line(search_line, replace_line)
+        if not replaced:
+            # Пробуем без \n
+            replaced = await self.base.replace_last_line(self._waiting_permission_line, progress_line)
         if replaced:
             self._progress_line = progress_line
             self._waiting_permission_line = ""
@@ -1766,7 +1783,12 @@ class StepStreamingHandler:
 
         # Если была строка ожидания разрешения - заменяем её на строку прогресса
         if self._waiting_permission_line:
-            replaced = await self.base.replace_last_line(self._waiting_permission_line, new_progress_line)
+            # Ищем с \n в начале (как строка была добавлена)
+            search_line = f"\n{self._waiting_permission_line}"
+            replace_line = f"\n{new_progress_line}"
+            replaced = await self.base.replace_last_line(search_line, replace_line)
+            if not replaced:
+                replaced = await self.base.replace_last_line(self._waiting_permission_line, new_progress_line)
             self._waiting_permission_line = ""
             self._progress_line = new_progress_line
             if not replaced:
@@ -1775,7 +1797,11 @@ class StepStreamingHandler:
         elif self._progress_line:
             # Если on_permission_granted уже создал progress_line - обновляем с деталями
             if detail and self._progress_line != new_progress_line:
-                replaced = await self.base.replace_last_line(self._progress_line, new_progress_line)
+                search_line = f"\n{self._progress_line}"
+                replace_line = f"\n{new_progress_line}"
+                replaced = await self.base.replace_last_line(search_line, replace_line)
+                if not replaced:
+                    replaced = await self.base.replace_last_line(self._progress_line, new_progress_line)
                 self._progress_line = new_progress_line
                 if not replaced:
                     # Если замена не удалась - просто обновляем переменную
@@ -1829,11 +1855,18 @@ class StepStreamingHandler:
         else:
             complete_line = f"{icon} {actions[1]}{change_str}"
 
-        # Пытаемся заменить строку прогресса на строку завершения
+        # Пытаемся заменить строку прогресса на строку завершения (in-place)
         if self._progress_line:
-            replaced = await self.base.replace_last_line(self._progress_line, complete_line)
+            # Ищем строку с \n в начале (как она была добавлена)
+            search_line = f"\n{self._progress_line}"
+            replace_line = f"\n{complete_line}"
+            replaced = await self.base.replace_last_line(search_line, replace_line)
             if not replaced:
-                # Если замена не удалась, просто добавим новую строку
+                # Пробуем без \n (если строка в начале буфера)
+                replaced = await self.base.replace_last_line(self._progress_line, complete_line)
+            if not replaced:
+                # Если всё равно не удалась - добавляем новую строку
+                logger.debug(f"StepStreaming: replace failed, adding new line. Progress was: {self._progress_line}")
                 await self.base.append(f"\n{complete_line}")
         else:
             # Нет строки прогресса - просто добавляем
@@ -1886,9 +1919,16 @@ class StepStreamingHandler:
 
             # Сворачиваем предыдущий открытый блок (если есть)
             if self._last_thinking_line:
-                old_line = f"💭 <i>{self._last_thinking_line}</i>"
-                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                await self.base.replace_last_line(old_line, collapsed)
+                # Thinking блоки добавляются с \n\n в начале
+                old_line = f"\n\n💭 <i>{self._last_thinking_line}</i>"
+                collapsed = f"\n\n<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                replaced = await self.base.replace_last_line(old_line, collapsed)
+                if not replaced:
+                    # Пробуем без \n\n
+                    await self.base.replace_last_line(
+                        f"💭 <i>{self._last_thinking_line}</i>",
+                        f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                    )
 
             # Добавляем новый открытый блок (курсивом)
             await self.base.append(f"\n\n💭 <i>{display_text}</i>")
