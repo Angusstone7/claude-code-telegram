@@ -1678,9 +1678,12 @@ class StepStreamingHandler:
 
         # Если есть pending tool - обновить его
         if self.base.ui.update_pending_to_executing(tool_name, detail):
-            pass  # Tool уже обновлён
+            pass  # Tool уже обновлён (PENDING -> EXECUTING)
+        elif self.base.ui.find_executing_tool(tool_name):
+            # Уже есть EXECUTING tool (после on_permission_granted) - не добавляем дубль
+            pass
         else:
-            # Иначе создать новый (YOLO mode)
+            # Иначе создать новый (YOLO mode без permission request)
             self.base.ui.add_tool(tool_name, detail, ToolStatus.EXECUTING)
 
         await self.base._do_update()
