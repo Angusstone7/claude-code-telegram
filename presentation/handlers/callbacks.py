@@ -1503,7 +1503,16 @@ class CallbackHandlers:
             if self.project_service:
                 from domain.value_objects.user_id import UserId
                 uid = UserId.from_int(user_id)
-                project = await self.project_service.get_or_create(uid, path, project_name)
+
+                # First check if project with exact path exists
+                existing = await self.project_service.project_repository.find_by_path(uid, path)
+                if existing:
+                    # Use existing project
+                    project = existing
+                else:
+                    # Create new project for this exact path (don't use parent)
+                    project = await self.project_service.create_project(uid, project_name, path)
+
                 await self.project_service.switch_project(uid, project.id)
                 project_name = project.name
 
