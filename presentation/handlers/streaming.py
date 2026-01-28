@@ -562,6 +562,24 @@ class StreamingHandler:
             return True
         return False
 
+    async def force_update(self):
+        """
+        Force an immediate update to Telegram, bypassing debounce.
+
+        Use this for important events like tool start/complete in step streaming mode
+        where real-time feedback is critical.
+        """
+        if self.is_finalized or not self.buffer:
+            return
+
+        async with self._update_lock:
+            # Cancel any pending delayed update
+            if self._pending_update and not self._pending_update.done():
+                self._pending_update.cancel()
+                self._pending_update = None
+
+            await self._do_update()
+
     async def set_status(self, status: str):
         """Set a status line at the bottom of the current message.
 
@@ -1509,6 +1527,15 @@ class StepStreamingHandler:
         """Показать строку прогресса с иконкой инструмента."""
         tool_lower = tool_name.lower()
 
+        # Сбросить накопленные рассуждения перед новой операцией
+        if hasattr(self, '_thinking_buffer') and self._thinking_buffer:
+            # Показать то что накопилось
+            display_text = self._thinking_buffer[:300]
+            if len(self._thinking_buffer) > 300:
+                display_text += "..."
+            await self.base.append(f"\n\n💭 *{display_text}*")
+            self._thinking_buffer = ""
+
         # Извлечь имя файла/команду
         detail = self._extract_detail(tool_lower, tool_input)
         self._current_tool = tool_lower
@@ -1525,8 +1552,9 @@ class StepStreamingHandler:
         else:
             self._progress_line = f"{icon} {actions[0]}..."
 
-        # Показываем строку прогресса
+        # Показываем строку прогресса и форсируем обновление
         await self.base.append(f"\n{self._progress_line}")
+        await self.base.force_update()  # Важное событие - показать сразу
 
     async def on_tool_complete(
         self,
@@ -1581,6 +1609,9 @@ class StepStreamingHandler:
         if detail_block:
             await self.base.append(f"\n```\n{detail_block}\n```")
 
+        # Форсируем обновление - завершение инструмента важно показать сразу
+        await self.base.force_update()
+
         # Сбросить состояние
         self._current_tool = ""
         self._current_file = ""
@@ -1588,19 +1619,37 @@ class StepStreamingHandler:
         self._progress_line = ""
 
     async def on_thinking(self, text: str) -> None:
-        """Показать рассуждения Claude в отдельном блоке с 💭."""
-        # Очистить от лишних пробелов
+        """
+        Накапливать рассуждения Claude и показывать как единый блок.
+
+        Текст приходит кусочками (streaming), поэтому накапливаем и показываем
+        только значимые куски (когда накопилось достаточно или есть точка в конце).
+        """
         text = text.strip()
         if not text:
             return
 
-        # Показываем полный текст рассуждений в блоке кода для выделения
-        # Ограничиваем 300 символами чтобы не было слишком много
-        if len(text) > 300:
-            text = text[:300] + "..."
+        # Накапливаем текст
+        if not hasattr(self, '_thinking_buffer'):
+            self._thinking_buffer = ""
+        self._thinking_buffer += text
 
-        # Форматируем как блок с облачком
-        await self.base.append(f"\n\n💭 *{text}*\n")
+        # Показываем когда:
+        # 1. Буфер достаточно большой (> 100 символов) И заканчивается на точку/знак
+        # 2. Или буфер очень большой (> 300 символов)
+        should_flush = (
+            (len(self._thinking_buffer) > 100 and self._thinking_buffer.rstrip()[-1:] in '.!?:')
+            or len(self._thinking_buffer) > 300
+        )
+
+        if should_flush:
+            display_text = self._thinking_buffer[:300]
+            if len(self._thinking_buffer) > 300:
+                display_text += "..."
+
+            # Форматируем как блок с облачком
+            await self.base.append(f"\n\n💭 *{display_text}*")
+            self._thinking_buffer = ""  # Очищаем буфер
 
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
         """Извлечь краткую деталь (имя файла, команду)."""
