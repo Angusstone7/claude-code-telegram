@@ -1560,7 +1560,7 @@ class StepStreamingHandler:
                 if parts:
                     change_str = f" ({' '.join(parts)} lines)"
 
-        # Формируем строку завершения
+        # Формируем строку завершения (краткую)
         if detail:
             complete_line = f"{icon} {actions[1]} `{detail}`{change_str}"
         else:
@@ -1575,6 +1575,11 @@ class StepStreamingHandler:
         else:
             # Нет строки прогресса - просто добавляем
             await self.base.append(f"\n{complete_line}")
+
+        # Добавляем детальную информацию в блоке кода под операцией
+        detail_block = self._get_detail_block(tool_lower, tool_input or {})
+        if detail_block:
+            await self.base.append(f"\n```\n{detail_block}\n```")
 
         # Сбросить состояние
         self._current_tool = ""
@@ -1612,6 +1617,35 @@ class StepStreamingHandler:
         elif tool_name in ("webfetch", "websearch"):
             url_or_query = tool_input.get("url", "") or tool_input.get("query", "")
             return url_or_query[:30] if url_or_query else ""
+        return ""
+
+    def _get_detail_block(self, tool_name: str, tool_input: dict) -> str:
+        """Получить детальную информацию для блока кода под операцией."""
+        if tool_name == "bash":
+            cmd = tool_input.get("command", "")
+            if cmd:
+                # Ограничиваем 150 символами
+                if len(cmd) > 150:
+                    return cmd[:147] + "..."
+                return cmd
+        elif tool_name in ("read", "write", "edit", "notebookedit"):
+            path = tool_input.get("file_path", "") or tool_input.get("notebook_path", "")
+            if path:
+                return path
+        elif tool_name in ("glob", "grep"):
+            pattern = tool_input.get("pattern", "")
+            path = tool_input.get("path", "")
+            if pattern:
+                if path:
+                    return f"{pattern} in {path}"
+                return pattern
+        elif tool_name in ("webfetch", "websearch"):
+            url = tool_input.get("url", "")
+            query = tool_input.get("query", "")
+            if url:
+                return url
+            if query:
+                return query
         return ""
 
     def get_current_tool(self) -> str:
