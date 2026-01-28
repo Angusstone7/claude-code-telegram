@@ -564,15 +564,28 @@ class StreamingHandler:
 
     async def force_update(self):
         """
-        Force an immediate update to Telegram, bypassing debounce.
+        Force an update to Telegram with minimum interval protection.
 
-        Use this for important events like tool start/complete in step streaming mode
-        where real-time feedback is critical.
+        Use this for important events like tool start/complete in step streaming mode.
+        Respects MIN_UPDATE_INTERVAL to avoid Telegram rate limits.
         """
         if self.is_finalized or not self.buffer:
             return
 
         async with self._update_lock:
+            # Check minimum interval to avoid rate limits
+            now = time.time()
+            time_since_update = now - self.last_update_time
+
+            if time_since_update < self.MIN_UPDATE_INTERVAL:
+                # Too soon - schedule normal update instead of forcing
+                if self._pending_update is None or self._pending_update.done():
+                    delay = self.MIN_UPDATE_INTERVAL - time_since_update
+                    self._pending_update = asyncio.create_task(
+                        self._delayed_update(delay)
+                    )
+                return
+
             # Cancel any pending delayed update
             if self._pending_update and not self._pending_update.done():
                 self._pending_update.cancel()
