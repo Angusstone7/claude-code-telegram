@@ -540,9 +540,11 @@ class StreamingHandler:
         Updates are debounced to avoid rate limits.
         """
         if self.is_finalized:
+            logger.debug(f"Streaming: append ignored, already finalized")
             return
 
         self.buffer += text
+        logger.debug(f"Streaming: appended {len(text)} chars, buffer now {len(self.buffer)} chars")
 
         # Schedule debounced update
         await self._schedule_update()
@@ -893,18 +895,23 @@ class StreamingHandler:
             _retry_count: Internal retry counter for rate limit handling
         """
         if not self.buffer or self.is_finalized:
+            logger.debug(f"Streaming: _do_update skipped (buffer={bool(self.buffer)}, finalized={self.is_finalized})")
             return
 
         display_text = self._get_display_buffer()
+        logger.info(f"Streaming: _do_update called, display_text={len(display_text)} chars")
 
         try:
             # Check if we need to split into multiple messages
             if len(display_text) > self.MAX_MESSAGE_LENGTH:
+                logger.info(f"Streaming: overflow detected, handling...")
                 await self._handle_overflow()
             else:
+                logger.debug(f"Streaming: editing message...")
                 await self._edit_current_message(display_text)
 
             self.last_update_time = time.time()
+            logger.debug(f"Streaming: update completed")
 
         except TelegramRetryAfter as e:
             # Rate limited - use exponential backoff
