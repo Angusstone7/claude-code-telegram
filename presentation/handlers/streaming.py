@@ -582,7 +582,7 @@ class StreamingHandler:
     async def append(self, text: str):
         """
         Append text to the stream buffer.
-        Updates are debounced to avoid rate limits.
+        Обновление через координатор - он обеспечивает rate limiting.
         """
         if self.is_finalized:
             logger.debug(f"Streaming: append ignored, already finalized")
@@ -591,8 +591,8 @@ class StreamingHandler:
         self.buffer += text
         logger.debug(f"Streaming: appended {len(text)} chars, buffer now {len(self.buffer)} chars")
 
-        # Schedule debounced update
-        await self._schedule_update()
+        # Отправляем в координатор - он сам решит когда обновить
+        await self._do_update()
 
     async def append_line(self, text: str):
         """Append text followed by a newline"""
@@ -603,97 +603,38 @@ class StreamingHandler:
         Replace the last occurrence of old_line with new_line in the buffer.
 
         Used for in-place updates like changing progress icons to completion icons.
-
-        Args:
-            old_line: The line to replace (without newline)
-            new_line: The replacement line (without newline)
-
-        Returns:
-            True if replacement was made, False otherwise
         """
         if self.is_finalized:
             return False
 
-        # Find and replace the last occurrence
         idx = self.buffer.rfind(old_line)
         if idx != -1:
             self.buffer = self.buffer[:idx] + new_line + self.buffer[idx + len(old_line):]
-            await self._schedule_update()
+            await self._do_update()  # Координатор обеспечит rate limiting
             return True
         return False
 
     async def force_update(self):
         """
-        Force an update to Telegram with minimum interval protection.
-
-        Use this for important events like tool start/complete in step streaming mode.
-        Respects MIN_UPDATE_INTERVAL to avoid Telegram rate limits.
+        Force an update - просто вызывает _do_update().
+        Координатор обеспечивает rate limiting.
         """
-        if self.is_finalized or not self.buffer:
-            return
-
-        async with self._update_lock:
-            # Check minimum interval to avoid rate limits
-            now = time.time()
-            time_since_update = now - self.last_update_time
-
-            if time_since_update < self.MIN_UPDATE_INTERVAL:
-                # Too soon - schedule normal update instead of forcing
-                if self._pending_update is None or self._pending_update.done():
-                    delay = self.MIN_UPDATE_INTERVAL - time_since_update
-                    self._pending_update = asyncio.create_task(
-                        self._delayed_update(delay)
-                    )
-                return
-
-            # Cancel any pending delayed update
-            if self._pending_update and not self._pending_update.done():
-                self._pending_update.cancel()
-                self._pending_update = None
-
-            await self._do_update()
+        await self._do_update()
 
     async def immediate_update(self):
         """
-        Immediately update Telegram message, handling rate limits with retry.
-
-        Unlike force_update(), this method WILL send the update even if rate limited,
-        by waiting for the rate limit to expire. Use for critical events that MUST
-        be shown to user (like multiple tool approvals in sequence).
-
-        This prevents message lag when user approves many tools quickly.
+        Immediately update - просто вызывает _do_update().
+        Координатор обеспечивает rate limiting.
         """
-        if self.is_finalized or not self.buffer:
-            return
-
-        async with self._update_lock:
-            # Cancel any pending delayed update
-            if self._pending_update and not self._pending_update.done():
-                self._pending_update.cancel()
-                self._pending_update = None
-
-            # Check minimum interval - if too soon, wait instead of skipping
-            now = time.time()
-            time_since_update = now - self.last_update_time
-
-            if time_since_update < self.MIN_UPDATE_INTERVAL:
-                delay = self.MIN_UPDATE_INTERVAL - time_since_update
-                logger.debug(f"Streaming: immediate_update waiting {delay:.2f}s for rate limit")
-                await asyncio.sleep(delay)
-
-            await self._do_update()
+        await self._do_update()
 
     async def set_status(self, status: str):
         """Set a status line at the bottom of the current message.
 
-        Status is always visible until finalize() is called.
-        Only schedules update if enough time passed since last update.
+        ВАЖНО: Координатор обеспечивает rate limiting (2с между обновлениями).
         """
         self._status_line = status
-        # Only trigger update if enough time passed (avoid rate limits from heartbeat)
-        now = time.time()
-        if now - self.last_update_time >= self.DEBOUNCE_INTERVAL:
-            await self._schedule_update()
+        await self._do_update()
 
     def _get_display_buffer(self) -> str:
         """Get buffer content only (without status).
@@ -712,23 +653,12 @@ class StreamingHandler:
         return self._status_line
 
     def _calc_edit_interval(self) -> float:
-        """Calculate adaptive edit interval based on buffer size.
+        """Calculate edit interval - ВСЕГДА 2 секунды.
 
-        Uses balanced intervals for responsiveness while avoiding rate limits:
-        - Small messages (<2.5KB): 2.0s (base interval)
-        - Medium messages (2.5-3.5KB): 2.5s
-        - Large messages (>3.5KB): 3.0s
+        Координатор обеспечивает rate limiting, поэтому адаптивные
+        интервалы больше не нужны.
         """
-        try:
-            byte_size = len(self.buffer.encode('utf-8'))
-        except Exception:
-            byte_size = len(self.buffer)
-
-        if byte_size >= self.VERY_LARGE_TEXT_BYTES:
-            return 3.0  # Large messages
-        if byte_size >= self.LARGE_TEXT_BYTES:
-            return 2.5  # Medium messages
-        return self.DEBOUNCE_INTERVAL  # Default 2.0s
+        return self.MIN_UPDATE_INTERVAL  # Всегда 2.0 секунды
 
     async def show_tool_use(self, tool_name: str, details: str = ""):
         """Show that a tool is being used with nice formatting"""
@@ -1018,34 +948,11 @@ class StreamingHandler:
             return None
 
     async def _schedule_update(self):
-        """Schedule a debounced update with adaptive interval.
+        """Deprecated - просто вызывает _do_update().
 
-        Uses adaptive intervals based on buffer size to avoid rate limits.
-        Logs scheduling decisions for debugging streaming issues.
+        Вся логика rate limiting теперь в координаторе.
         """
-        async with self._update_lock:
-            now = time.time()
-            time_since_update = now - self.last_update_time
-            interval = self._calc_edit_interval()
-
-            if time_since_update >= interval:
-                # Enough time passed, update immediately
-                logger.debug(f"Streaming: immediate update (interval={interval:.1f}s, since_last={time_since_update:.1f}s)")
-                await self._do_update()
-            else:
-                # Schedule delayed update if not already pending
-                if self._pending_update is None or self._pending_update.done():
-                    delay = interval - time_since_update
-                    logger.debug(f"Streaming: scheduling update in {delay:.1f}s (interval={interval:.1f}s)")
-                    self._pending_update = asyncio.create_task(
-                        self._delayed_update(delay)
-                    )
-
-    async def _delayed_update(self, delay: float):
-        """Wait and then perform update"""
-        await asyncio.sleep(delay)
-        async with self._update_lock:
-            await self._do_update()
+        await self._do_update()
 
     async def _do_update(self, _retry_count: int = 0):
         """Actually perform the update to Telegram.
