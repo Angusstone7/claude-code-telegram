@@ -1645,9 +1645,15 @@ class StepStreamingHandler:
         # Сворачиваем thinking блоки
         self.base.ui.collapse_all_thinking()
 
-        # Добавляем tool со статусом PENDING
         from presentation.handlers.streaming_ui import ToolStatus
         detail = self._extract_detail(tool_name.lower(), tool_input)
+
+        # ВАЖНО: on_tool_start может быть вызван ДО on_permission_request!
+        # Если уже есть EXECUTING tool - не добавляем PENDING (он уже в работе)
+        if self.base.ui.find_executing_tool(tool_name):
+            logger.debug(f"StepStreaming: skip PENDING, already have EXECUTING for {tool_name}")
+            return
+
         self.base.ui.add_tool(tool_name, detail, ToolStatus.PENDING)
 
         await self.base._do_update()
@@ -1657,7 +1663,10 @@ class StepStreamingHandler:
         logger.debug(f"StepStreaming: on_permission_granted({tool_name})")
 
         # Находим pending tool и переводим в executing
-        self.base.ui.update_pending_to_executing(tool_name)
+        # Если нет PENDING (tool уже EXECUTING от on_tool_start) - это нормально
+        if not self.base.ui.update_pending_to_executing(tool_name):
+            logger.debug(f"StepStreaming: no PENDING for {tool_name}, already EXECUTING")
+            return
 
         await self.base._do_update()
 
