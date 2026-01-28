@@ -109,6 +109,18 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
 
     text = re.sub(r'`([^`\n]+)`', protect_inline_code, text)
 
+    # 3.5. Protect blockquote tags (expandable quotes for thinking blocks)
+    def protect_blockquote(m: re.Match) -> str:
+        key = get_placeholder(len(placeholders))
+        # Keep the blockquote as-is but escape content inside
+        tag_attrs = m.group(1) or ""
+        content = m.group(2)
+        escaped_content = html_module.escape(content)
+        placeholders.append(f'<blockquote{tag_attrs}>{escaped_content}</blockquote>')
+        return key
+
+    text = re.sub(r'<blockquote([^>]*)>(.*?)</blockquote>', protect_blockquote, text, flags=re.DOTALL)
+
     # 4. Escape HTML ONLY in unprotected text (outside placeholders)
     text = html_module.escape(text)
 
