@@ -1118,8 +1118,27 @@ class StreamingHandler:
         self._status_line = ""  # Убираем статус из старого сообщения
         self.reply_markup = None  # Убираем кнопки из старого сообщения
 
-        # Редактируем текущее сообщение без статуса
-        await self._edit_current_message(self.buffer, is_final=True)
+        # Финализируем UI state для старого сообщения
+        self.ui.finalize()
+
+        # Обрезаем если нужно, чтобы вписаться в лимит Telegram
+        final_html = self.ui.render_non_content()
+        if len(final_html) > self.MAX_MESSAGE_LENGTH:
+            # Обрезаем до лимита с индикатором продолжения
+            truncate_indicator = "\n\n<i>...продолжение в следующем сообщении...</i>"
+            max_content = self.MAX_MESSAGE_LENGTH - len(truncate_indicator) - 100
+            final_html = final_html[:max_content] + truncate_indicator
+            logger.info(f"Truncated overflow message to {len(final_html)} chars")
+
+        # Редактируем текущее сообщение напрямую (без повторного render)
+        if self.current_message and self._coordinator:
+            await self._coordinator.update(
+                self.current_message,
+                final_html,
+                parse_mode="HTML",
+                reply_markup=None,  # Убираем кнопки
+                is_final=True
+            )
 
         # 2. Восстанавливаем статус и кнопки для нового сообщения
         self._status_line = old_status
