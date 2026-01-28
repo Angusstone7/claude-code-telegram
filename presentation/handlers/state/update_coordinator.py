@@ -107,6 +107,12 @@ class MessageUpdateCoordinator:
         """
         state = self._get_state(message)
 
+        # Логируем входящий вызов
+        logger.info(
+            f"Coordinator.update: msg={message.message_id}, text={len(text)}ch, "
+            f"is_final={is_final}, last_sent={len(state.last_sent_text)}ch"
+        )
+
         # Игнорируем обновления для финализированных сообщений
         if state.is_finalized and not is_final:
             logger.debug(f"Message {message.message_id}: ignoring update, already finalized")
@@ -114,7 +120,7 @@ class MessageUpdateCoordinator:
 
         # Если текст не изменился - пропускаем
         if text == state.last_sent_text and not is_final:
-            logger.debug(f"Message {message.message_id}: text unchanged, skipping")
+            logger.debug(f"Message {message.message_id}: text unchanged ({len(text)}ch), skipping")
             return False
 
         # Создаём pending update
@@ -129,6 +135,7 @@ class MessageUpdateCoordinator:
         # Если есть pending с меньшим приоритетом - заменяем
         if state.pending_update is None or pending.priority >= state.pending_update.priority:
             state.pending_update = pending
+            logger.debug(f"Message {message.message_id}: pending_update set ({len(text)}ch)")
 
         # Проверяем можно ли обновить сейчас
         now = time.time()
@@ -136,31 +143,41 @@ class MessageUpdateCoordinator:
 
         if time_since_update >= self.MIN_UPDATE_INTERVAL or is_final:
             # Можно обновить сейчас
+            logger.info(f"Message {message.message_id}: executing update NOW (elapsed={time_since_update:.1f}s)")
             return await self._execute_update(state)
         else:
             # Планируем отложенное обновление
             delay = self.MIN_UPDATE_INTERVAL - time_since_update
+            logger.info(f"Message {message.message_id}: scheduling update in {delay:.1f}s")
             await self._schedule_update(state, delay)
             return True
 
     async def _schedule_update(self, state: MessageState, delay: float) -> None:
         """Запланировать отложенное обновление."""
         # Если уже есть scheduled task - он выполнит pending_update
+        # pending_update уже был обновлён в update() до этого вызова
         if state.update_task and not state.update_task.done():
-            logger.debug(f"Message {state.message.message_id}: update already scheduled")
+            pending_size = len(state.pending_update.text) if state.pending_update else 0
+            logger.debug(
+                f"Message {state.message.message_id}: task already scheduled, "
+                f"pending updated to {pending_size}ch (will be sent when task fires)"
+            )
             return
 
         async def delayed_update():
             await asyncio.sleep(delay)
+            logger.debug(f"Message {state.message.message_id}: delayed_update firing after {delay:.1f}s")
             await self._execute_update(state)
 
         state.update_task = asyncio.create_task(delayed_update())
-        logger.debug(f"Message {state.message.message_id}: scheduled update in {delay:.1f}s")
+        pending_size = len(state.pending_update.text) if state.pending_update else 0
+        logger.info(f"Message {state.message.message_id}: NEW scheduled update in {delay:.1f}s ({pending_size}ch)")
 
     async def _execute_update(self, state: MessageState) -> bool:
         """Выполнить обновление сообщения."""
         pending = state.pending_update
         if not pending:
+            logger.debug(f"Message {state.message.message_id}: _execute_update - no pending update")
             return False
 
         # Очищаем pending до выполнения (чтобы новые запросы создали новый)
@@ -170,6 +187,12 @@ class MessageUpdateCoordinator:
         if pending.is_final:
             state.is_finalized = True
 
+        # КРИТИЧЕСКОЕ ЛОГИРОВАНИЕ - момент отправки в Telegram
+        logger.info(
+            f">>> TELEGRAM EDIT: msg={state.message.message_id}, "
+            f"text={len(pending.text)}ch, is_final={pending.is_final}"
+        )
+
         try:
             await state.message.edit_text(
                 pending.text,
@@ -178,7 +201,7 @@ class MessageUpdateCoordinator:
             )
             state.last_update_time = time.time()
             state.last_sent_text = pending.text
-            logger.debug(f"Message {state.message.message_id}: updated ({len(pending.text)} chars)")
+            logger.info(f">>> TELEGRAM EDIT SUCCESS: msg={state.message.message_id}, {len(pending.text)}ch")
             return True
 
         except TelegramRetryAfter as e:

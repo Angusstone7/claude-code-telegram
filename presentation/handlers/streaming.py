@@ -257,14 +257,17 @@ class StableHTMLFormatter:
         """
         Format markdown to valid HTML.
 
+        КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Всегда возвращает АКТУАЛЬНЫЙ HTML!
+        Координатор сам решает когда обновлять Telegram.
+
         Args:
             raw_text: Full raw Markdown text
             is_final: Whether this is the final format (force output all)
 
         Returns:
             Tuple of (html_text, should_update)
-            - html_text: Valid HTML string
-            - should_update: True if content changed and should be sent
+            - html_text: Valid HTML string (ВСЕГДА актуальный!)
+            - should_update: True if content changed (информативно)
         """
         if not raw_text:
             return "", False
@@ -282,16 +285,18 @@ class StableHTMLFormatter:
         stable_end = self._find_stable_end(raw_text)
 
         if stable_end == 0:
-            # Nothing stable yet - return last sent or empty
-            return self._last_sent_html, False
+            # Nothing stable yet - но всё равно покажем что есть!
+            # КРИТИЧЕСКИЙ ФИК: Не возвращаем пустоту, показываем escaped text
+            logger.debug(f"StableHTMLFormatter: stable_end=0, escaping {len(raw_text)} chars")
+            html_text = html_module.escape(raw_text)
+            return html_text, True
 
         # Only format the stable part
         stable_text = raw_text[:stable_end]
 
-        # Check if we have new stable content
-        if stable_end <= self._last_sent_length:
-            # No new stable content
-            return self._last_sent_html, False
+        # КРИТИЧЕСКИЙ ФИКС: Всегда форматируем и возвращаем актуальный HTML!
+        # Убрана проверка `stable_end <= self._last_sent_length` которая
+        # блокировала обновления и возвращала старый HTML
 
         # Format the stable part
         html_text = markdown_to_html(stable_text, is_streaming=False)
@@ -299,13 +304,18 @@ class StableHTMLFormatter:
 
         # Verify it's valid
         if not self._is_valid_html(html_text):
-            # Something went wrong - don't update
-            return self._last_sent_html, False
+            # Something went wrong - fallback to escaped text
+            logger.warning(f"StableHTMLFormatter: invalid HTML, using escaped text")
+            html_text = html_module.escape(stable_text)
 
-        # Update cache and return
+        # Check if content actually changed
+        changed = html_text != self._last_sent_html
+
+        # Update cache
         self._last_sent_html = html_text
         self._last_sent_length = stable_end
-        return html_text, True
+
+        return html_text, changed
 
     def _find_stable_end(self, text: str) -> int:
         """
@@ -994,6 +1004,7 @@ class StreamingHandler:
         This prevents flickering from broken/partial tags.
         """
         if not self.current_message:
+            logger.debug("_edit_current_message: no current_message, skipping")
             return
 
         # Get status line (already HTML formatted)
@@ -1002,13 +1013,11 @@ class StreamingHandler:
         # Use formatter to get valid HTML
         html_text, should_update = self._formatter.format(text, is_final=is_final)
 
-        # Debug logging for troubleshooting frozen updates
-        if not should_update and text:
-            logger.debug(
-                f"Formatter returned should_update=False: "
-                f"text_len={len(text)}, html_len={len(html_text)}, "
-                f"last_sent_len={self._formatter._last_sent_length}"
-            )
+        # Логируем для отладки
+        logger.debug(
+            f"_edit_current_message: text={len(text)}ch, html={len(html_text)}ch, "
+            f"should_update={should_update}, is_final={is_final}"
+        )
 
         # CRITICAL: Always show SOMETHING to the user!
         # If formatter couldn't produce HTML but we have text, escape it and show
@@ -1017,13 +1026,9 @@ class StreamingHandler:
             html_text = html_module.escape(text)
             logger.debug(f"Formatter produced no HTML, using escaped text ({len(text)} chars)")
 
-        # If we got no HTML from formatter but have previous HTML, use that
-        # This prevents blank messages when formatter returns empty
-        if not html_text and self._formatter._last_sent_html:
-            html_text = self._formatter._last_sent_html
-
         # If still nothing but we need to update status, that's ok
         if not html_text and not status:
+            logger.debug("_edit_current_message: no html_text and no status, skipping")
             return
 
         # Add status line
@@ -1035,6 +1040,12 @@ class StreamingHandler:
 
         if not html_text:
             return
+
+        # КРИТИЧЕСКОЕ ЛОГИРОВАНИЕ - что отправляем в координатор
+        logger.info(
+            f"_edit_current_message -> coordinator: {len(html_text)}ch, "
+            f"msg_id={self.current_message.message_id}"
+        )
 
         # === ИСПОЛЬЗОВАТЬ КООРДИНАТОР ===
         if self._coordinator:
