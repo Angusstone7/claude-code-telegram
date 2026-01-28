@@ -1707,6 +1707,9 @@ class StepStreamingHandler:
             self._last_thinking_line = display_text  # Запоминаем для последующего сворачивания
             self._thinking_buffer = ""  # Очищаем буфер
 
+            # Форсируем обновление чтобы показать рассуждения сразу
+            await self.base.force_update()
+
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
         """Извлечь краткую деталь (имя файла, команду)."""
         if tool_name in ("read", "write", "edit", "notebookedit"):
