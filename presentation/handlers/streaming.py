@@ -271,6 +271,8 @@ class StableHTMLFormatter:
         - All inline formatting (**bold**, *italic*, `code`) is closed
         - We're at a paragraph boundary (double newline)
         """
+        original_text = text
+
         # Check for unclosed code blocks
         code_fence_count = text.count('```')
         if code_fence_count % 2 != 0:
@@ -297,6 +299,19 @@ class StableHTMLFormatter:
         # Check if entire text is stable
         if self._are_markers_paired(text):
             return len(text)
+
+        # FALLBACK: If text is long but we can't find stable point,
+        # find ANY newline and use text up to there.
+        # This prevents updates from freezing during long unstable content.
+        if len(original_text) > 500:
+            # Find a newline in the text we've processed
+            for i in range(len(text) - 1, 0, -1):
+                if text[i] == '\n':
+                    # Use content up to this newline
+                    return i
+            # Last resort: use first 80% of processed text
+            if len(text) > 100:
+                return int(len(text) * 0.8)
 
         return 0
 
@@ -832,14 +847,23 @@ class StreamingHandler:
         # Use formatter to get valid HTML
         html_text, should_update = self._formatter.format(text, is_final=is_final)
 
-        # If nothing changed in content, still update for status line changes
-        # (status changes every second with spinner)
+        # Debug logging for troubleshooting frozen updates
+        if not should_update and text:
+            logger.debug(
+                f"Formatter returned should_update=False: "
+                f"text_len={len(text)}, html_len={len(html_text)}, "
+                f"last_sent_len={self._formatter._last_sent_length}"
+            )
+
+        # If formatter has no stable content yet, we still want to show status
+        # This ensures the spinner keeps updating even during unstable markdown
         if not should_update and not status:
             return
 
-        # If we have no HTML yet but have status, show just status
-        if not html_text and status:
-            html_text = ""
+        # If we got no HTML from formatter but have previous HTML, use that
+        # This prevents blank messages when formatter returns empty
+        if not html_text and self._formatter._last_sent_html:
+            html_text = self._formatter._last_sent_html
 
         # Add status line
         if status:
@@ -935,6 +959,13 @@ class StreamingHandler:
             self.buffer = header + trim_indicator + content.lstrip("\n")
         else:
             self.buffer = header + "\n" + content if header else content
+
+        # CRITICAL: Reset formatter when buffer is trimmed!
+        # Otherwise _last_sent_length stays at old value and formatter
+        # thinks there's no new content (stable_end <= _last_sent_length)
+        if trimmed:
+            self._formatter.reset()
+            logger.debug(f"Buffer trimmed to {len(self.buffer)} chars, formatter reset")
 
         # Update message with trimmed content
         await self._edit_current_message(self.buffer, is_final=is_final)

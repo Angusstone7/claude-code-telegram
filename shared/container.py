@@ -282,15 +282,18 @@ class Container:
         """Create CallbackHandlers with all dependencies"""
         if "callback_handlers" not in self._cache:
             from presentation.handlers.callbacks import CallbackHandlers
+            msg_handlers = self.message_handlers()
             self._cache["callback_handlers"] = CallbackHandlers(
                 bot_service=self.bot_service(),
-                message_handlers=self.message_handlers(),
+                message_handlers=msg_handlers,
                 claude_proxy=self.claude_proxy(),
                 sdk_service=self.claude_sdk(),
                 project_service=self.project_service(),
                 context_service=self.context_service(),
                 file_browser_service=self.file_browser_service(),
             )
+            # Establish bidirectional link for gvar input handling
+            msg_handlers.callback_handlers = self._cache["callback_handlers"]
         return self._cache["callback_handlers"]
 
     def account_handlers(self):
