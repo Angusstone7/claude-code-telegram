@@ -415,6 +415,7 @@ class StreamingHandler:
         self._update_lock = asyncio.Lock()
         self._pending_update: Optional[asyncio.Task] = None
         self.reply_markup = reply_markup  # Cancel button etc.
+        self._message_index = 1  # Current message number (for "Part N" indicator)
         self._status_line = "🤖 <b>Запускаю...</b> ⠋ (0с)"  # Status line shown at bottom (always visible, HTML formatted)
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
         self._todo_message: Optional[Message] = None  # Separate message for todo list
@@ -1034,7 +1035,53 @@ class StreamingHandler:
         return msg
 
     async def _handle_overflow(self, is_final: bool = False):
-        """Handle buffer overflow with sliding window - remove old content, keep newest"""
+        """
+        Handle buffer overflow by creating a new message instead of trimming.
+
+        Multi-message streaming approach:
+        - Finalize current message (remove buttons/status)
+        - Create new message with continuation indicator
+        - Continue streaming in the new message
+        - Full history is preserved across messages
+        """
+        if is_final:
+            # На финальном этапе просто обрезаем если нужно
+            await self._handle_overflow_trim(is_final=True)
+            return
+
+        logger.info(f"Buffer overflow ({len(self.buffer)} chars), creating new message")
+
+        # 1. Финализировать текущее сообщение (без статуса, без кнопок)
+        old_status = self._status_line
+        old_markup = self.reply_markup
+        self._status_line = ""  # Убираем статус из старого сообщения
+        self.reply_markup = None  # Убираем кнопки из старого сообщения
+
+        # Редактируем текущее сообщение без статуса
+        await self._edit_current_message(self.buffer, is_final=True)
+
+        # 2. Восстанавливаем статус и кнопки для нового сообщения
+        self._status_line = old_status
+        self.reply_markup = old_markup
+
+        # 3. Увеличиваем счётчик сообщений
+        self._message_index += 1
+
+        # 4. Сбрасываем форматтер для нового сообщения
+        self._formatter.reset()
+
+        # 5. Создаём новый буфер с индикатором продолжения
+        continuation_header = f"📨 <b>Часть {self._message_index}</b>\n\n"
+        self.buffer = continuation_header
+
+        # 6. Создаём новое сообщение
+        self.current_message = await self._send_new_message(self.buffer)
+        self.last_update_time = time.time()
+
+        logger.info(f"Created continuation message #{self._message_index}")
+
+    async def _handle_overflow_trim(self, is_final: bool = False):
+        """Legacy trimming for final messages - keep only newest content."""
         # Extract header (first lines with emoji status)
         lines = self.buffer.split("\n")
         header_lines = []
@@ -1042,7 +1089,7 @@ class StreamingHandler:
 
         # Keep header lines (status and project info)
         for i, line in enumerate(lines):
-            if line.startswith("🤖") or line.startswith("📂") or line.startswith("📁"):
+            if line.startswith("🤖") or line.startswith("📂") or line.startswith("📁") or line.startswith("📨"):
                 header_lines.append(line)
                 content_start = i + 1
             elif header_lines:  # Stop after first non-header line
@@ -1074,8 +1121,6 @@ class StreamingHandler:
             self.buffer = header + "\n" + content if header else content
 
         # CRITICAL: Reset formatter when buffer is trimmed!
-        # Otherwise _last_sent_length stays at old value and formatter
-        # thinks there's no new content (stable_end <= _last_sent_length)
         if trimmed:
             self._formatter.reset()
             logger.debug(f"Buffer trimmed to {len(self.buffer)} chars, formatter reset")
@@ -1555,13 +1600,19 @@ class StepStreamingHandler:
         self._current_file: str = ""
         self._current_tool_input: dict = {}
         self._progress_line: str = ""  # Текущая строка прогресса для замены
+        self._thinking_buffer: str = ""  # Буфер накопленных размышлений
+        self._last_thinking_line: str = ""  # Последний открытый thinking блок
+        self._last_message_index: int = 1  # Для отслеживания перехода на новое сообщение
 
     async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
         """Показать строку прогресса с иконкой инструмента."""
+        # Проверяем переход на новое сообщение
+        await self._check_message_transition()
+
         tool_lower = tool_name.lower()
 
         # Сбросить накопленные рассуждения перед новой операцией
-        if hasattr(self, '_thinking_buffer') and self._thinking_buffer:
+        if self._thinking_buffer:
             # Показать то что накопилось (до 800 символов)
             display_text = self._thinking_buffer[:800]
             if len(self._thinking_buffer) > 800:
@@ -1605,6 +1656,9 @@ class StepStreamingHandler:
         success: bool = True
     ) -> None:
         """Заменить строку прогресса на строку завершения (in-place)."""
+        # Проверяем переход на новое сообщение
+        await self._check_message_transition()
+
         tool_lower = tool_name.lower() if tool_name else self._current_tool
         icon = "✅" if success else "❌"
         actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
@@ -1674,11 +1728,8 @@ class StepStreamingHandler:
         if not text:
             return
 
-        # Инициализация буферов
-        if not hasattr(self, '_thinking_buffer'):
-            self._thinking_buffer = ""
-        if not hasattr(self, '_last_thinking_line'):
-            self._last_thinking_line = ""  # Последняя открытая строка размышлений
+        # Проверяем переход на новое сообщение
+        await self._check_message_transition()
 
         self._thinking_buffer += text
 
@@ -1763,3 +1814,22 @@ class StepStreamingHandler:
     def get_current_tool_input(self) -> dict:
         """Get input of currently executing tool."""
         return self._current_tool_input
+
+    async def _check_message_transition(self) -> None:
+        """
+        Проверить переход на новое сообщение и подготовиться к нему.
+
+        При переходе:
+        - Сворачивает все открытые thinking блоки
+        - Сбрасывает _progress_line (она осталась в старом сообщении)
+        """
+        current_index = self.base._message_index
+        if current_index != self._last_message_index:
+            logger.debug(f"Message transition detected: {self._last_message_index} -> {current_index}")
+
+            # Сбрасываем состояние для нового сообщения
+            self._progress_line = ""  # Строка прогресса осталась в старом сообщении
+            self._last_thinking_line = ""  # Thinking блок тоже в старом сообщении
+            self._thinking_buffer = ""  # Очищаем буфер
+
+            self._last_message_index = current_index
