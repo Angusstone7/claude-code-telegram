@@ -627,10 +627,7 @@ class StreamingHandler:
         Returns raw content for HTML formatting.
         Status line is added separately after HTML formatting.
         """
-        # Sync buffer to ui.content for backwards compatibility
-        if self.buffer and self.buffer != self.ui.content:
-            self.ui.content = self.buffer
-
+        # NOTE: Sync now happens in _edit_current_message via ui._content_buffer
         return self.buffer
 
     def _get_status_line(self) -> str:
