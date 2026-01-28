@@ -666,7 +666,7 @@ class MessageHandlers:
 
                     original_prompt = prompt_override if prompt_override else message.text
                     new_prompt = await self.context_service.get_enriched_prompt(
-                        context_id, original_prompt
+                        context_id, original_prompt, user_id=uid  # Pass user_id for global variables
                     )
                     if new_prompt != original_prompt:
                         enriched_prompt = new_prompt

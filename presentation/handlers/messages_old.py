@@ -799,14 +799,14 @@ class MessageHandlers:
                     else:
                         logger.info(f"[{user_id}] Starting new session (no previous session_id)")
 
-                    # Enrich prompt with context variables
+                    # Enrich prompt with context variables (including global variables)
                     original_prompt = prompt_override if prompt_override else message.text
                     new_prompt = await self.context_service.get_enriched_prompt(
-                        context_id, original_prompt
+                        context_id, original_prompt, user_id=uid  # Pass user_id for global variables
                     )
                     if new_prompt != original_prompt:
                         enriched_prompt = new_prompt
-                        logger.info(f"Enriched prompt with {len(context.variables)} context variables")
+                        logger.info(f"Enriched prompt with context variables (including global)")
 
                     # Update local working dir cache
                     self._user_working_dirs[user_id] = working_dir
