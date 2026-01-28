@@ -1434,3 +1434,139 @@ class FileChangeTracker:
         self._changes.clear()
         self._current_tool = None
         self._current_file = None
+
+
+class StepStreamingHandler:
+    """
+    Обёртка для краткого стриминга шагов без кода.
+
+    Показывает только:
+    - Название операции и файл
+    - Статус выполнения (✏️ → ✅)
+    - Сводку изменений (+5 -3 lines)
+    """
+
+    TOOL_ICONS = {
+        "bash": "🔧",
+        "write": "📝",
+        "edit": "✏️",
+        "read": "📖",
+        "glob": "🔍",
+        "grep": "🔎",
+        "webfetch": "🌐",
+        "websearch": "🔎",
+        "task": "🤖",
+        "notebookedit": "📓",
+    }
+
+    TOOL_ACTIONS = {
+        "bash": ("Running", "Completed"),
+        "write": ("Writing", "Wrote"),
+        "edit": ("Editing", "Edited"),
+        "read": ("Reading", "Read"),
+        "glob": ("Finding files", "Found"),
+        "grep": ("Searching", "Found"),
+        "webfetch": ("Fetching", "Fetched"),
+        "websearch": ("Searching web", "Found"),
+        "task": ("Running agent", "Agent done"),
+        "notebookedit": ("Editing notebook", "Edited notebook"),
+    }
+
+    def __init__(self, base: StreamingHandler):
+        self.base = base
+        self._current_tool: str = ""
+        self._current_file: str = ""
+        self._current_tool_input: dict = {}
+
+    async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
+        """Показать начало инструмента кратко."""
+        tool_lower = tool_name.lower()
+        icon = self.TOOL_ICONS.get(tool_lower, "🔧")
+        actions = self.TOOL_ACTIONS.get(tool_lower, ("Processing", "Done"))
+
+        # Извлечь имя файла/команду
+        detail = self._extract_detail(tool_lower, tool_input)
+        self._current_tool = tool_lower
+        self._current_file = detail
+        self._current_tool_input = tool_input
+
+        if detail:
+            msg = f"\n{icon} {actions[0]} `{detail}`..."
+        else:
+            msg = f"\n{icon} {actions[0]}..."
+
+        await self.base.append(msg)
+
+    async def on_tool_complete(
+        self,
+        tool_name: str,
+        tool_input: Optional[dict] = None,
+        success: bool = True
+    ) -> None:
+        """Показать завершение со сводкой изменений."""
+        tool_lower = tool_name.lower()
+        icon = "✅" if success else "❌"
+        actions = self.TOOL_ACTIONS.get(tool_lower, ("Processing", "Done"))
+
+        # Use saved tool_input if not provided
+        if tool_input is None:
+            tool_input = self._current_tool_input
+
+        detail = self._current_file or self._extract_detail(tool_lower, tool_input)
+
+        # Для файловых операций - показать +/- строк
+        change_str = ""
+        if tool_lower in ("write", "edit"):
+            tracker = self.base.get_file_tracker()
+            file_path = tool_input.get("file_path", "")
+            changes = tracker._changes.get(file_path)
+            if changes:
+                parts = []
+                if changes.lines_added > 0:
+                    parts.append(f"+{changes.lines_added}")
+                if changes.lines_removed > 0:
+                    parts.append(f"-{changes.lines_removed}")
+                if parts:
+                    change_str = f" ({' '.join(parts)} lines)"
+
+        if detail:
+            msg = f"\n{icon} {actions[1]} `{detail}`{change_str}"
+        else:
+            msg = f"\n{icon} {actions[1]}{change_str}"
+
+        await self.base.append(msg)
+        self._current_tool = ""
+        self._current_file = ""
+        self._current_tool_input = {}
+
+    async def on_thinking(self, text: str) -> None:
+        """Показать краткое рассуждение (первые 80 символов)."""
+        preview = text.replace('\n', ' ')[:80]
+        if len(text) > 80:
+            preview += "..."
+        await self.base.append(f"\n💭 _{preview}_")
+
+    def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
+        """Извлечь краткую деталь (имя файла, команду)."""
+        if tool_name in ("read", "write", "edit", "notebookedit"):
+            path = tool_input.get("file_path", "") or tool_input.get("notebook_path", "")
+            return path.split("/")[-1] if path else ""
+        elif tool_name == "bash":
+            cmd = tool_input.get("command", "")
+            # Get first word of command, limit to 20 chars
+            first_word = cmd.split()[0] if cmd.split() else ""
+            return first_word[:20] if first_word else ""
+        elif tool_name in ("glob", "grep"):
+            return tool_input.get("pattern", "")[:25]
+        elif tool_name in ("webfetch", "websearch"):
+            url_or_query = tool_input.get("url", "") or tool_input.get("query", "")
+            return url_or_query[:30] if url_or_query else ""
+        return ""
+
+    def get_current_tool(self) -> str:
+        """Get name of currently executing tool."""
+        return self._current_tool
+
+    def get_current_tool_input(self) -> dict:
+        """Get input of currently executing tool."""
+        return self._current_tool_input

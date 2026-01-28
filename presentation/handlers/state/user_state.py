@@ -33,6 +33,7 @@ class UserSession:
     continue_session_id: Optional[str] = None
     streaming_handler: Optional[StreamingHandler] = None
     yolo_mode: bool = False
+    step_streaming_mode: bool = True  # Default ON - show brief output without code
     context_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -45,6 +46,7 @@ class UserSession:
             continue_session_id=self.continue_session_id,
             streaming_handler=self.streaming_handler,
             yolo_mode=self.yolo_mode,
+            step_streaming_mode=self.step_streaming_mode,
             context_id=self.context_id,
             created_at=self.created_at,
         )
@@ -58,6 +60,7 @@ class UserSession:
             continue_session_id=self.continue_session_id,
             streaming_handler=self.streaming_handler,
             yolo_mode=self.yolo_mode,
+            step_streaming_mode=self.step_streaming_mode,
             context_id=self.context_id,
             created_at=self.created_at,
         )
@@ -151,6 +154,19 @@ class UserStateManager:
         session = self.get_or_create(user_id)
         session.yolo_mode = enabled
         logger.info(f"[{user_id}] YOLO mode: {enabled}")
+
+    # === Step Streaming Mode ===
+
+    def is_step_streaming_mode(self, user_id: int) -> bool:
+        """Check if step streaming mode (brief output) is enabled"""
+        session = self.get(user_id)
+        return session.step_streaming_mode if session else False
+
+    def set_step_streaming_mode(self, user_id: int, enabled: bool) -> None:
+        """Enable/disable step streaming mode"""
+        session = self.get_or_create(user_id)
+        session.step_streaming_mode = enabled
+        logger.info(f"[{user_id}] Step streaming mode: {enabled}")
 
     # === Streaming Handler ===
 

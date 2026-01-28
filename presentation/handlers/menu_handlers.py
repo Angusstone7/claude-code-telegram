@@ -67,6 +67,12 @@ class MenuHandlers:
             return self.message_handlers.is_yolo_mode(user_id)
         return False
 
+    def _get_step_streaming_enabled(self, user_id: int) -> bool:
+        """Check if step streaming mode is enabled for user"""
+        if self.message_handlers:
+            return self.message_handlers.is_step_streaming_mode(user_id)
+        return False
+
     def _get_working_dir(self, user_id: int) -> str:
         """Get user's working directory"""
         if self.message_handlers:
@@ -538,17 +544,19 @@ class MenuHandlers:
         if not action:
             # Show settings submenu
             yolo_enabled = self._get_yolo_enabled(user_id)
+            step_streaming = self._get_step_streaming_enabled(user_id)
             auth_mode, has_creds = await self._get_auth_info(user_id)
 
             text = (
                 f"⚙️ <b>Настройки</b>\n\n"
                 f"⚡ YOLO режим: {'✅ Включён' if yolo_enabled else '❌ Выключен'}\n"
+                f"📊 Краткий режим: {'✅ Включён' if step_streaming else '❌ Выключен'}\n"
                 f"👤 Авторизация: {'☁️ Claude Account' if auth_mode == 'claude_account' else '🌐 z.ai API'}"
             )
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_settings(yolo_enabled, auth_mode, has_creds),
+                reply_markup=Keyboards.menu_settings(yolo_enabled, step_streaming, auth_mode, has_creds),
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -617,13 +625,46 @@ class MenuHandlers:
                     )
 
                 auth_mode, has_creds = await self._get_auth_info(user_id)
+                step_streaming = self._get_step_streaming_enabled(user_id)
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.menu_settings(new_state, auth_mode, has_creds),
+                    reply_markup=Keyboards.menu_settings(new_state, step_streaming, auth_mode, has_creds),
                     parse_mode="HTML"
                 )
                 await callback.answer(f"YOLO режим {'включён' if new_state else 'выключен'}")
+
+        elif action == "step_stream":
+            # Toggle step streaming mode
+            if self.message_handlers:
+                current = self.message_handlers.is_step_streaming_mode(user_id)
+                new_state = not current
+                self.message_handlers.set_step_streaming_mode(user_id, new_state)
+
+                if new_state:
+                    text = (
+                        "📊 <b>Краткий режим: ON</b>\n\n"
+                        "Теперь вы видите только:\n"
+                        "• Названия операций и файлы\n"
+                        "• Статус: ✏️ → ✅\n"
+                        "• Сводку изменений (+5 -3 lines)\n\n"
+                        "<i>Код и полный вывод скрыты.</i>"
+                    )
+                else:
+                    text = (
+                        "📊 <b>Краткий режим: OFF</b>\n\n"
+                        "Полный вывод инструментов включён."
+                    )
+
+                auth_mode, has_creds = await self._get_auth_info(user_id)
+                yolo = self._get_yolo_enabled(user_id)
+
+                await callback.message.edit_text(
+                    text,
+                    reply_markup=Keyboards.menu_settings(yolo, new_state, auth_mode, has_creds),
+                    parse_mode="HTML"
+                )
+                await callback.answer(f"Краткий режим {'включён' if new_state else 'выключен'}")
 
         elif action == "login":
             # Show login prompt

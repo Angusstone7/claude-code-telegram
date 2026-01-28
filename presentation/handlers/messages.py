@@ -25,7 +25,7 @@ from aiogram.types import Message
 from aiogram.filters import StateFilter
 
 from presentation.keyboards.keyboards import Keyboards
-from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker
+from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker, StepStreamingHandler
 from presentation.handlers.state import (
     UserStateManager,
     HITLManager,
@@ -124,6 +124,31 @@ class MessageHandlers:
     def set_yolo_mode(self, user_id: int, enabled: bool):
         """Set YOLO mode for user"""
         self._state.set_yolo_mode(user_id, enabled)
+
+    def is_step_streaming_mode(self, user_id: int) -> bool:
+        """Check if step streaming mode (brief output) is enabled for user"""
+        return self._state.is_step_streaming_mode(user_id)
+
+    def set_step_streaming_mode(self, user_id: int, enabled: bool):
+        """Set step streaming mode for user"""
+        self._state.set_step_streaming_mode(user_id, enabled)
+
+    def _get_step_handler(self, user_id: int) -> Optional["StepStreamingHandler"]:
+        """Get or create StepStreamingHandler for user in step streaming mode."""
+        streaming = self._state.get_streaming_handler(user_id)
+        if not streaming:
+            return None
+        if not hasattr(self, '_step_handlers'):
+            self._step_handlers = {}
+        if user_id not in self._step_handlers:
+            from presentation.handlers.streaming import StepStreamingHandler
+            self._step_handlers[user_id] = StepStreamingHandler(streaming)
+        return self._step_handlers[user_id]
+
+    def _cleanup_step_handler(self, user_id: int):
+        """Clean up step handler for user."""
+        if hasattr(self, '_step_handlers') and user_id in self._step_handlers:
+            del self._step_handlers[user_id]
 
     def get_working_dir(self, user_id: int) -> str:
         """Get user's working directory"""
@@ -782,12 +807,25 @@ class MessageHandlers:
             self._hitl.cleanup(user_id)
             self._state.remove_streaming_handler(user_id)
             self._state.remove_heartbeat(user_id)
+            self._cleanup_step_handler(user_id)
 
     # === Callback Handlers ===
 
     async def _on_text(self, user_id: int, text: str):
         """Handle streaming text output"""
         streaming = self._state.get_streaming_handler(user_id)
+
+        # In step streaming mode, don't show full text output
+        if self.is_step_streaming_mode(user_id):
+            # Still track tokens
+            if streaming:
+                streaming.add_tokens(text)
+            # Only update heartbeat
+            heartbeat = self._state.get_heartbeat(user_id)
+            if heartbeat:
+                heartbeat.set_action("thinking")
+            return
+
         if streaming:
             streaming.add_tokens(text)
             await streaming.append(text)
@@ -855,6 +893,23 @@ class MessageHandlers:
         if streaming and tool_name.lower() in ("edit", "write", "bash"):
             streaming.track_file_change(tool_name, tool_input)
 
+        # Step streaming mode: show brief tool notifications
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                await step_handler.on_tool_start(tool_name, tool_input)
+            # Still show todo lists and plan mode in step streaming
+            if streaming:
+                if tool_name.lower() == "todowrite":
+                    todos = tool_input.get("todos", [])
+                    if todos:
+                        await streaming.show_todo_list(todos)
+                elif tool_name.lower() == "enterplanmode":
+                    await streaming.show_plan_mode_enter()
+                elif tool_name.lower() == "exitplanmode":
+                    await streaming.show_plan_mode_exit()
+            return
+
         if streaming:
             if tool_name.lower() == "todowrite":
                 todos = tool_input.get("todos", [])
@@ -873,7 +928,7 @@ class MessageHandlers:
             details = ""
             if tool_name.lower() == "bash":
                 details = tool_input.get("command", "")[:100]
-            elif tool_name.lower() in ["read", "write", "edit"]:
+            elif tool_name.lower() in["read", "write", "edit"]:
                 details = tool_input.get("file_path", tool_input.get("path", ""))[:100]
             elif tool_name.lower() == "glob":
                 details = tool_input.get("pattern", "")[:100]
@@ -885,6 +940,23 @@ class MessageHandlers:
     async def _on_tool_result(self, user_id: int, tool_id: str, output: str):
         """Handle tool result"""
         streaming = self._state.get_streaming_handler(user_id)
+
+        # Step streaming mode: show brief completion status
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                # Get current tool name from step handler
+                tool_name = step_handler.get_current_tool()
+                await step_handler.on_tool_complete(tool_name, success=True)
+            # Still track tokens
+            if streaming and output:
+                streaming.add_tokens(output, multiplier=0.5)
+            # Reset heartbeat
+            heartbeat = self._state.get_heartbeat(user_id)
+            if heartbeat:
+                heartbeat.set_action("analyzing")
+            return
+
         if streaming and output:
             streaming.add_tokens(output, multiplier=0.5)
             await streaming.show_tool_result(output, success=True)

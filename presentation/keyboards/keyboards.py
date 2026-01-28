@@ -91,11 +91,13 @@ class Keyboards:
     @staticmethod
     def menu_settings(
         yolo_enabled: bool = False,
+        step_streaming: bool = False,
         auth_mode: str = "zai_api",
         has_credentials: bool = False
     ) -> InlineKeyboardMarkup:
         """Settings submenu - account and preferences"""
         yolo_status = "✅" if yolo_enabled else "❌"
+        step_status = "✅" if step_streaming else "❌"
         auth_icon = "☁️" if auth_mode == "claude_account" else "🌐"
 
         buttons = [
@@ -109,6 +111,12 @@ class Keyboards:
                 InlineKeyboardButton(
                     text=f"⚡ YOLO режим: {yolo_status}",
                     callback_data="menu:settings:yolo"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"📊 Краткий режим: {step_status}",
+                    callback_data="menu:settings:step_stream"
                 ),
             ],
             [
