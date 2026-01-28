@@ -1090,6 +1090,12 @@ class MessageHandlers:
                 truncated = details[:100] + "..." if len(details) > 100 else details
                 await streaming.append(f"\n**Авто-одобрено:** `{tool_name}`\n```\n{truncated}\n```\n")
 
+            # В step streaming mode обновляем статус "Ожидаю" -> "Выполняю"
+            if self.is_step_streaming_mode(user_id):
+                step_handler = self._get_step_handler(user_id)
+                if step_handler:
+                    await step_handler.on_permission_granted(tool_name)
+
             if self.sdk_service:
                 await self.sdk_service.respond_to_permission(user_id, True)
             return

@@ -1712,12 +1712,28 @@ class StepStreamingHandler:
 
     async def on_permission_granted(self, tool_name: str) -> None:
         """
-        Показать что разрешение получено.
+        Показать что разрешение получено - заменить "Ожидаю" на "Выполняю".
 
-        NOTE: Этот метод больше не используется - on_tool_start сам заменит
-        строку ожидания на строку прогресса. Оставлен для совместимости.
+        Вызывается сразу после одобрения пользователем.
         """
-        logger.debug(f"StepStreaming: on_permission_granted({tool_name}) - no-op, handled by on_tool_start")
+        logger.debug(f"StepStreaming: on_permission_granted({tool_name})")
+
+        if not self._waiting_permission_line:
+            return
+
+        tool_lower = tool_name.lower()
+        icon = self.PROGRESS_ICONS.get(tool_lower, "⏳")
+        actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
+
+        # Формируем строку "Выполняю" (без деталей пока - они будут в on_tool_start)
+        progress_line = f"{icon} {actions[0]}..."
+
+        # Заменяем "Ожидаю разрешение" на "Выполняю"
+        replaced = await self.base.replace_last_line(self._waiting_permission_line, progress_line)
+        if replaced:
+            self._progress_line = progress_line
+            self._waiting_permission_line = ""
+            logger.debug(f"StepStreaming: replaced waiting -> progress: {progress_line}")
 
     async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
         """Показать строку прогресса с иконкой инструмента."""
@@ -1756,22 +1772,32 @@ class StepStreamingHandler:
         icon = self.PROGRESS_ICONS.get(tool_lower, "⏳")
         actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
 
-        # Формируем строку прогресса
+        # Формируем строку прогресса с деталями
         if detail:
-            self._progress_line = f"{icon} {actions[0]} `{detail}`..."
+            new_progress_line = f"{icon} {actions[0]} `{detail}`..."
         else:
-            self._progress_line = f"{icon} {actions[0]}..."
+            new_progress_line = f"{icon} {actions[0]}..."
 
         # Если была строка ожидания разрешения - заменяем её на строку прогресса
         if self._waiting_permission_line:
-            replaced = await self.base.replace_last_line(self._waiting_permission_line, self._progress_line)
+            replaced = await self.base.replace_last_line(self._waiting_permission_line, new_progress_line)
             self._waiting_permission_line = ""
+            self._progress_line = new_progress_line
             if not replaced:
                 # Если замена не удалась - добавляем новую строку
-                await self.base.append(f"\n{self._progress_line}")
+                await self.base.append(f"\n{new_progress_line}")
+        elif self._progress_line:
+            # Если on_permission_granted уже создал progress_line - обновляем с деталями
+            if detail and self._progress_line != new_progress_line:
+                replaced = await self.base.replace_last_line(self._progress_line, new_progress_line)
+                self._progress_line = new_progress_line
+                if not replaced:
+                    # Если замена не удалась - просто обновляем переменную
+                    logger.debug(f"StepStreaming: could not update progress line with details")
         else:
-            # Показываем строку прогресса
-            await self.base.append(f"\n{self._progress_line}")
+            # Показываем новую строку прогресса
+            self._progress_line = new_progress_line
+            await self.base.append(f"\n{new_progress_line}")
 
         # Let normal debounced updates handle it to avoid rate limits
         # append() already schedules an update
