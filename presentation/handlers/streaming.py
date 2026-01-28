@@ -1533,8 +1533,17 @@ class StepStreamingHandler:
             display_text = self._thinking_buffer[:800]
             if len(self._thinking_buffer) > 800:
                 display_text += "..."
-            await self.base.append(f"\n\n💭 *{display_text}*")
+
+            # Если есть предыдущий открытый блок - свернуть его
+            if hasattr(self, '_last_thinking_line') and self._last_thinking_line:
+                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
+
+            # Добавить текущий блок и свернуть его тоже (т.к. начинается операция)
+            collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
+            await self.base.append(f"\n\n{collapsed_current}")
             self._thinking_buffer = ""
+            self._last_thinking_line = ""  # Сбросить - уже свёрнут
 
         # Извлечь имя файла/команду
         detail = self._extract_detail(tool_lower, tool_input)
@@ -1624,14 +1633,20 @@ class StepStreamingHandler:
 
         Текст приходит кусочками (streaming), поэтому накапливаем и показываем
         только значимые куски (когда накопилось достаточно или есть точка в конце).
+
+        Предыдущие блоки размышлений сворачиваются в expandable blockquote,
+        текущий показывается открытым.
         """
         text = text.strip()
         if not text:
             return
 
-        # Накапливаем текст
+        # Инициализация буферов
         if not hasattr(self, '_thinking_buffer'):
             self._thinking_buffer = ""
+        if not hasattr(self, '_last_thinking_line'):
+            self._last_thinking_line = ""  # Последняя открытая строка размышлений
+
         self._thinking_buffer += text
 
         # Показываем когда:
@@ -1647,8 +1662,16 @@ class StepStreamingHandler:
             if len(self._thinking_buffer) > 800:
                 display_text += "..."
 
-            # Форматируем как блок с облачком
-            await self.base.append(f"\n\n💭 *{display_text}*")
+            # Если есть предыдущий открытый блок - свернуть его в blockquote
+            if self._last_thinking_line:
+                # Заменяем предыдущий открытый блок на свёрнутый (expandable blockquote)
+                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
+
+            # Добавляем новый открытый блок размышлений
+            new_line = f"💭 *{display_text}*"
+            await self.base.append(f"\n\n{new_line}")
+            self._last_thinking_line = display_text  # Запоминаем для последующего сворачивания
             self._thinking_buffer = ""  # Очищаем буфер
 
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
