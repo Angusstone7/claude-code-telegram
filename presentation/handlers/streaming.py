@@ -409,14 +409,15 @@ class StreamingHandler:
     - Adaptive update intervals based on message size
     """
 
-    # Telegram limits
+    # Telegram limits - IMPORTANT: Telegram allows ~30 edits/min per chat
+    # With heartbeat every 3s + content updates, we need careful timing
     MAX_MESSAGE_LENGTH = 4000  # Leave buffer from 4096
-    DEBOUNCE_INTERVAL = 1.0  # Base seconds between updates (balanced for responsiveness)
-    MIN_UPDATE_INTERVAL = 0.8  # Minimum seconds between edits (Telegram allows ~30/min per chat)
+    DEBOUNCE_INTERVAL = 2.0  # Base seconds between updates (avoid rate limits)
+    MIN_UPDATE_INTERVAL = 1.5  # Minimum seconds between edits
 
     # Adaptive interval thresholds (bytes) - increase interval for large messages
-    LARGE_TEXT_BYTES = 2500  # >2.5KB → 1.5s interval
-    VERY_LARGE_TEXT_BYTES = 3500  # >3.5KB → 2.0s interval
+    LARGE_TEXT_BYTES = 2500  # >2.5KB → 2.5s interval
+    VERY_LARGE_TEXT_BYTES = 3500  # >3.5KB → 3.0s interval
 
     # Rate limit backoff settings
     MAX_RATE_LIMIT_RETRIES = 3  # Max retries before giving up on update
@@ -450,6 +451,7 @@ class StreamingHandler:
         self._todo_message: Optional[Message] = None  # Separate message for todo list
         self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
         self._is_plan_mode: bool = False  # Whether Claude is in plan mode
+        self._last_todo_html: str = ""  # Cache last todo HTML to avoid "not modified" errors
 
         # Token tracking for context usage display
         self._estimated_tokens: int = 0  # Accumulated token estimate
@@ -672,9 +674,13 @@ class StreamingHandler:
         """Set a status line at the bottom of the current message.
 
         Status is always visible until finalize() is called.
+        Only schedules update if enough time passed since last update.
         """
         self._status_line = status
-        await self._schedule_update()
+        # Only trigger update if enough time passed (avoid rate limits from heartbeat)
+        now = time.time()
+        if now - self.last_update_time >= self.DEBOUNCE_INTERVAL:
+            await self._schedule_update()
 
     def _get_display_buffer(self) -> str:
         """Get buffer content only (without status).
@@ -696,9 +702,9 @@ class StreamingHandler:
         """Calculate adaptive edit interval based on buffer size.
 
         Uses balanced intervals for responsiveness while avoiding rate limits:
-        - Small messages (<2.5KB): 1.0s (base interval)
-        - Medium messages (2.5-3.5KB): 1.5s
-        - Large messages (>3.5KB): 2.0s
+        - Small messages (<2.5KB): 2.0s (base interval)
+        - Medium messages (2.5-3.5KB): 2.5s
+        - Large messages (>3.5KB): 3.0s
         """
         try:
             byte_size = len(self.buffer.encode('utf-8'))
@@ -706,10 +712,10 @@ class StreamingHandler:
             byte_size = len(self.buffer)
 
         if byte_size >= self.VERY_LARGE_TEXT_BYTES:
-            return 2.0  # Large messages - still responsive
+            return 3.0  # Large messages
         if byte_size >= self.LARGE_TEXT_BYTES:
-            return 1.5  # Medium messages
-        return self.DEBOUNCE_INTERVAL  # Default 1.0s
+            return 2.5  # Medium messages
+        return self.DEBOUNCE_INTERVAL  # Default 2.0s
 
     async def show_tool_use(self, tool_name: str, details: str = ""):
         """Show that a tool is being used with nice formatting"""
@@ -791,10 +797,29 @@ class StreamingHandler:
 
         html_text = "\n".join(lines)
 
+        # Skip if content unchanged (avoid "message not modified" error)
+        if self._last_todo_html == html_text:
+            return
+        self._last_todo_html = html_text
+
         try:
             if self._todo_message:
                 # Update existing message
-                await self._todo_message.edit_text(html_text, parse_mode="HTML")
+                try:
+                    await self._todo_message.edit_text(html_text, parse_mode="HTML")
+                except TelegramBadRequest as e:
+                    if "message is not modified" not in str(e).lower():
+                        logger.warning(f"Error updating todo message: {e}")
+                except TelegramRetryAfter as e:
+                    # Don't wait long for todo updates - just log and skip
+                    if e.retry_after > 10:
+                        logger.warning(f"Rate limited for todo update ({e.retry_after}s), skipping")
+                    else:
+                        await asyncio.sleep(e.retry_after + 0.5)
+                        try:
+                            await self._todo_message.edit_text(html_text, parse_mode="HTML")
+                        except Exception:
+                            pass
             else:
                 # Create new message
                 self._todo_message = await self.bot.send_message(
@@ -802,8 +827,23 @@ class StreamingHandler:
                     html_text,
                     parse_mode="HTML"
                 )
+                logger.info(f"Created todo message: {self._todo_message.message_id}")
+        except TelegramRetryAfter as e:
+            # Don't wait long for todo creation - log and skip
+            if e.retry_after > 10:
+                logger.warning(f"Rate limited for todo creation ({e.retry_after}s), skipping")
+            else:
+                await asyncio.sleep(e.retry_after + 0.5)
+                try:
+                    self._todo_message = await self.bot.send_message(
+                        self.chat_id,
+                        html_text,
+                        parse_mode="HTML"
+                    )
+                except Exception as ex:
+                    logger.error(f"Failed to create todo message after retry: {ex}")
         except Exception as e:
-            logger.debug(f"Error updating todo message: {e}")
+            logger.error(f"Error in show_todo_list: {e}")
 
     async def show_plan_mode_enter(self) -> None:
         """Show that Claude entered plan mode.
@@ -820,15 +860,36 @@ class StreamingHandler:
 
         try:
             if self._plan_mode_message:
-                await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                try:
+                    await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                except TelegramBadRequest as e:
+                    if "message is not modified" not in str(e).lower():
+                        logger.warning(f"Error updating plan mode message: {e}")
+                except TelegramRetryAfter as e:
+                    await asyncio.sleep(e.retry_after + 0.5)
+                    try:
+                        await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                    except Exception:
+                        pass
             else:
                 self._plan_mode_message = await self.bot.send_message(
                     self.chat_id,
                     html_text,
                     parse_mode="HTML"
                 )
+                logger.info(f"Created plan mode message: {self._plan_mode_message.message_id}")
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after + 0.5)
+            try:
+                self._plan_mode_message = await self.bot.send_message(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML"
+                )
+            except Exception as ex:
+                logger.error(f"Failed to create plan mode message after retry: {ex}")
         except Exception as e:
-            logger.debug(f"Error showing plan mode: {e}")
+            logger.error(f"Error in show_plan_mode_enter: {e}")
 
     async def show_plan_mode_exit(self, plan_approved: bool = False) -> None:
         """Show that Claude exited plan mode.
@@ -845,7 +906,17 @@ class StreamingHandler:
 
         try:
             if self._plan_mode_message:
-                await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                try:
+                    await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                except TelegramBadRequest as e:
+                    if "message is not modified" not in str(e).lower():
+                        logger.warning(f"Error updating plan mode exit: {e}")
+                except TelegramRetryAfter as e:
+                    await asyncio.sleep(e.retry_after + 0.5)
+                    try:
+                        await self._plan_mode_message.edit_text(html_text, parse_mode="HTML")
+                    except Exception:
+                        pass
                 self._plan_mode_message = None
             else:
                 await self.bot.send_message(
@@ -853,8 +924,18 @@ class StreamingHandler:
                     html_text,
                     parse_mode="HTML"
                 )
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after + 0.5)
+            try:
+                await self.bot.send_message(
+                    self.chat_id,
+                    html_text,
+                    parse_mode="HTML"
+                )
+            except Exception as ex:
+                logger.error(f"Failed to show plan mode exit after retry: {ex}")
         except Exception as e:
-            logger.debug(f"Error showing plan mode exit: {e}")
+            logger.error(f"Error in show_plan_mode_exit: {e}")
 
     async def show_question(
         self,
@@ -974,14 +1055,21 @@ class StreamingHandler:
             logger.debug(f"Streaming: update completed")
 
         except TelegramRetryAfter as e:
-            # Rate limited - use exponential backoff
-            if _retry_count >= self.MAX_RATE_LIMIT_RETRIES:
-                logger.error(f"Rate limit exceeded {self.MAX_RATE_LIMIT_RETRIES} retries, skipping update")
+            # Rate limited - DON'T wait long times, just skip the update
+            # Telegram rate limits can be 200+ seconds - we can't block that long
+            if e.retry_after > 10:
+                logger.warning(f"Rate limited for {e.retry_after}s - skipping update (will retry on next append)")
+                # Update last_update_time to prevent immediate retry
+                self.last_update_time = time.time()
                 return
 
-            # Calculate wait time with backoff multiplier
-            wait_time = e.retry_after * self.RATE_LIMIT_BACKOFF_MULTIPLIER
-            logger.warning(f"Rate limited (retry {_retry_count + 1}/{self.MAX_RATE_LIMIT_RETRIES}), waiting {wait_time:.1f}s")
+            # Short rate limits - wait and retry once
+            if _retry_count >= 1:  # Only retry once for short limits
+                logger.warning(f"Rate limit retry failed, skipping")
+                return
+
+            wait_time = e.retry_after + 0.5
+            logger.info(f"Rate limited for {e.retry_after}s, waiting {wait_time:.1f}s")
             await asyncio.sleep(wait_time)
             await self._do_update(_retry_count=_retry_count + 1)
 
@@ -1684,10 +1772,10 @@ class StepStreamingHandler:
                 display_text += "..."
 
             if self._last_thinking_line:
-                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                collapsed = f"<blockquote>💭 {self._last_thinking_line}</blockquote>"
                 await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
 
-            collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
+            collapsed_current = f"<blockquote>💭 {display_text}</blockquote>"
             await self.base.append(f"\n\n{collapsed_current}")
             self._thinking_buffer = ""
             self._last_thinking_line = ""
@@ -1704,7 +1792,7 @@ class StepStreamingHandler:
 
         self._waiting_permission_line = waiting_line
         await self.base.append(f"\n{waiting_line}")
-        await self.base.immediate_update()
+        # Let debounced updates handle it - permission request can wait 2 seconds
 
     async def on_permission_granted(self, tool_name: str) -> None:
         """
@@ -1733,11 +1821,11 @@ class StepStreamingHandler:
 
             # Если есть предыдущий открытый блок - свернуть его
             if self._last_thinking_line:
-                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                collapsed = f"<blockquote>💭 {self._last_thinking_line}</blockquote>"
                 await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
 
             # Добавить текущий блок и свернуть его тоже (т.к. начинается операция)
-            collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
+            collapsed_current = f"<blockquote>💭 {display_text}</blockquote>"
             await self.base.append(f"\n\n{collapsed_current}")
             self._thinking_buffer = ""
             self._last_thinking_line = ""  # Сбросить - уже свёрнут
@@ -1769,8 +1857,8 @@ class StepStreamingHandler:
             # Показываем строку прогресса
             await self.base.append(f"\n{self._progress_line}")
 
-        # Используем immediate_update - критически важно показать начало операции
-        await self.base.immediate_update()
+        # Let normal debounced updates handle it to avoid rate limits
+        # append() already schedules an update
 
     async def on_tool_complete(
         self,
@@ -1828,8 +1916,8 @@ class StepStreamingHandler:
         if detail_block:
             await self.base.append(f"\n```\n{detail_block}\n```")
 
-        # Используем immediate_update - критически важно показать завершение операции
-        await self.base.immediate_update()
+        # Let normal debounced updates handle it to avoid rate limits
+        # replace_last_line/append already schedule updates
 
         # Сбросить состояние
         self._current_tool = ""
@@ -1872,7 +1960,7 @@ class StepStreamingHandler:
             # Если есть предыдущий открытый блок - свернуть его в blockquote
             if self._last_thinking_line:
                 # Заменяем предыдущий открытый блок на свёрнутый (expandable blockquote)
-                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                collapsed = f"<blockquote>💭 {self._last_thinking_line}</blockquote>"
                 await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
 
             # Добавляем новый открытый блок размышлений
