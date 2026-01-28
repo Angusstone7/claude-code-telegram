@@ -257,63 +257,33 @@ class StableHTMLFormatter:
         """
         Format markdown to valid HTML.
 
-        КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Всегда возвращает АКТУАЛЬНЫЙ HTML!
-        Координатор сам решает когда обновлять Telegram.
+        КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Всегда форматирует ВЕСЬ текст!
+        - НЕ использует _find_stable_end() - это блокировало обновления
+        - markdown_to_html(is_streaming=True) сам обрабатывает незакрытые конструкции
+        - Координатор решает когда обновлять Telegram (каждые 2 сек)
 
         Args:
             raw_text: Full raw Markdown text
-            is_final: Whether this is the final format (force output all)
+            is_final: Whether this is the final format
 
         Returns:
-            Tuple of (html_text, should_update)
-            - html_text: Valid HTML string (ВСЕГДА актуальный!)
-            - should_update: True if content changed (информативно)
+            Tuple of (html_text, changed)
+            - html_text: Valid HTML string
+            - changed: True if content changed since last call
         """
         if not raw_text:
             return "", False
 
-        if is_final:
-            # Final - format everything and force close tags
-            html_text = markdown_to_html(raw_text, is_streaming=False)
-            html_text = prepare_html_for_telegram(html_text, is_final=True)
-            changed = html_text != self._last_sent_html
-            self._last_sent_html = html_text
-            self._last_sent_length = len(raw_text)
-            return html_text, changed
+        # КРИТИЧЕСКИЙ ФИКС: Всегда форматировать ВЕСЬ текст!
+        # is_streaming=True позволяет обрабатывать незакрытые конструкции
+        html_text = markdown_to_html(raw_text, is_streaming=not is_final)
+        html_text = prepare_html_for_telegram(html_text, is_final=is_final)
 
-        # Find stable boundary - point where all markdown constructs are closed
-        stable_end = self._find_stable_end(raw_text)
-
-        if stable_end == 0:
-            # Nothing stable yet - но всё равно покажем что есть!
-            # КРИТИЧЕСКИЙ ФИК: Не возвращаем пустоту, показываем escaped text
-            logger.debug(f"StableHTMLFormatter: stable_end=0, escaping {len(raw_text)} chars")
-            html_text = html_module.escape(raw_text)
-            return html_text, True
-
-        # Only format the stable part
-        stable_text = raw_text[:stable_end]
-
-        # КРИТИЧЕСКИЙ ФИКС: Всегда форматируем и возвращаем актуальный HTML!
-        # Убрана проверка `stable_end <= self._last_sent_length` которая
-        # блокировала обновления и возвращала старый HTML
-
-        # Format the stable part
-        html_text = markdown_to_html(stable_text, is_streaming=False)
-        html_text = prepare_html_for_telegram(html_text, is_final=True)
-
-        # Verify it's valid
-        if not self._is_valid_html(html_text):
-            # Something went wrong - fallback to escaped text
-            logger.warning(f"StableHTMLFormatter: invalid HTML, using escaped text")
-            html_text = html_module.escape(stable_text)
-
-        # Check if content actually changed
+        # Check if content changed
         changed = html_text != self._last_sent_html
 
         # Update cache
         self._last_sent_html = html_text
-        self._last_sent_length = stable_end
 
         return html_text, changed
 
@@ -1676,6 +1646,40 @@ class StepStreamingHandler:
         self._progress_line: str = ""  # Текущая строка прогресса для замены
         self._last_message_index: int = 1  # Для отслеживания перехода на новое сообщение
         self._waiting_permission_line: str = ""  # Строка ожидания разрешения
+        # Thinking blocks с expandable blockquote
+        self._thinking_buffer: str = ""  # Буфер накопления thinking текста
+        self._last_thinking_line: str = ""  # Последний показанный thinking блок (для сворачивания)
+
+    async def _collapse_thinking(self) -> None:
+        """
+        Свернуть текущий открытый thinking блок в expandable blockquote.
+
+        Вызывается перед началом tool операции.
+        """
+        # Если есть несохранённый текст в буфере - показать и свернуть
+        if self._thinking_buffer:
+            display_text = self._thinking_buffer[:800]
+            if len(self._thinking_buffer) > 800:
+                display_text += "..."
+
+            # Сворачиваем предыдущий если был
+            if self._last_thinking_line:
+                old_line = f"💭 <i>{self._last_thinking_line}</i>"
+                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                await self.base.replace_last_line(old_line, collapsed)
+
+            # Добавляем текущий сразу свёрнутым (т.к. начинается tool)
+            collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
+            await self.base.append(f"\n\n{collapsed_current}")
+            self._thinking_buffer = ""
+            self._last_thinking_line = ""
+
+        # Сворачиваем последний открытый блок если есть
+        elif self._last_thinking_line:
+            old_line = f"💭 <i>{self._last_thinking_line}</i>"
+            collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+            await self.base.replace_last_line(old_line, collapsed)
+            self._last_thinking_line = ""
 
     async def on_permission_request(self, tool_name: str, tool_input: dict) -> None:
         """
@@ -1687,6 +1691,9 @@ class StepStreamingHandler:
         logger.debug(f"StepStreaming: on_permission_request({tool_name})")
 
         await self._check_message_transition()
+
+        # Свернуть thinking блок перед показом tool
+        await self._collapse_thinking()
 
         tool_lower = tool_name.lower()
 
@@ -1735,6 +1742,9 @@ class StepStreamingHandler:
 
         # Проверяем переход на новое сообщение
         await self._check_message_transition()
+
+        # Свернуть thinking блок (для YOLO mode когда нет permission_request)
+        await self._collapse_thinking()
 
         tool_lower = tool_name.lower()
 
@@ -1845,10 +1855,13 @@ class StepStreamingHandler:
 
     async def on_thinking(self, text: str) -> None:
         """
-        Показывать рассуждения Claude в реальном времени.
+        Показывать рассуждения Claude с expandable blockquote.
 
-        Текст показывается сразу при поступлении, без накопления в буфере.
-        Это обеспечивает real-time стриминг контента пользователю.
+        Логика:
+        - Накапливаем текст в буфер
+        - Показываем когда: 100+ символов ИЛИ новая строка ИЛИ точка/вопрос/восклицание
+        - Предыдущие блоки сворачиваются в <blockquote expandable>
+        - Текущий блок остаётся открытым
         """
         if not text:
             return
@@ -1856,9 +1869,31 @@ class StepStreamingHandler:
         # Проверяем переход на новое сообщение
         await self._check_message_transition()
 
-        # Показываем текст СРАЗУ, без накопления
-        # Просто добавляем в буфер - координатор обновит через 2 сек
-        await self.base.append(text)
+        # Накапливаем текст
+        self._thinking_buffer += text
+
+        # Показываем когда: 100+ символов ИЛИ содержит перевод строки ИЛИ предложение завершено
+        should_show = (
+            len(self._thinking_buffer) >= 100 or
+            '\n' in text or
+            self._thinking_buffer.rstrip().endswith(('.', '!', '?', ':'))
+        )
+
+        if should_show:
+            display_text = self._thinking_buffer[:800]
+            if len(self._thinking_buffer) > 800:
+                display_text += "..."
+
+            # Сворачиваем предыдущий открытый блок (если есть)
+            if self._last_thinking_line:
+                old_line = f"💭 <i>{self._last_thinking_line}</i>"
+                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                await self.base.replace_last_line(old_line, collapsed)
+
+            # Добавляем новый открытый блок (курсивом)
+            await self.base.append(f"\n\n💭 <i>{display_text}</i>")
+            self._last_thinking_line = display_text
+            self._thinking_buffer = ""
 
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
         """Извлечь краткую деталь (имя файла, команду)."""
@@ -1920,6 +1955,7 @@ class StepStreamingHandler:
 
         При переходе:
         - Сбрасывает _progress_line (она осталась в старом сообщении)
+        - Сбрасывает thinking буферы (они остались в старом сообщении)
         """
         current_index = self.base._message_index
         if current_index != self._last_message_index:
@@ -1927,5 +1963,7 @@ class StepStreamingHandler:
 
             # Сбрасываем состояние для нового сообщения
             self._progress_line = ""  # Строка прогресса осталась в старом сообщении
+            self._thinking_buffer = ""  # Thinking буфер остался в старом сообщении
+            self._last_thinking_line = ""  # Thinking блок остался в старом сообщении
 
             self._last_message_index = current_index
