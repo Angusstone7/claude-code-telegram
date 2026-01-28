@@ -31,6 +31,7 @@ class UIElement:
     """A single element in the streaming message (content or tool)"""
     type: ElementType
     data: Union[str, "ToolState"]  # str for CONTENT, ToolState for TOOL
+    collapsed: bool = False  # For CONTENT: show as expandable blockquote
 
 
 class ToolStatus(Enum):
@@ -266,7 +267,16 @@ class StreamingUIState:
                 html = markdown_to_html(element.data, is_streaming=not self.finalized)
                 html = prepare_html_for_telegram(html, is_final=self.finalized)
                 if html:
-                    parts.append(html)
+                    # Collapsed content goes into expandable blockquote
+                    if element.collapsed:
+                        # Truncate for collapsed view
+                        preview = element.data[:200]
+                        if len(element.data) > 200:
+                            preview += "..."
+                        escaped = html_module.escape(preview)
+                        parts.append(f"<blockquote expandable>📝 {escaped}</blockquote>")
+                    else:
+                        parts.append(html)
             elif element.type == ElementType.TOOL:
                 # Render tool status
                 parts.append(element.data.render())
@@ -461,6 +471,23 @@ class StreamingUIState:
         # Flush buffer as collapsed
         if self.thinking_buffer:
             self._flush_thinking_buffer(collapsed=True)
+
+    def collapse_previous_content(self) -> None:
+        """
+        Collapse all CONTENT elements except the last one (current step).
+
+        Called when a new tool starts to collapse previous step's output.
+        This keeps UI clean by hiding details of completed steps.
+        """
+        # Find all content elements and collapse all but the last
+        content_indices = [
+            i for i, el in enumerate(self.elements)
+            if el.type == ElementType.CONTENT
+        ]
+
+        # Collapse all content except the very last one
+        for idx in content_indices[:-1]:
+            self.elements[idx].collapsed = True
 
     def set_status(self, status: str) -> None:
         """Set the status line"""

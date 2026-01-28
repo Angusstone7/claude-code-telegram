@@ -1705,8 +1705,9 @@ class StepStreamingHandler:
 
         await self._check_message_transition()
 
-        # Сворачиваем thinking блоки
+        # Сворачиваем thinking блоки и прошлый контент
         self.base.ui.collapse_all_thinking()
+        self.base.ui.collapse_previous_content()
 
         # Сохраняем input для file tracker
         self._current_tool_input = tool_input
