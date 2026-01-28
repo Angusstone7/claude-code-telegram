@@ -163,6 +163,7 @@ class SDKTaskResult:
     total_cost_usd: Optional[float] = None
     num_turns: Optional[int] = None
     duration_ms: Optional[int] = None
+    usage: Optional[dict] = None  # Token usage: input_tokens, output_tokens, etc.
 
 
 class ClaudeAgentSDKService:
@@ -667,6 +668,8 @@ class ClaudeAgentSDKService:
         result_session_id = session_id
         result_cost_usd: Optional[float] = None
         result_num_turns: Optional[int] = None
+        result_usage: Optional[dict] = None
+        result_duration_ms: Optional[int] = None
 
         # Validate working directory
         if not os.path.isdir(work_dir):
@@ -1211,6 +1214,8 @@ class ClaudeAgentSDKService:
                         result_session_id = message.session_id
                         result_cost_usd = message.total_cost_usd
                         result_num_turns = message.num_turns
+                        result_usage = message.usage  # Token usage stats
+                        result_duration_ms = getattr(message, 'duration_ms', None)
                         if message.result:
                             output_buffer.append(message.result)
 
@@ -1219,8 +1224,12 @@ class ClaudeAgentSDKService:
                             f"[{user_id}] Task completed: "
                             f"turns={message.num_turns}, "
                             f"cost=${message.total_cost_usd or 0:.4f}, "
+                            f"duration={result_duration_ms}ms, "
                             f"{session_info}"
                         )
+                        # Log usage details for debugging
+                        if result_usage:
+                            logger.info(f"[{user_id}] Usage stats: {result_usage}")
 
                         # Handle 0 turns - retry without resume if session was used
                         if message.num_turns == 0 and session_id and not _retry_without_resume:
@@ -1264,6 +1273,8 @@ class ClaudeAgentSDKService:
                         cancelled=True,
                         total_cost_usd=result_cost_usd,
                         num_turns=result_num_turns,
+                        duration_ms=result_duration_ms,
+                        usage=result_usage,
                     )
 
                 return SDKTaskResult(
@@ -1272,6 +1283,8 @@ class ClaudeAgentSDKService:
                     session_id=result_session_id,
                     total_cost_usd=result_cost_usd,
                     num_turns=result_num_turns,
+                    duration_ms=result_duration_ms,
+                    usage=result_usage,
                 )
 
         except asyncio.CancelledError:
@@ -1284,6 +1297,8 @@ class ClaudeAgentSDKService:
                 cancelled=True,
                 total_cost_usd=result_cost_usd,
                 num_turns=result_num_turns,
+                duration_ms=result_duration_ms,
+                usage=result_usage,
             )
 
         except Exception as e:
@@ -1299,6 +1314,8 @@ class ClaudeAgentSDKService:
                     cancelled=True,
                     total_cost_usd=result_cost_usd,
                     num_turns=result_num_turns,
+                    duration_ms=result_duration_ms,
+                    usage=result_usage,
                 )
 
             logger.error(f"[{user_id}] SDK task error: {error_msg}")
@@ -1313,6 +1330,8 @@ class ClaudeAgentSDKService:
                 error=error_msg,
                 total_cost_usd=result_cost_usd,
                 num_turns=result_num_turns,
+                duration_ms=result_duration_ms,
+                usage=result_usage,
             )
 
         finally:

@@ -769,11 +769,33 @@ class MessageHandlers:
                 if result.total_cost_usd and not result.cancelled:
                     streaming = self._state.get_streaming_handler(user_id)
                     if streaming:
-                        tokens, _, _ = streaming.get_context_usage()
-                        tokens_k = tokens // 1000
                         cost_str = f"${result.total_cost_usd:.4f}"
-                        # Use set_completion_info to render at the BOTTOM after tools
-                        streaming.set_completion_info(f"{cost_str} | ~{tokens_k}K токенов")
+                        # Build completion info from real usage data
+                        info_parts = [cost_str]
+
+                        # Add real token usage if available
+                        if result.usage:
+                            input_tokens = result.usage.get("input_tokens", 0)
+                            output_tokens = result.usage.get("output_tokens", 0)
+                            total_tokens = input_tokens + output_tokens
+                            if total_tokens > 0:
+                                info_parts.append(f"{total_tokens:,} tok")
+
+                        # Add duration if available
+                        if result.duration_ms:
+                            secs = result.duration_ms / 1000
+                            if secs >= 60:
+                                mins = int(secs // 60)
+                                secs_rem = int(secs % 60)
+                                info_parts.append(f"{mins}m{secs_rem}s")
+                            else:
+                                info_parts.append(f"{secs:.1f}s")
+
+                        # Add turns
+                        if result.num_turns:
+                            info_parts.append(f"{result.num_turns} turns")
+
+                        streaming.set_completion_info(" | ".join(info_parts))
 
                 cli_result = TaskResult(
                     success=result.success,
@@ -824,7 +846,6 @@ class MessageHandlers:
         streaming = self._state.get_streaming_handler(user_id)
 
         if streaming:
-            streaming.add_tokens(text)
             # Текст ВСЕГДА идёт в основной буфер — это ответ Claude!
             # Step streaming и обычный режим используют одинаковую логику
             await streaming.append(text)
@@ -947,9 +968,6 @@ class MessageHandlers:
                 # Get current tool name from step handler
                 tool_name = step_handler.get_current_tool()
                 await step_handler.on_tool_complete(tool_name, success=True)
-            # Still track tokens
-            if streaming and output:
-                streaming.add_tokens(output, multiplier=0.5)
             # Reset heartbeat
             heartbeat = self._state.get_heartbeat(user_id)
             if heartbeat:
@@ -957,7 +975,6 @@ class MessageHandlers:
             return
 
         if streaming and output:
-            streaming.add_tokens(output, multiplier=0.5)
             await streaming.show_tool_result(output, success=True)
 
         # Reset heartbeat to "thinking" after tool completes
