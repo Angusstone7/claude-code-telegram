@@ -741,7 +741,7 @@ class MessageHandlers:
         self._hitl.create_permission_event(user_id)
         self._hitl.create_question_event(user_id)
 
-        heartbeat = HeartbeatTracker(streaming, interval=5.0)  # 5 seconds - ~12/min keeps us safe from rate limits
+        heartbeat = HeartbeatTracker(streaming, interval=2.0)  # 2 seconds - координатор обеспечивает rate limiting
         self._state.set_heartbeat(user_id, heartbeat)
         await heartbeat.start()
 

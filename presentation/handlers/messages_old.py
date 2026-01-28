@@ -860,7 +860,7 @@ class MessageHandlers:
         self._question_events[user_id] = asyncio.Event()
 
         # Start heartbeat for progress indication
-        heartbeat = HeartbeatTracker(streaming, interval=5.0)
+        heartbeat = HeartbeatTracker(streaming, interval=2.0)
         await heartbeat.start()
 
         try:
