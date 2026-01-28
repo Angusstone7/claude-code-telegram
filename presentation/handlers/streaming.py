@@ -1649,6 +1649,8 @@ class StepStreamingHandler:
             logger.debug(f"StepStreaming: skip PENDING, already have EXECUTING for {tool_name}")
             return
 
+        # КРИТИЧНО: sync buffer ПЕРЕД add_tool, чтобы flush захватил контент до этого tool
+        self.base.ui.sync_from_buffer(self.base.buffer)
         self.base.ui.add_tool(tool_name, detail, ToolStatus.PENDING)
 
         await self.base._do_update()
@@ -1688,6 +1690,8 @@ class StepStreamingHandler:
             pass
         else:
             # Иначе создать новый (YOLO mode без permission request)
+            # КРИТИЧНО: sync buffer ПЕРЕД add_tool, чтобы flush захватил контент до этого tool
+            self.base.ui.sync_from_buffer(self.base.buffer)
             self.base.ui.add_tool(tool_name, detail, ToolStatus.EXECUTING)
 
         await self.base._do_update()
