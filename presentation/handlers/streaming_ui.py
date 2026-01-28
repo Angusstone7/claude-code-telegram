@@ -162,6 +162,9 @@ class StreamingUIState:
     # Buffer for accumulating content (flushed when tool is added)
     _content_buffer: str = ""
 
+    # Track how much of external buffer was already flushed to elements
+    _flushed_length: int = 0
+
     # List of tools (for lookup by name - elements also has them)
     tools: List[ToolState] = field(default_factory=list)
 
@@ -202,6 +205,8 @@ class StreamingUIState:
                 type=ElementType.CONTENT,
                 data=self._content_buffer
             ))
+        # Track how much we've flushed for sync_from_buffer
+        self._flushed_length += len(self._content_buffer)
         self._content_buffer = ""
 
     def render(self) -> str:
@@ -282,6 +287,19 @@ class StreamingUIState:
     def set_content(self, text: str) -> None:
         """Set content buffer (replaces existing buffer, not flushed elements)"""
         self._content_buffer = text
+
+    def sync_from_buffer(self, full_buffer: str) -> None:
+        """
+        Sync content buffer from external buffer (e.g., StreamingHandler.buffer).
+
+        Only takes the NEW part that hasn't been flushed to elements yet.
+        This prevents duplication when tool flushes part of content.
+        """
+        # Only sync the part after what was already flushed
+        if len(full_buffer) > self._flushed_length:
+            self._content_buffer = full_buffer[self._flushed_length:]
+        else:
+            self._content_buffer = ""
 
     def add_tool(self, name: str, detail: str = "", status: ToolStatus = ToolStatus.EXECUTING) -> ToolState:
         """
@@ -434,6 +452,7 @@ class StreamingUIState:
         """Reset state for new message"""
         self.elements = []
         self._content_buffer = ""
+        self._flushed_length = 0
         self.tools = []
         self.thinking = []
         self.thinking_buffer = ""

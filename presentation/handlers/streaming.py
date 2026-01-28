@@ -988,9 +988,9 @@ class StreamingHandler:
 
         # Sync buffer to UI state for interleaved rendering
         # UI state handles content + tools in correct order
-        if text and text != self.ui._content_buffer:
-            # Set the content buffer directly (don't use append to avoid doubling)
-            self.ui._content_buffer = text
+        # IMPORTANT: Use sync_from_buffer to only get NEW content (after flushed parts)
+        if text:
+            self.ui.sync_from_buffer(text)
 
         # If finalizing, flush the buffer
         if is_final:
