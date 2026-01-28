@@ -59,9 +59,11 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
     placeholders = []
 
     def get_placeholder(index: int) -> str:
-        # Use unique marker that won't appear in normal text
-        # Format: \x00\x01PH{index}\x01\x00 - double control chars for safety
-        return f"\x00\x01PH{index}\x01\x00"
+        # Use Unicode Private Use Area characters as the ENTIRE placeholder
+        # U+E000 to U+F8FF is the Private Use Area - never in normal text
+        # Each placeholder is a single unique PUA character: U+E000 + index
+        # This avoids any text that could accidentally match
+        return chr(0xE000 + index)
 
     # 1. Handle UNCLOSED code block (for streaming)
     code_fence_count = text.count('```')
