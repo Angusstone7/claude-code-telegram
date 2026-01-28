@@ -1529,9 +1529,9 @@ class StepStreamingHandler:
 
         # Сбросить накопленные рассуждения перед новой операцией
         if hasattr(self, '_thinking_buffer') and self._thinking_buffer:
-            # Показать то что накопилось
-            display_text = self._thinking_buffer[:300]
-            if len(self._thinking_buffer) > 300:
+            # Показать то что накопилось (до 800 символов)
+            display_text = self._thinking_buffer[:800]
+            if len(self._thinking_buffer) > 800:
                 display_text += "..."
             await self.base.append(f"\n\n💭 *{display_text}*")
             self._thinking_buffer = ""
@@ -1635,16 +1635,16 @@ class StepStreamingHandler:
         self._thinking_buffer += text
 
         # Показываем когда:
-        # 1. Буфер достаточно большой (> 100 символов) И заканчивается на точку/знак
-        # 2. Или буфер очень большой (> 300 символов)
+        # 1. Буфер достаточно большой (> 200 символов) И заканчивается на точку/знак
+        # 2. Или буфер очень большой (> 800 символов)
         should_flush = (
-            (len(self._thinking_buffer) > 100 and self._thinking_buffer.rstrip()[-1:] in '.!?:')
-            or len(self._thinking_buffer) > 300
+            (len(self._thinking_buffer) > 200 and self._thinking_buffer.rstrip()[-1:] in '.!?:')
+            or len(self._thinking_buffer) > 800
         )
 
         if should_flush:
-            display_text = self._thinking_buffer[:300]
-            if len(self._thinking_buffer) > 300:
+            display_text = self._thinking_buffer[:800]
+            if len(self._thinking_buffer) > 800:
                 display_text += "..."
 
             # Форматируем как блок с облачком
