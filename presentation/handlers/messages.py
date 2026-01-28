@@ -1077,6 +1077,12 @@ class MessageHandlers:
         message: Message
     ):
         """Handle permission request from SDK"""
+        # В step streaming mode показываем ожидание разрешения в основном сообщении
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                await step_handler.on_permission_request(tool_name, tool_input)
+
         if self.is_yolo_mode(user_id):
             streaming = self._state.get_streaming_handler(user_id)
             # В step streaming mode не показываем "Авто-одобрено" - step handler уже показывает операции
@@ -1192,13 +1198,23 @@ class MessageHandlers:
         perm_msg = self._hitl.get_permission_message(user_id)
         streaming = self._state.get_streaming_handler(user_id)
 
+        # В step streaming mode обновляем строку ожидания
+        if self.is_step_streaming_mode(user_id) and approved:
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                # Получаем имя инструмента из HITL контекста
+                tool_name = self._hitl.get_pending_tool_name(user_id) or "tool"
+                await step_handler.on_permission_granted(tool_name)
+
         if perm_msg and streaming:
-            status = "Одобрено" if approved else "Отклонено"
+            status = "✅ Одобрено" if approved else "❌ Отклонено"
             try:
-                await perm_msg.edit_text(f"{status}\n\nПродолжаю...", parse_mode=None)
-                streaming.current_message = perm_msg
-                streaming.buffer = f"{status}\n\nПродолжаю...\n"
-                streaming.is_finalized = False
+                await perm_msg.edit_text(status, parse_mode=None)
+                # НЕ переключаем streaming на permission message в step streaming mode
+                if not self.is_step_streaming_mode(user_id):
+                    streaming.current_message = perm_msg
+                    streaming.buffer = f"{status}\n\nПродолжаю...\n"
+                    streaming.is_finalized = False
             except Exception as e:
                 logger.debug(f"Could not edit permission message: {e}")
 

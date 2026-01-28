@@ -59,7 +59,9 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
     placeholders = []
 
     def get_placeholder(index: int) -> str:
-        return f"\x00BLOCK{index}\x00"  # Use null bytes as unlikely delimiters
+        # Use unique marker that won't appear in normal text
+        # Format: \x00\x01PH{index}\x01\x00 - double control chars for safety
+        return f"\x00\x01PH{index}\x01\x00"
 
     # 1. Handle UNCLOSED code block (for streaming)
     code_fence_count = text.count('```')
@@ -121,6 +123,16 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
         return key
 
     text = re.sub(r'<blockquote([^>]*)>(.*?)</blockquote>', protect_blockquote, text, flags=re.DOTALL)
+
+    # 3.6. Protect other HTML tags that we generate ourselves (b, i, code, pre, s, u)
+    # These come from our own formatting and should not be escaped
+    def protect_html_tag(m: re.Match) -> str:
+        key = get_placeholder(len(placeholders))
+        placeholders.append(m.group(0))  # Keep the whole tag as-is
+        return key
+
+    # Protect paired tags: <b>...</b>, <i>...</i>, <code>...</code>, <pre>...</pre>, <s>...</s>, <u>...</u>
+    text = re.sub(r'<(b|i|code|pre|s|u)>([^<]*)</\1>', protect_html_tag, text)
 
     # 4. Escape HTML ONLY in unprotected text (outside placeholders)
     text = html_module.escape(text)
@@ -606,6 +618,36 @@ class StreamingHandler:
             if self._pending_update and not self._pending_update.done():
                 self._pending_update.cancel()
                 self._pending_update = None
+
+            await self._do_update()
+
+    async def immediate_update(self):
+        """
+        Immediately update Telegram message, handling rate limits with retry.
+
+        Unlike force_update(), this method WILL send the update even if rate limited,
+        by waiting for the rate limit to expire. Use for critical events that MUST
+        be shown to user (like multiple tool approvals in sequence).
+
+        This prevents message lag when user approves many tools quickly.
+        """
+        if self.is_finalized or not self.buffer:
+            return
+
+        async with self._update_lock:
+            # Cancel any pending delayed update
+            if self._pending_update and not self._pending_update.done():
+                self._pending_update.cancel()
+                self._pending_update = None
+
+            # Check minimum interval - if too soon, wait instead of skipping
+            now = time.time()
+            time_since_update = now - self.last_update_time
+
+            if time_since_update < self.MIN_UPDATE_INTERVAL:
+                delay = self.MIN_UPDATE_INTERVAL - time_since_update
+                logger.debug(f"Streaming: immediate_update waiting {delay:.2f}s for rate limit")
+                await asyncio.sleep(delay)
 
             await self._do_update()
 
@@ -1603,9 +1645,63 @@ class StepStreamingHandler:
         self._thinking_buffer: str = ""  # Буфер накопленных размышлений
         self._last_thinking_line: str = ""  # Последний открытый thinking блок
         self._last_message_index: int = 1  # Для отслеживания перехода на новое сообщение
+        self._waiting_permission_line: str = ""  # Строка ожидания разрешения
+
+    async def on_permission_request(self, tool_name: str, tool_input: dict) -> None:
+        """
+        Показать что ожидается разрешение на инструмент.
+
+        Вызывается ДО того как пользователь одобрит инструмент.
+        После одобрения вызовется on_tool_start.
+        """
+        logger.debug(f"StepStreaming: on_permission_request({tool_name})")
+
+        await self._check_message_transition()
+
+        tool_lower = tool_name.lower()
+
+        # Сначала покажем/свернём накопленные размышления
+        if self._thinking_buffer:
+            display_text = self._thinking_buffer[:800]
+            if len(self._thinking_buffer) > 800:
+                display_text += "..."
+
+            if self._last_thinking_line:
+                collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
+                await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
+
+            collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
+            await self.base.append(f"\n\n{collapsed_current}")
+            self._thinking_buffer = ""
+            self._last_thinking_line = ""
+
+        # Извлечь краткую деталь
+        detail = self._extract_detail(tool_lower, tool_input)
+
+        # Показать что ожидаем разрешение
+        icon = "⏳"
+        if detail:
+            waiting_line = f"{icon} Ожидаю разрешение: `{tool_name}` · `{detail}`"
+        else:
+            waiting_line = f"{icon} Ожидаю разрешение: `{tool_name}`"
+
+        self._waiting_permission_line = waiting_line
+        await self.base.append(f"\n{waiting_line}")
+        await self.base.immediate_update()
+
+    async def on_permission_granted(self, tool_name: str) -> None:
+        """
+        Показать что разрешение получено.
+
+        NOTE: Этот метод больше не используется - on_tool_start сам заменит
+        строку ожидания на строку прогресса. Оставлен для совместимости.
+        """
+        logger.debug(f"StepStreaming: on_permission_granted({tool_name}) - no-op, handled by on_tool_start")
 
     async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
         """Показать строку прогресса с иконкой инструмента."""
+        logger.debug(f"StepStreaming: on_tool_start({tool_name})")
+
         # Проверяем переход на новое сообщение
         await self._check_message_transition()
 
@@ -1619,7 +1715,7 @@ class StepStreamingHandler:
                 display_text += "..."
 
             # Если есть предыдущий открытый блок - свернуть его
-            if hasattr(self, '_last_thinking_line') and self._last_thinking_line:
+            if self._last_thinking_line:
                 collapsed = f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
                 await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
 
@@ -1645,9 +1741,19 @@ class StepStreamingHandler:
         else:
             self._progress_line = f"{icon} {actions[0]}..."
 
-        # Показываем строку прогресса и форсируем обновление
-        await self.base.append(f"\n{self._progress_line}")
-        await self.base.force_update()  # Важное событие - показать сразу
+        # Если была строка ожидания разрешения - заменяем её на строку прогресса
+        if self._waiting_permission_line:
+            replaced = await self.base.replace_last_line(self._waiting_permission_line, self._progress_line)
+            self._waiting_permission_line = ""
+            if not replaced:
+                # Если замена не удалась - добавляем новую строку
+                await self.base.append(f"\n{self._progress_line}")
+        else:
+            # Показываем строку прогресса
+            await self.base.append(f"\n{self._progress_line}")
+
+        # Используем immediate_update - критически важно показать начало операции
+        await self.base.immediate_update()
 
     async def on_tool_complete(
         self,
@@ -1705,8 +1811,8 @@ class StepStreamingHandler:
         if detail_block:
             await self.base.append(f"\n```\n{detail_block}\n```")
 
-        # Форсируем обновление - завершение инструмента важно показать сразу
-        await self.base.force_update()
+        # Используем immediate_update - критически важно показать завершение операции
+        await self.base.immediate_update()
 
         # Сбросить состояние
         self._current_tool = ""

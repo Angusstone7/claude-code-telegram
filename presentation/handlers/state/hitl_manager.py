@@ -136,6 +136,11 @@ class HITLManager:
         """Get pending permission context"""
         return self._permission_contexts.get(user_id)
 
+    def get_pending_tool_name(self, user_id: int) -> Optional[str]:
+        """Get tool name from pending permission context"""
+        ctx = self._permission_contexts.get(user_id)
+        return ctx.tool_name if ctx else None
+
     def get_permission_message(self, user_id: int) -> Optional[Message]:
         """Get the permission message to edit after response"""
         return self._permission_messages.get(user_id)
