@@ -1663,8 +1663,6 @@ class StepStreamingHandler:
         self._current_file: str = ""
         self._current_tool_input: dict = {}
         self._progress_line: str = ""  # Текущая строка прогресса для замены
-        self._thinking_buffer: str = ""  # Буфер накопленных размышлений
-        self._last_thinking_line: str = ""  # Последний открытый thinking блок
         self._last_message_index: int = 1  # Для отслеживания перехода на новое сообщение
         self._waiting_permission_line: str = ""  # Строка ожидания разрешения
 
@@ -1680,21 +1678,6 @@ class StepStreamingHandler:
         await self._check_message_transition()
 
         tool_lower = tool_name.lower()
-
-        # Сначала покажем/свернём накопленные размышления
-        if self._thinking_buffer:
-            display_text = self._thinking_buffer[:800]
-            if len(self._thinking_buffer) > 800:
-                display_text += "..."
-
-            if self._last_thinking_line:
-                collapsed = f"<blockquote>💭 {self._last_thinking_line}</blockquote>"
-                await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
-
-            collapsed_current = f"<blockquote>💭 {display_text}</blockquote>"
-            await self.base.append(f"\n\n{collapsed_current}")
-            self._thinking_buffer = ""
-            self._last_thinking_line = ""
 
         # Извлечь краткую деталь
         detail = self._extract_detail(tool_lower, tool_input)
@@ -1743,24 +1726,6 @@ class StepStreamingHandler:
         await self._check_message_transition()
 
         tool_lower = tool_name.lower()
-
-        # Сбросить накопленные рассуждения перед новой операцией
-        if self._thinking_buffer:
-            # Показать то что накопилось (до 800 символов)
-            display_text = self._thinking_buffer[:800]
-            if len(self._thinking_buffer) > 800:
-                display_text += "..."
-
-            # Если есть предыдущий открытый блок - свернуть его
-            if self._last_thinking_line:
-                collapsed = f"<blockquote>💭 {self._last_thinking_line}</blockquote>"
-                await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
-
-            # Добавить текущий блок и свернуть его тоже (т.к. начинается операция)
-            collapsed_current = f"<blockquote>💭 {display_text}</blockquote>"
-            await self.base.append(f"\n\n{collapsed_current}")
-            self._thinking_buffer = ""
-            self._last_thinking_line = ""  # Сбросить - уже свёрнут
 
         # Извлечь имя файла/команду
         detail = self._extract_detail(tool_lower, tool_input)
@@ -1869,50 +1834,20 @@ class StepStreamingHandler:
 
     async def on_thinking(self, text: str) -> None:
         """
-        Накапливать рассуждения Claude и показывать как единый блок.
+        Показывать рассуждения Claude в реальном времени.
 
-        Текст приходит кусочками (streaming), поэтому накапливаем и показываем
-        только значимые куски (когда накопилось достаточно или есть точка в конце).
-
-        Предыдущие блоки размышлений сворачиваются в expandable blockquote,
-        текущий показывается открытым.
+        Текст показывается сразу при поступлении, без накопления в буфере.
+        Это обеспечивает real-time стриминг контента пользователю.
         """
-        text = text.strip()
         if not text:
             return
 
         # Проверяем переход на новое сообщение
         await self._check_message_transition()
 
-        self._thinking_buffer += text
-
-        # Показываем когда:
-        # 1. Буфер достаточно большой (> 200 символов) И заканчивается на точку/знак
-        # 2. Или буфер очень большой (> 800 символов)
-        should_flush = (
-            (len(self._thinking_buffer) > 200 and self._thinking_buffer.rstrip()[-1:] in '.!?:')
-            or len(self._thinking_buffer) > 800
-        )
-
-        if should_flush:
-            display_text = self._thinking_buffer[:800]
-            if len(self._thinking_buffer) > 800:
-                display_text += "..."
-
-            # Если есть предыдущий открытый блок - свернуть его в blockquote
-            if self._last_thinking_line:
-                # Заменяем предыдущий открытый блок на свёрнутый (expandable blockquote)
-                collapsed = f"<blockquote>💭 {self._last_thinking_line}</blockquote>"
-                await self.base.replace_last_line(f"💭 *{self._last_thinking_line}*", collapsed)
-
-            # Добавляем новый открытый блок размышлений
-            new_line = f"💭 *{display_text}*"
-            await self.base.append(f"\n\n{new_line}")
-            self._last_thinking_line = display_text  # Запоминаем для последующего сворачивания
-            self._thinking_buffer = ""  # Очищаем буфер
-
-            # Форсируем обновление чтобы показать рассуждения сразу
-            await self.base.force_update()
+        # Показываем текст СРАЗУ, без накопления
+        # Просто добавляем в буфер - координатор обновит через 2 сек
+        await self.base.append(text)
 
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
         """Извлечь краткую деталь (имя файла, команду)."""
@@ -1973,7 +1908,6 @@ class StepStreamingHandler:
         Проверить переход на новое сообщение и подготовиться к нему.
 
         При переходе:
-        - Сворачивает все открытые thinking блоки
         - Сбрасывает _progress_line (она осталась в старом сообщении)
         """
         current_index = self.base._message_index
@@ -1982,7 +1916,5 @@ class StepStreamingHandler:
 
             # Сбрасываем состояние для нового сообщения
             self._progress_line = ""  # Строка прогресса осталась в старом сообщении
-            self._last_thinking_line = ""  # Thinking блок тоже в старом сообщении
-            self._thinking_buffer = ""  # Очищаем буфер
 
             self._last_message_index = current_index
