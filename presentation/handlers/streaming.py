@@ -114,8 +114,9 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
     text = re.sub(r'`([^`\n]+)`', protect_inline_code, text)
 
     # 3.5. Protect blockquote tags (expandable quotes for thinking blocks)
-    # NOTE: Don't escape content inside - it may contain placeholders from earlier steps
-    # that need to be restored later. The content should already be safe.
+    # Handle both closed and unclosed blockquotes (for streaming)
+    unclosed_blockquote_placeholder = None
+
     def protect_blockquote(m: re.Match) -> str:
         key = get_placeholder(len(placeholders))
         tag_attrs = m.group(1) or ""
@@ -124,7 +125,21 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
         placeholders.append(f'<blockquote{tag_attrs}>{content}</blockquote>')
         return key
 
+    # First, handle closed blockquotes
     text = re.sub(r'<blockquote([^>]*)>(.*?)</blockquote>', protect_blockquote, text, flags=re.DOTALL)
+
+    # Handle UNCLOSED blockquote (for streaming) - similar to code blocks
+    if is_streaming and '<blockquote' in text:
+        # Find unclosed blockquote - has opening tag but no closing
+        unclosed_match = re.search(r'<blockquote([^>]*)>([^<]*(?:<(?!/blockquote>)[^<]*)*)$', text, flags=re.DOTALL)
+        if unclosed_match:
+            # Temporarily close it for display, will be fixed on next update
+            unclosed_blockquote_placeholder = get_placeholder(len(placeholders))
+            tag_attrs = unclosed_match.group(1) or ""
+            content = unclosed_match.group(2)
+            # Store with closing tag for display
+            placeholders.append(f'<blockquote{tag_attrs}>{content}</blockquote>')
+            text = text[:unclosed_match.start()] + unclosed_blockquote_placeholder
 
     # 3.6. Protect other HTML tags that we generate ourselves (b, i, code, pre, s, u)
     # These come from our own formatting and should not be escaped
@@ -396,12 +411,12 @@ class StreamingHandler:
 
     # Telegram limits
     MAX_MESSAGE_LENGTH = 4000  # Leave buffer from 4096
-    DEBOUNCE_INTERVAL = 2.0  # Base seconds between updates (increased to avoid rate limits)
-    MIN_UPDATE_INTERVAL = 1.5  # Minimum seconds between edits (increased from 0.8)
+    DEBOUNCE_INTERVAL = 1.0  # Base seconds between updates (balanced for responsiveness)
+    MIN_UPDATE_INTERVAL = 0.8  # Minimum seconds between edits (Telegram allows ~30/min per chat)
 
-    # Adaptive interval thresholds (bytes)
-    LARGE_TEXT_BYTES = 2000  # >2KB → 3.0s interval (lowered threshold)
-    VERY_LARGE_TEXT_BYTES = 4000  # >4KB → 5.0s interval (lowered threshold)
+    # Adaptive interval thresholds (bytes) - increase interval for large messages
+    LARGE_TEXT_BYTES = 2500  # >2.5KB → 1.5s interval
+    VERY_LARGE_TEXT_BYTES = 3500  # >3.5KB → 2.0s interval
 
     # Rate limit backoff settings
     MAX_RATE_LIMIT_RETRIES = 3  # Max retries before giving up on update
@@ -680,10 +695,10 @@ class StreamingHandler:
     def _calc_edit_interval(self) -> float:
         """Calculate adaptive edit interval based on buffer size.
 
-        Uses conservative intervals to avoid Telegram rate limits:
-        - Small messages (<2KB): 2.0s
-        - Medium messages (2-4KB): 3.0s
-        - Large messages (>4KB): 5.0s
+        Uses balanced intervals for responsiveness while avoiding rate limits:
+        - Small messages (<2.5KB): 1.0s (base interval)
+        - Medium messages (2.5-3.5KB): 1.5s
+        - Large messages (>3.5KB): 2.0s
         """
         try:
             byte_size = len(self.buffer.encode('utf-8'))
@@ -691,10 +706,10 @@ class StreamingHandler:
             byte_size = len(self.buffer)
 
         if byte_size >= self.VERY_LARGE_TEXT_BYTES:
-            return 5.0  # Very large messages - update less frequently
+            return 2.0  # Large messages - still responsive
         if byte_size >= self.LARGE_TEXT_BYTES:
-            return 3.0  # Large messages
-        return self.DEBOUNCE_INTERVAL  # Default 2.0s
+            return 1.5  # Medium messages
+        return self.DEBOUNCE_INTERVAL  # Default 1.0s
 
     async def show_tool_use(self, tool_name: str, details: str = ""):
         """Show that a tool is being used with nice formatting"""
