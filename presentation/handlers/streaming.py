@@ -453,6 +453,11 @@ class StreamingHandler:
             from presentation.handlers.state.update_coordinator import get_coordinator
             self._coordinator = get_coordinator()
 
+        # COMPONENT-BASED UI STATE
+        # Structured state for tools, thinking, etc. (replaces string manipulation)
+        from presentation.handlers.streaming_ui import StreamingUIState
+        self.ui = StreamingUIState()
+
         if initial_message:
             self.messages.append(initial_message)
 
@@ -619,8 +624,13 @@ class StreamingHandler:
     def _get_display_buffer(self) -> str:
         """Get buffer content only (without status).
 
+        Returns raw content for HTML formatting.
         Status line is added separately after HTML formatting.
         """
+        # Sync buffer to ui.content for backwards compatibility
+        if self.buffer and self.buffer != self.ui.content:
+            self.ui.content = self.buffer
+
         return self.buffer
 
     def _get_status_line(self) -> str:
@@ -995,6 +1005,14 @@ class StreamingHandler:
             # Formatter couldn't find stable point - force show escaped text
             html_text = html_module.escape(text)
             logger.debug(f"Formatter produced no HTML, using escaped text ({len(text)} chars)")
+
+        # Add UI components (tools, thinking) from structured state
+        ui_html = self.ui.render_non_content()
+        if ui_html:
+            if html_text:
+                html_text = f"{html_text}\n\n{ui_html}"
+            else:
+                html_text = ui_html
 
         # If still nothing but we need to update status, that's ok
         if not html_text and not status:
@@ -1604,215 +1622,68 @@ class StepStreamingHandler:
     """
     Обёртка для краткого стриминга шагов без кода.
 
-    Показывает только:
-    - Название операции и файл (с иконкой прогресса, которая меняется на ✅)
+    РЕФАКТОРИНГ: Использует StreamingUIState для управления UI.
+    Вместо строковых манипуляций (rfind/replace) - структурированное состояние.
+
+    Показывает:
+    - Название операции и файл (иконка меняется: ⏳ → 🔧 → ✅)
     - Сводку изменений (+5 -3 lines)
-    - Рассуждения Claude в отдельных блоках с 💭
+    - Рассуждения Claude в сворачиваемых блоках 💭
     """
-
-    # Иконки для прогресса (во время выполнения)
-    PROGRESS_ICONS = {
-        "bash": "🔧",
-        "write": "📝",
-        "edit": "✏️",
-        "read": "📖",
-        "glob": "🔍",
-        "grep": "🔎",
-        "webfetch": "🌐",
-        "websearch": "🔎",
-        "task": "🤖",
-        "notebookedit": "📓",
-    }
-
-    # Действия: (в процессе, завершено)
-    TOOL_ACTIONS = {
-        "bash": ("Выполняю", "Выполнено"),
-        "write": ("Записываю", "Записано"),
-        "edit": ("Редактирую", "Отредактировано"),
-        "read": ("Читаю", "Прочитано"),
-        "glob": ("Ищу файлы", "Найдено"),
-        "grep": ("Ищу в коде", "Найдено"),
-        "webfetch": ("Загружаю", "Загружено"),
-        "websearch": ("Ищу в сети", "Найдено"),
-        "task": ("Запускаю агента", "Агент завершил"),
-        "notebookedit": ("Редактирую notebook", "Notebook отредактирован"),
-    }
 
     def __init__(self, base: StreamingHandler):
         self.base = base
-        self._current_tool: str = ""
-        self._current_file: str = ""
-        self._current_tool_input: dict = {}
-        self._progress_line: str = ""  # Текущая строка прогресса для замены
-        self._last_message_index: int = 1  # Для отслеживания перехода на новое сообщение
-        self._waiting_permission_line: str = ""  # Строка ожидания разрешения
-        # Thinking blocks с expandable blockquote
-        self._thinking_buffer: str = ""  # Буфер накопления thinking текста
-        self._last_thinking_line: str = ""  # Последний показанный thinking блок (для сворачивания)
-
-    async def _collapse_thinking(self) -> None:
-        """
-        Свернуть текущий открытый thinking блок в expandable blockquote.
-
-        Вызывается перед началом tool операции.
-        """
-        # Если есть несохранённый текст в буфере - показать и свернуть
-        if self._thinking_buffer:
-            display_text = self._thinking_buffer[:800]
-            if len(self._thinking_buffer) > 800:
-                display_text += "..."
-
-            # Сворачиваем предыдущий если был (thinking блоки добавляются с \n\n)
-            if self._last_thinking_line:
-                old_line = f"\n\n💭 <i>{self._last_thinking_line}</i>"
-                collapsed = f"\n\n<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                replaced = await self.base.replace_last_line(old_line, collapsed)
-                if not replaced:
-                    # Пробуем без \n\n
-                    await self.base.replace_last_line(
-                        f"💭 <i>{self._last_thinking_line}</i>",
-                        f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                    )
-
-            # Добавляем текущий сразу свёрнутым (т.к. начинается tool)
-            collapsed_current = f"<blockquote expandable>💭 {display_text}</blockquote>"
-            await self.base.append(f"\n\n{collapsed_current}")
-            self._thinking_buffer = ""
-            self._last_thinking_line = ""
-
-        # Сворачиваем последний открытый блок если есть
-        elif self._last_thinking_line:
-            old_line = f"\n\n💭 <i>{self._last_thinking_line}</i>"
-            collapsed = f"\n\n<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-            replaced = await self.base.replace_last_line(old_line, collapsed)
-            if not replaced:
-                # Пробуем без \n\n
-                await self.base.replace_last_line(
-                    f"💭 <i>{self._last_thinking_line}</i>",
-                    f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                )
-            self._last_thinking_line = ""
+        self._last_message_index: int = 1
+        self._current_tool_input: dict = {}  # Для file tracker
 
     async def on_permission_request(self, tool_name: str, tool_input: dict) -> None:
-        """
-        Показать что ожидается разрешение на инструмент.
-
-        Вызывается ДО того как пользователь одобрит инструмент.
-        После одобрения вызовется on_tool_start.
-        """
+        """Показать что ожидается разрешение на инструмент."""
         logger.debug(f"StepStreaming: on_permission_request({tool_name})")
 
         await self._check_message_transition()
 
-        # Свернуть thinking блок перед показом tool
-        await self._collapse_thinking()
+        # Сворачиваем thinking блоки
+        self.base.ui.collapse_all_thinking()
 
-        tool_lower = tool_name.lower()
+        # Добавляем tool со статусом PENDING
+        from presentation.handlers.streaming_ui import ToolStatus
+        detail = self._extract_detail(tool_name.lower(), tool_input)
+        self.base.ui.add_tool(tool_name, detail, ToolStatus.PENDING)
 
-        # Извлечь краткую деталь
-        detail = self._extract_detail(tool_lower, tool_input)
-
-        # Показать что ожидаем разрешение
-        icon = "⏳"
-        if detail:
-            waiting_line = f"{icon} Ожидаю разрешение: `{tool_name}` · `{detail}`"
-        else:
-            waiting_line = f"{icon} Ожидаю разрешение: `{tool_name}`"
-
-        self._waiting_permission_line = waiting_line
-        await self.base.append(f"\n{waiting_line}")
-        # Let debounced updates handle it - permission request can wait 2 seconds
+        await self.base._do_update()
 
     async def on_permission_granted(self, tool_name: str) -> None:
-        """
-        Показать что разрешение получено - заменить "Ожидаю" на "Выполняю".
-
-        Вызывается сразу после одобрения пользователем.
-        """
+        """Показать что разрешение получено - перевести в EXECUTING."""
         logger.debug(f"StepStreaming: on_permission_granted({tool_name})")
 
-        if not self._waiting_permission_line:
-            return
+        # Находим pending tool и переводим в executing
+        self.base.ui.update_pending_to_executing(tool_name)
 
-        tool_lower = tool_name.lower()
-        icon = self.PROGRESS_ICONS.get(tool_lower, "⏳")
-        actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
-
-        # Формируем строку "Выполняю" (без деталей пока - они будут в on_tool_start)
-        progress_line = f"{icon} {actions[0]}..."
-
-        # Заменяем "Ожидаю разрешение" на "Выполняю" (с учётом \n)
-        search_line = f"\n{self._waiting_permission_line}"
-        replace_line = f"\n{progress_line}"
-        replaced = await self.base.replace_last_line(search_line, replace_line)
-        if not replaced:
-            # Пробуем без \n
-            replaced = await self.base.replace_last_line(self._waiting_permission_line, progress_line)
-        if replaced:
-            self._progress_line = progress_line
-            self._waiting_permission_line = ""
-            logger.debug(f"StepStreaming: replaced waiting -> progress: {progress_line}")
+        await self.base._do_update()
 
     async def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
-        """Показать строку прогресса с иконкой инструмента."""
+        """Показать что инструмент начал выполняться."""
         logger.debug(f"StepStreaming: on_tool_start({tool_name})")
 
-        # Проверяем переход на новое сообщение
         await self._check_message_transition()
 
-        # Свернуть thinking блок (для YOLO mode когда нет permission_request)
-        await self._collapse_thinking()
+        # Сворачиваем thinking блоки
+        self.base.ui.collapse_all_thinking()
 
-        tool_lower = tool_name.lower()
-
-        # Извлечь имя файла/команду
-        detail = self._extract_detail(tool_lower, tool_input)
-        self._current_tool = tool_lower
-        self._current_file = detail
+        # Сохраняем input для file tracker
         self._current_tool_input = tool_input
 
-        # Получить иконку и действие
-        icon = self.PROGRESS_ICONS.get(tool_lower, "⏳")
-        actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
+        from presentation.handlers.streaming_ui import ToolStatus
+        detail = self._extract_detail(tool_name.lower(), tool_input)
 
-        # Формируем строку прогресса с деталями
-        if detail:
-            new_progress_line = f"{icon} {actions[0]} `{detail}`..."
+        # Если есть pending tool - обновить его
+        if self.base.ui.update_pending_to_executing(tool_name, detail):
+            pass  # Tool уже обновлён
         else:
-            new_progress_line = f"{icon} {actions[0]}..."
+            # Иначе создать новый (YOLO mode)
+            self.base.ui.add_tool(tool_name, detail, ToolStatus.EXECUTING)
 
-        # Если была строка ожидания разрешения - заменяем её на строку прогресса
-        if self._waiting_permission_line:
-            # Ищем с \n в начале (как строка была добавлена)
-            search_line = f"\n{self._waiting_permission_line}"
-            replace_line = f"\n{new_progress_line}"
-            replaced = await self.base.replace_last_line(search_line, replace_line)
-            if not replaced:
-                replaced = await self.base.replace_last_line(self._waiting_permission_line, new_progress_line)
-            self._waiting_permission_line = ""
-            self._progress_line = new_progress_line
-            if not replaced:
-                # Если замена не удалась - добавляем новую строку
-                await self.base.append(f"\n{new_progress_line}")
-        elif self._progress_line:
-            # Если on_permission_granted уже создал progress_line - обновляем с деталями
-            if detail and self._progress_line != new_progress_line:
-                search_line = f"\n{self._progress_line}"
-                replace_line = f"\n{new_progress_line}"
-                replaced = await self.base.replace_last_line(search_line, replace_line)
-                if not replaced:
-                    replaced = await self.base.replace_last_line(self._progress_line, new_progress_line)
-                self._progress_line = new_progress_line
-                if not replaced:
-                    # Если замена не удалась - просто обновляем переменную
-                    logger.debug(f"StepStreaming: could not update progress line with details")
-        else:
-            # Показываем новую строку прогресса
-            self._progress_line = new_progress_line
-            await self.base.append(f"\n{new_progress_line}")
-
-        # Let normal debounced updates handle it to avoid rate limits
-        # append() already schedules an update
+        await self.base._do_update()
 
     async def on_tool_complete(
         self,
@@ -1820,22 +1691,18 @@ class StepStreamingHandler:
         tool_input: Optional[dict] = None,
         success: bool = True
     ) -> None:
-        """Заменить строку прогресса на строку завершения (in-place)."""
-        # Проверяем переход на новое сообщение
-        await self._check_message_transition()
+        """Завершить инструмент - показать ✅ или ❌."""
+        logger.debug(f"StepStreaming: on_tool_complete({tool_name}, success={success})")
 
-        tool_lower = tool_name.lower() if tool_name else self._current_tool
-        icon = "✅" if success else "❌"
-        actions = self.TOOL_ACTIONS.get(tool_lower, ("Обработка", "Готово"))
+        await self._check_message_transition()
 
         # Use saved tool_input if not provided
         if tool_input is None:
             tool_input = self._current_tool_input
 
-        detail = self._current_file or self._extract_detail(tool_lower, tool_input or {})
-
-        # Для файловых операций - показать +/- строк
-        change_str = ""
+        # Для файловых операций - получить +/- строк
+        change_info = ""
+        tool_lower = tool_name.lower() if tool_name else ""
         if tool_lower in ("write", "edit") and tool_input:
             tracker = self.base.get_file_tracker()
             file_path = tool_input.get("file_path", "")
@@ -1847,93 +1714,39 @@ class StepStreamingHandler:
                 if changes.lines_removed > 0:
                     parts.append(f"-{changes.lines_removed}")
                 if parts:
-                    change_str = f" ({' '.join(parts)} lines)"
+                    change_info = f"{' '.join(parts)} lines"
 
-        # Формируем строку завершения (краткую)
-        if detail:
-            complete_line = f"{icon} {actions[1]} `{detail}`{change_str}"
-        else:
-            complete_line = f"{icon} {actions[1]}{change_str}"
+        # Завершаем tool
+        self.base.ui.complete_tool(tool_name, success, change_info=change_info)
 
-        # Пытаемся заменить строку прогресса на строку завершения (in-place)
-        if self._progress_line:
-            # Ищем строку с \n в начале (как она была добавлена)
-            search_line = f"\n{self._progress_line}"
-            replace_line = f"\n{complete_line}"
-            replaced = await self.base.replace_last_line(search_line, replace_line)
-            if not replaced:
-                # Пробуем без \n (если строка в начале буфера)
-                replaced = await self.base.replace_last_line(self._progress_line, complete_line)
-            if not replaced:
-                # Если всё равно не удалась - добавляем новую строку
-                logger.debug(f"StepStreaming: replace failed, adding new line. Progress was: {self._progress_line}")
-                await self.base.append(f"\n{complete_line}")
-        else:
-            # Нет строки прогресса - просто добавляем
-            await self.base.append(f"\n{complete_line}")
-
-        # Добавляем детальную информацию в блоке кода под операцией
+        # Добавляем детальную информацию в output
         detail_block = self._get_detail_block(tool_lower, tool_input or {})
         if detail_block:
-            await self.base.append(f"\n```\n{detail_block}\n```")
-
-        # Let normal debounced updates handle it to avoid rate limits
-        # replace_last_line/append already schedule updates
+            # Найти tool и добавить output
+            tool = self.base.ui.find_executing_tool(tool_name)
+            if not tool:
+                # Tool уже completed - найти последний completed
+                for t in reversed(self.base.ui.tools):
+                    if t.name == tool_lower:
+                        t.output = detail_block
+                        break
 
         # Сбросить состояние
-        self._current_tool = ""
-        self._current_file = ""
         self._current_tool_input = {}
-        self._progress_line = ""
+
+        await self.base._do_update()
 
     async def on_thinking(self, text: str) -> None:
-        """
-        Показывать рассуждения Claude с expandable blockquote.
-
-        Логика:
-        - Накапливаем текст в буфер
-        - Показываем когда: 100+ символов ИЛИ новая строка ИЛИ точка/вопрос/восклицание
-        - Предыдущие блоки сворачиваются в <blockquote expandable>
-        - Текущий блок остаётся открытым
-        """
+        """Добавить текст в thinking."""
         if not text:
             return
 
-        # Проверяем переход на новое сообщение
         await self._check_message_transition()
 
-        # Накапливаем текст
-        self._thinking_buffer += text
+        # Добавляем в UI state - он сам решает когда показать блок
+        self.base.ui.add_thinking(text)
 
-        # Показываем когда: 100+ символов ИЛИ содержит перевод строки ИЛИ предложение завершено
-        should_show = (
-            len(self._thinking_buffer) >= 100 or
-            '\n' in text or
-            self._thinking_buffer.rstrip().endswith(('.', '!', '?', ':'))
-        )
-
-        if should_show:
-            display_text = self._thinking_buffer[:800]
-            if len(self._thinking_buffer) > 800:
-                display_text += "..."
-
-            # Сворачиваем предыдущий открытый блок (если есть)
-            if self._last_thinking_line:
-                # Thinking блоки добавляются с \n\n в начале
-                old_line = f"\n\n💭 <i>{self._last_thinking_line}</i>"
-                collapsed = f"\n\n<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                replaced = await self.base.replace_last_line(old_line, collapsed)
-                if not replaced:
-                    # Пробуем без \n\n
-                    await self.base.replace_last_line(
-                        f"💭 <i>{self._last_thinking_line}</i>",
-                        f"<blockquote expandable>💭 {self._last_thinking_line}</blockquote>"
-                    )
-
-            # Добавляем новый открытый блок (курсивом)
-            await self.base.append(f"\n\n💭 <i>{display_text}</i>")
-            self._last_thinking_line = display_text
-            self._thinking_buffer = ""
+        await self.base._do_update()
 
     def _extract_detail(self, tool_name: str, tool_input: dict) -> str:
         """Извлечь краткую деталь (имя файла, команду)."""
@@ -1942,7 +1755,6 @@ class StepStreamingHandler:
             return path.split("/")[-1] if path else ""
         elif tool_name == "bash":
             cmd = tool_input.get("command", "")
-            # Get first word of command, limit to 20 chars
             first_word = cmd.split()[0] if cmd.split() else ""
             return first_word[:20] if first_word else ""
         elif tool_name in ("glob", "grep"):
@@ -1957,53 +1769,37 @@ class StepStreamingHandler:
         if tool_name == "bash":
             cmd = tool_input.get("command", "")
             if cmd:
-                # Ограничиваем 150 символами
                 if len(cmd) > 150:
                     return cmd[:147] + "..."
                 return cmd
         elif tool_name in ("read", "write", "edit", "notebookedit"):
             path = tool_input.get("file_path", "") or tool_input.get("notebook_path", "")
-            if path:
-                return path
+            return path or ""
         elif tool_name in ("glob", "grep"):
             pattern = tool_input.get("pattern", "")
             path = tool_input.get("path", "")
             if pattern:
-                if path:
-                    return f"{pattern} in {path}"
-                return pattern
+                return f"{pattern} in {path}" if path else pattern
         elif tool_name in ("webfetch", "websearch"):
-            url = tool_input.get("url", "")
-            query = tool_input.get("query", "")
-            if url:
-                return url
-            if query:
-                return query
+            return tool_input.get("url", "") or tool_input.get("query", "")
         return ""
 
     def get_current_tool(self) -> str:
         """Get name of currently executing tool."""
-        return self._current_tool
+        tool = self.base.ui.get_current_tool()
+        return tool.name if tool else ""
 
     def get_current_tool_input(self) -> dict:
         """Get input of currently executing tool."""
         return self._current_tool_input
 
     async def _check_message_transition(self) -> None:
-        """
-        Проверить переход на новое сообщение и подготовиться к нему.
-
-        При переходе:
-        - Сбрасывает _progress_line (она осталась в старом сообщении)
-        - Сбрасывает thinking буферы (они остались в старом сообщении)
-        """
+        """Проверить переход на новое сообщение."""
         current_index = self.base._message_index
         if current_index != self._last_message_index:
-            logger.debug(f"Message transition detected: {self._last_message_index} -> {current_index}")
+            logger.debug(f"Message transition: {self._last_message_index} -> {current_index}")
 
-            # Сбрасываем состояние для нового сообщения
-            self._progress_line = ""  # Строка прогресса осталась в старом сообщении
-            self._thinking_buffer = ""  # Thinking буфер остался в старом сообщении
-            self._last_thinking_line = ""  # Thinking блок остался в старом сообщении
+            # Сбрасываем UI state для нового сообщения
+            self.base.ui.reset()
 
             self._last_message_index = current_index
