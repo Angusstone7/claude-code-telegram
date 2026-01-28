@@ -364,12 +364,16 @@ class StreamingHandler:
 
     # Telegram limits
     MAX_MESSAGE_LENGTH = 4000  # Leave buffer from 4096
-    DEBOUNCE_INTERVAL = 1.0  # Base seconds between updates (synced with heartbeat)
-    MIN_UPDATE_INTERVAL = 0.8  # Minimum seconds between edits
+    DEBOUNCE_INTERVAL = 2.0  # Base seconds between updates (increased to avoid rate limits)
+    MIN_UPDATE_INTERVAL = 1.5  # Minimum seconds between edits (increased from 0.8)
 
     # Adaptive interval thresholds (bytes)
-    LARGE_TEXT_BYTES = 2500  # >2.5KB → 2.5s interval
-    VERY_LARGE_TEXT_BYTES = 6000  # >6KB → 4.0s interval
+    LARGE_TEXT_BYTES = 2000  # >2KB → 3.0s interval (lowered threshold)
+    VERY_LARGE_TEXT_BYTES = 4000  # >4KB → 5.0s interval (lowered threshold)
+
+    # Rate limit backoff settings
+    MAX_RATE_LIMIT_RETRIES = 3  # Max retries before giving up on update
+    RATE_LIMIT_BACKOFF_MULTIPLIER = 1.5  # Multiply retry_after by this
 
     # Token estimation constants
     CHARS_PER_TOKEN = 4  # Approximate: 1 token ≈ 4 characters
@@ -554,16 +558,22 @@ class StreamingHandler:
         return self._status_line
 
     def _calc_edit_interval(self) -> float:
-        """Calculate adaptive edit interval based on buffer size."""
+        """Calculate adaptive edit interval based on buffer size.
+
+        Uses conservative intervals to avoid Telegram rate limits:
+        - Small messages (<2KB): 2.0s
+        - Medium messages (2-4KB): 3.0s
+        - Large messages (>4KB): 5.0s
+        """
         try:
             byte_size = len(self.buffer.encode('utf-8'))
         except Exception:
             byte_size = len(self.buffer)
 
         if byte_size >= self.VERY_LARGE_TEXT_BYTES:
-            return 4.0  # Very large messages - update less frequently
+            return 5.0  # Very large messages - update less frequently
         if byte_size >= self.LARGE_TEXT_BYTES:
-            return 2.5  # Large messages
+            return 3.0  # Large messages
         return self.DEBOUNCE_INTERVAL  # Default 2.0s
 
     async def show_tool_use(self, tool_name: str, details: str = ""):
@@ -774,7 +784,11 @@ class StreamingHandler:
             return None
 
     async def _schedule_update(self):
-        """Schedule a debounced update with adaptive interval"""
+        """Schedule a debounced update with adaptive interval.
+
+        Uses adaptive intervals based on buffer size to avoid rate limits.
+        Logs scheduling decisions for debugging streaming issues.
+        """
         async with self._update_lock:
             now = time.time()
             time_since_update = now - self.last_update_time
@@ -782,11 +796,13 @@ class StreamingHandler:
 
             if time_since_update >= interval:
                 # Enough time passed, update immediately
+                logger.debug(f"Streaming: immediate update (interval={interval:.1f}s, since_last={time_since_update:.1f}s)")
                 await self._do_update()
             else:
                 # Schedule delayed update if not already pending
                 if self._pending_update is None or self._pending_update.done():
                     delay = interval - time_since_update
+                    logger.debug(f"Streaming: scheduling update in {delay:.1f}s (interval={interval:.1f}s)")
                     self._pending_update = asyncio.create_task(
                         self._delayed_update(delay)
                     )
@@ -797,8 +813,12 @@ class StreamingHandler:
         async with self._update_lock:
             await self._do_update()
 
-    async def _do_update(self):
-        """Actually perform the update to Telegram"""
+    async def _do_update(self, _retry_count: int = 0):
+        """Actually perform the update to Telegram.
+
+        Args:
+            _retry_count: Internal retry counter for rate limit handling
+        """
         if not self.buffer or self.is_finalized:
             return
 
@@ -814,10 +834,16 @@ class StreamingHandler:
             self.last_update_time = time.time()
 
         except TelegramRetryAfter as e:
-            # Rate limited - wait and retry
-            logger.warning(f"Rate limited, waiting {e.retry_after}s")
-            await asyncio.sleep(e.retry_after)
-            await self._do_update()
+            # Rate limited - use exponential backoff
+            if _retry_count >= self.MAX_RATE_LIMIT_RETRIES:
+                logger.error(f"Rate limit exceeded {self.MAX_RATE_LIMIT_RETRIES} retries, skipping update")
+                return
+
+            # Calculate wait time with backoff multiplier
+            wait_time = e.retry_after * self.RATE_LIMIT_BACKOFF_MULTIPLIER
+            logger.warning(f"Rate limited (retry {_retry_count + 1}/{self.MAX_RATE_LIMIT_RETRIES}), waiting {wait_time:.1f}s")
+            await asyncio.sleep(wait_time)
+            await self._do_update(_retry_count=_retry_count + 1)
 
         except TelegramBadRequest as e:
             if "message is not modified" in str(e):
@@ -825,6 +851,7 @@ class StreamingHandler:
                 pass
             elif "message to edit not found" in str(e):
                 # Message deleted, send new one
+                logger.info("Message was deleted, sending new one")
                 await self._send_new_message(display_text)
             else:
                 logger.error(f"Telegram error: {e}")

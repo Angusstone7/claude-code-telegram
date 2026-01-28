@@ -219,6 +219,11 @@ class ClaudeAgentSDKService:
         # Task status
         self._task_status: dict[int, TaskStatus] = {}
 
+        # Task ID tracking - used to prevent race conditions
+        # Each task gets a unique ID; operations check if their task_id matches current
+        self._current_task_id: dict[int, str] = {}
+        self._task_lock: asyncio.Lock = asyncio.Lock()
+
     async def check_sdk_available(self) -> tuple[bool, str]:
         """Check if Claude Agent SDK is available"""
         if not SDK_AVAILABLE:
@@ -469,11 +474,12 @@ class ClaudeAgentSDKService:
             event.set()
             return True
 
-        # Log why we couldn't respond - helps debug "nothing happens" issues
-        logger.warning(
-            f"[{user_id}] respond_to_permission failed: "
-            f"event={event is not None}, status={current_status}, "
-            f"clarification={clarification_text[:50] if clarification_text else None}"
+        # Log why we couldn't respond - this is often normal (e.g. task already completed)
+        # Use debug level to avoid log spam during normal operation
+        logger.debug(
+            f"[{user_id}] respond_to_permission: no active permission request "
+            f"(event={event is not None}, status={current_status}, "
+            f"clarification={clarification_text[:50] if clarification_text else None})"
         )
         return False
 
@@ -515,8 +521,22 @@ class ClaudeAgentSDKService:
         return False
 
     async def cancel_task(self, user_id: int) -> bool:
-        """Cancel the active task for a user"""
+        """Cancel the active task for a user.
+
+        Thread-safe cancellation that properly signals all waiting events
+        and cleans up state. Uses lock to prevent race conditions.
+        """
+        async with self._task_lock:
+            return await self._cancel_task_unsafe(user_id)
+
+    async def _cancel_task_unsafe(self, user_id: int) -> bool:
+        """Internal cancel without lock - must be called with _task_lock held."""
         cancelled = False
+
+        # Invalidate current task_id to signal any running callbacks
+        old_task_id = self._current_task_id.pop(user_id, None)
+        if old_task_id:
+            logger.debug(f"[{user_id}] Invalidated task_id {old_task_id[:8]}...")
 
         # Set all events to signal the running task (it may be waiting on any of these)
         # This ensures the task wakes up from any wait_for() call
@@ -615,18 +635,29 @@ class ClaudeAgentSDKService:
         Returns:
             SDKTaskResult with success status and output
         """
-        # Cancel any existing task
+        import uuid
+
+        # Cancel any existing task (with lock)
         await self.cancel_task(user_id)
 
-        # Initialize state - store local references to avoid race conditions
-        # when another message arrives and creates new events
-        cancel_event = asyncio.Event()
-        permission_event = asyncio.Event()
-        question_event = asyncio.Event()
-        plan_event = asyncio.Event()
+        # Generate unique task_id for this run
+        task_id = str(uuid.uuid4())
 
-        self._cancel_events[user_id] = cancel_event
-        self._permission_events[user_id] = permission_event
+        # Initialize state with lock to prevent race conditions
+        async with self._task_lock:
+            # Store task_id - callbacks will check this to ensure they're still valid
+            self._current_task_id[user_id] = task_id
+            logger.debug(f"[{user_id}] New task_id: {task_id[:8]}...")
+
+            # Initialize events - store local references to avoid race conditions
+            # when another message arrives and creates new events
+            cancel_event = asyncio.Event()
+            permission_event = asyncio.Event()
+            question_event = asyncio.Event()
+            plan_event = asyncio.Event()
+
+            self._cancel_events[user_id] = cancel_event
+            self._permission_events[user_id] = permission_event
         self._question_events[user_id] = question_event
         self._plan_events[user_id] = plan_event
         self._task_status[user_id] = TaskStatus.RUNNING
