@@ -96,6 +96,15 @@ class AIRequestHandler(BaseMessageHandler):
         self.use_sdk = sdk_service is not None
         self.log_info(0, f"AIRequestHandler initialized with SDK: {self.use_sdk}")
 
+    def is_task_running(self, user_id: int) -> bool:
+        """Check if a task is currently running for this user"""
+        is_running = False
+        if self.use_sdk and self.sdk_service:
+            is_running = self.sdk_service.is_task_running(user_id)
+        if not is_running and self.claude_proxy:
+            is_running = self.claude_proxy.is_task_running(user_id)
+        return is_running
+
     async def process_ai_request(
         self,
         message: Message,

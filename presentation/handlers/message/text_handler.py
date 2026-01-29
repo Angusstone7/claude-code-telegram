@@ -190,8 +190,11 @@ class TextMessageHandler(BaseMessageHandler):
 
     def _is_task_running(self, user_id: int) -> bool:
         """Check if a Claude Code task is currently running for this user"""
-        session = self.user_state.get_claude_session(user_id)
-        return session is not None
+        # CRITICAL FIX: Check via SDK/proxy service, not session existence
+        # Session persists for continuation, so checking it would always block
+        if self.ai_request_handler:
+            return self.ai_request_handler.is_task_running(user_id)
+        return False
 
     def detect_cd_command(self, command: str, current_dir: str) -> Optional[str]:
         """
