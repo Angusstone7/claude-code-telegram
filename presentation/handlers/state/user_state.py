@@ -9,6 +9,7 @@ Manages core user state:
 """
 
 import logging
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Optional, Dict
 from datetime import datetime
@@ -129,14 +130,22 @@ class UserStateManager:
     def set_continue_session_id(self, user_id: int, session_id: str) -> None:
         """Set session ID for continuation"""
         session = self.get_or_create(user_id)
-        session.continue_session_id = session_id
+        # Use immutable update to prevent race conditions
+        self._sessions[user_id] = dataclasses.replace(
+            session,
+            continue_session_id=session_id
+        )
         logger.debug(f"[{user_id}] Continue session set: {session_id[:16]}...")
 
     def clear_session_cache(self, user_id: int) -> None:
         """Clear session continuation cache (for context reset)"""
         session = self.get(user_id)
         if session:
-            session.continue_session_id = None
+            # Use immutable update to prevent race conditions
+            self._sessions[user_id] = dataclasses.replace(
+                session,
+                continue_session_id=None
+            )
             logger.debug(f"[{user_id}] Session cache cleared")
 
     # === Claude Code Session ===
@@ -149,7 +158,11 @@ class UserStateManager:
     def set_claude_session(self, user_id: int, claude_session: ClaudeCodeSession) -> None:
         """Set active Claude Code session"""
         session = self.get_or_create(user_id)
-        session.claude_session = claude_session
+        # Use immutable update to prevent race conditions
+        self._sessions[user_id] = dataclasses.replace(
+            session,
+            claude_session=claude_session
+        )
 
     # === YOLO Mode ===
 
@@ -161,7 +174,11 @@ class UserStateManager:
     def set_yolo_mode(self, user_id: int, enabled: bool) -> None:
         """Enable/disable YOLO mode"""
         session = self.get_or_create(user_id)
-        session.yolo_mode = enabled
+        # Use immutable update to prevent race conditions
+        self._sessions[user_id] = dataclasses.replace(
+            session,
+            yolo_mode=enabled
+        )
         logger.info(f"[{user_id}] YOLO mode: {enabled}")
         # Persist to database asynchronously
         import asyncio
@@ -190,7 +207,11 @@ class UserStateManager:
             enabled = await repo.get_yolo_mode(user_id)
             if enabled:
                 session = self.get_or_create(user_id)
-                session.yolo_mode = enabled
+                # Use immutable update to prevent race conditions
+                self._sessions[user_id] = dataclasses.replace(
+                    session,
+                    yolo_mode=enabled
+                )
                 logger.info(f"[{user_id}] YOLO mode loaded from DB: {enabled}")
             return enabled
         except Exception as e:
@@ -207,7 +228,11 @@ class UserStateManager:
     def set_step_streaming_mode(self, user_id: int, enabled: bool) -> None:
         """Enable/disable step streaming mode"""
         session = self.get_or_create(user_id)
-        session.step_streaming_mode = enabled
+        # Use immutable update to prevent race conditions
+        self._sessions[user_id] = dataclasses.replace(
+            session,
+            step_streaming_mode=enabled
+        )
         logger.info(f"[{user_id}] Step streaming mode: {enabled}")
 
     # === Streaming Handler ===
@@ -248,7 +273,11 @@ class UserStateManager:
     def set_context_id(self, user_id: int, context_id: str) -> None:
         """Set current context ID"""
         session = self.get_or_create(user_id)
-        session.context_id = context_id
+        # Use immutable update to prevent race conditions
+        self._sessions[user_id] = dataclasses.replace(
+            session,
+            context_id=context_id
+        )
 
     # === Cleanup ===
 
@@ -259,4 +288,8 @@ class UserStateManager:
         # Keep session for state continuity
         session = self.get(user_id)
         if session and session.claude_session:
-            session.claude_session = None
+            # Use immutable update to prevent race conditions
+            self._sessions[user_id] = dataclasses.replace(
+                session,
+                claude_session=None
+            )

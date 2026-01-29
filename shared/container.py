@@ -246,20 +246,62 @@ class Container:
         # Add cleanup logic here if needed
         pass
 
+    # === State Managers ===
+
+    def user_state_manager(self):
+        """Get or create UserStateManager"""
+        if "user_state_manager" not in self._cache:
+            from presentation.handlers.state.user_state import UserStateManager
+            self._cache["user_state_manager"] = UserStateManager()
+        return self._cache["user_state_manager"]
+
+    def hitl_manager(self):
+        """Get or create HITLManager"""
+        if "hitl_manager" not in self._cache:
+            from presentation.handlers.state.hitl_manager import HITLManager
+            self._cache["hitl_manager"] = HITLManager()
+        return self._cache["hitl_manager"]
+
+    def file_context_manager(self):
+        """Get or create FileContextManager"""
+        if "file_context_manager" not in self._cache:
+            from presentation.handlers.state.file_context import FileContextManager
+            self._cache["file_context_manager"] = FileContextManager()
+        return self._cache["file_context_manager"]
+
+    def variable_manager(self):
+        """Get or create VariableInputManager"""
+        if "variable_manager" not in self._cache:
+            from presentation.handlers.state.variable_input import VariableInputManager
+            self._cache["variable_manager"] = VariableInputManager()
+        return self._cache["variable_manager"]
+
+    def plan_manager(self):
+        """Get or create PlanApprovalManager"""
+        if "plan_manager" not in self._cache:
+            from presentation.handlers.state.plan_manager import PlanApprovalManager
+            self._cache["plan_manager"] = PlanApprovalManager()
+        return self._cache["plan_manager"]
+
     # === Factory Methods for Handlers ===
 
     def message_handlers(self):
         """Create MessageHandlers with all dependencies"""
         if "message_handlers" not in self._cache:
-            from presentation.handlers.messages import MessageHandlers
+            from presentation.handlers.message import MessageHandlers
             self._cache["message_handlers"] = MessageHandlers(
                 bot_service=self.bot_service(),
+                user_state=self.user_state_manager(),
+                hitl_manager=self.hitl_manager(),
+                file_context_manager=self.file_context_manager(),
+                variable_manager=self.variable_manager(),
+                plan_manager=self.plan_manager(),
+                file_processor_service=self.file_processor_service(),
+                context_service=self.context_service(),
+                project_service=self.project_service(),
+                # Legacy parameters for backward compatibility
                 claude_proxy=self.claude_proxy(),
                 sdk_service=self.claude_sdk(),
-                default_working_dir=self.config.claude_working_dir,
-                project_service=self.project_service(),
-                context_service=self.context_service(),
-                file_processor_service=self.file_processor_service(),
             )
         return self._cache["message_handlers"]
 

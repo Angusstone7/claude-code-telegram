@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from typing import List, Optional
 import os
+import logging
 from dotenv import load_dotenv
 from domain.value_objects import AIProviderConfig
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,10 +22,20 @@ class TelegramConfig:
         token = os.getenv("TELEGRAM_TOKEN")
         if not token:
             raise ValueError("TELEGRAM_TOKEN is required")
+
         allowed_ids_str = os.getenv("ALLOWED_USER_ID", "")
         allowed_user_ids = [
             int(id.strip()) for id in allowed_ids_str.split(",") if id.strip()
         ]
+
+        # Security: Warn if allowed_user_ids is empty (bot will be open to everyone!)
+        if not allowed_user_ids:
+            logger.warning(
+                "⚠️  SECURITY WARNING: ALLOWED_USER_ID is not set or empty! "
+                "Bot will be accessible to ALL Telegram users. "
+                "Set ALLOWED_USER_ID in .env to restrict access."
+            )
+
         return cls(token=token, allowed_user_ids=allowed_user_ids)
 
 
@@ -207,5 +220,25 @@ class Settings:
         )
 
 
-# Global settings instance
+def get_settings() -> Settings:
+    """
+    Get application settings from environment.
+
+    Preferred way to get settings - call once in main() and pass via DI.
+
+    Returns:
+        Settings instance loaded from environment variables
+    """
+    return Settings.from_env()
+
+
+# DEPRECATED: Global settings instance for backward compatibility
+# TODO: Remove this and use dependency injection instead
+# Usage in new code:
+#   settings = get_settings()  # In main()
+#   # Pass settings to components via constructor
+logger.warning(
+    "⚠️  Using global 'settings' instance. "
+    "Consider using get_settings() and dependency injection for better testability."
+)
 settings = Settings.from_env()

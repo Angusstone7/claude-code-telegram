@@ -87,10 +87,15 @@ class MessageBatcher:
                 # Отменяем старый таймер
                 if batch.timer_task and not batch.timer_task.done():
                     batch.timer_task.cancel()
+                    # Use timeout to prevent memory leak if task hangs
                     try:
-                        await batch.timer_task
-                    except asyncio.CancelledError:
+                        await asyncio.wait_for(batch.timer_task, timeout=0.1)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        # Expected: task was cancelled or timed out
                         pass
+                    except Exception as e:
+                        # Unexpected error, but don't crash
+                        logger.warning(f"[{user_id}] Error waiting for cancelled timer: {e}")
 
                 logger.debug(f"[{user_id}] Added to batch ({len(batch.messages)} messages): {text[:50]}...")
 

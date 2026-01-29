@@ -2,11 +2,18 @@ import asyncio
 import logging
 import time
 import psutil
+import shlex
 from typing import Dict, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+# Security: Whitelist of allowed systemd services to prevent command injection
+ALLOWED_SERVICES = {
+    "mysql", "mariadb", "postgresql", "postgres", "redis", "nginx",
+    "apache2", "httpd", "docker", "ssh", "sshd", "mongod", "mongodb"
+}
 
 # Singleton SSH executor for Docker commands
 _ssh_executor_instance = None
@@ -259,12 +266,31 @@ class SystemMonitor:
             return []
 
     async def get_service_status(self, service_name: str) -> Optional[bool]:
-        """Check if a systemd service is running"""
+        """Check if a systemd service is running
+
+        Args:
+            service_name: Name of the systemd service to check
+
+        Returns:
+            True if service is active, False if not, None on error
+
+        Raises:
+            ValueError: If service_name is not in the allowed whitelist
+        """
+        # Security: Validate service name against whitelist to prevent command injection
+        if service_name not in ALLOWED_SERVICES:
+            raise ValueError(
+                f"Service '{service_name}' is not in the allowed whitelist. "
+                f"Allowed services: {', '.join(sorted(ALLOWED_SERVICES))}"
+            )
+
         try:
             from infrastructure.ssh.ssh_executor import SSHCommandExecutor
 
             executor = SSHCommandExecutor()
-            result = await executor.execute(f"systemctl is-active {service_name}")
+            # Security: Use shlex.quote() for additional safety (defense in depth)
+            safe_service = shlex.quote(service_name)
+            result = await executor.execute(f"systemctl is-active {safe_service}")
             return result.stdout.strip() == "active"
         except Exception as e:
             logger.error(f"Error checking service status: {e}")
@@ -353,8 +379,37 @@ class SystemMonitor:
         return await self._docker_logs_local(container_id, lines)
 
     async def _docker_logs_ssh(self, container_id: str, lines: int = 50) -> tuple[bool, str]:
+        """Get Docker container logs via SSH
+
+        Args:
+            container_id: Docker container ID or name
+            lines: Number of log lines to retrieve (default: 50)
+
+        Returns:
+            Tuple of (success: bool, output/error: str)
+        """
         try:
-            result = await self._ssh_executor.execute(f"docker logs --tail {lines} {container_id}")
+            # Security: Validate inputs to prevent command injection
+            if not container_id or not isinstance(container_id, str):
+                return False, "Invalid container_id"
+
+            # Validate lines parameter
+            if not isinstance(lines, int) or lines < 1 or lines > 10000:
+                return False, "Invalid lines parameter (must be 1-10000)"
+
+            # Security: Sanitize container_id - only allow alphanumeric, dash, underscore, dot
+            # Docker container IDs/names follow pattern: [a-zA-Z0-9][a-zA-Z0-9_.-]+
+            import re
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,254}$', container_id):
+                return False, "Invalid container_id format"
+
+            # Security: Use shlex.quote() for defense in depth
+            safe_container_id = shlex.quote(container_id)
+            safe_lines = int(lines)  # Already validated above
+
+            result = await self._ssh_executor.execute(
+                f"docker logs --tail {safe_lines} {safe_container_id}"
+            )
             if result.exit_code != 0:
                 return False, result.stderr or "Failed to get logs"
             # Combine stdout and stderr (docker logs outputs to both)
@@ -363,6 +418,7 @@ class SystemMonitor:
                 output = output + "\n" + result.stderr if output else result.stderr
             return True, output or "(empty logs)"
         except Exception as e:
+            logger.error(f"Error getting docker logs via SSH: {e}")
             return False, str(e)
 
     async def _docker_logs_local(self, container_id: str, lines: int = 50) -> tuple[bool, str]:
@@ -398,12 +454,42 @@ class SystemMonitor:
             return False, str(e)
 
     async def _docker_command_ssh(self, action: str, container_id: str, extra_flags: str = "") -> tuple[bool, str]:
-        """Execute a docker command via SSH"""
+        """Execute a docker command via SSH
+
+        Args:
+            action: Docker action (start, stop, restart, rm, etc.)
+            container_id: Docker container ID or name
+            extra_flags: Additional flags (e.g., "-f" for force)
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
         try:
-            cmd = f"docker {action} {extra_flags} {container_id}".strip()
+            # Security: Whitelist allowed docker actions
+            ALLOWED_ACTIONS = {"start", "stop", "restart", "rm", "pause", "unpause"}
+            if action not in ALLOWED_ACTIONS:
+                return False, f"Action '{action}' is not allowed"
+
+            # Security: Validate container_id format
+            import re
+            if not container_id or not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,254}$', container_id):
+                return False, "Invalid container_id format"
+
+            # Security: Whitelist allowed flags
+            ALLOWED_FLAGS = {"-f", "--force", ""}
+            if extra_flags not in ALLOWED_FLAGS:
+                return False, f"Flag '{extra_flags}' is not allowed"
+
+            # Security: Use shlex.quote() for defense in depth
+            safe_container_id = shlex.quote(container_id)
+            safe_action = shlex.quote(action)
+            safe_flags = shlex.quote(extra_flags) if extra_flags else ""
+
+            cmd = f"docker {safe_action} {safe_flags} {safe_container_id}".strip()
             result = await self._ssh_executor.execute(cmd)
             if result.exit_code != 0:
                 return False, result.stderr or f"Failed to {action} container"
             return True, f"Container {container_id} {action}ed successfully"
         except Exception as e:
+            logger.error(f"Error executing docker command via SSH: {e}")
             return False, str(e)

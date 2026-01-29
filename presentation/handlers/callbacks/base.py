@@ -65,12 +65,34 @@ class BaseCallbackHandler:
 
         Args:
             data: Callback data string (e.g., "action:user_id:param")
-            expected_parts: Minimum expected parts
+            expected_parts: Minimum expected parts (must be 1-10)
 
         Returns:
             List of parts, padded with empty strings if needed
+
+        Raises:
+            ValueError: If expected_parts is invalid or data contains too many parts
         """
-        parts = data.split(":")
+        # Security: Validate expected_parts to prevent DoS
+        MAX_CALLBACK_PARTS = 10
+        if not isinstance(expected_parts, int) or expected_parts < 1 or expected_parts > MAX_CALLBACK_PARTS:
+            raise ValueError(f"expected_parts must be between 1 and {MAX_CALLBACK_PARTS}")
+
+        # Security: Validate input data
+        if not data:
+            # Return list of empty strings for empty data
+            return [""] * expected_parts
+
+        # Security: Limit split to prevent DoS attack with millions of colons
+        # Split with maxsplit to prevent creating huge lists
+        parts = data.split(":", MAX_CALLBACK_PARTS)
+
+        # Security: Check if data contains too many parts (potential DoS)
+        if len(parts) > MAX_CALLBACK_PARTS:
+            raise ValueError(f"Callback data contains too many parts: {len(parts)} (max: {MAX_CALLBACK_PARTS})")
+
+        # Pad with empty strings if needed
         while len(parts) < expected_parts:
             parts.append("")
+
         return parts

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -130,8 +131,12 @@ class CallbackHandlers:
                 )
                 if response:
                     await callback.message.answer(response, parse_mode=None)
-            except:
-                pass  # Skip AI follow-up on error
+            except (asyncio.TimeoutError, ConnectionError) as e:
+                # Network-related errors - skip AI follow-up gracefully
+                logger.warning(f"AI follow-up failed due to network error: {e}")
+            except Exception as e:
+                # Other errors - log but don't break the flow
+                logger.error(f"Unexpected error in AI follow-up: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Error executing command: {e}")
