@@ -49,17 +49,17 @@ class MessageHandlers:
         # Import managers here to avoid circular dependencies
         from presentation.handlers.state.user_state import UserStateManager
         from presentation.handlers.state.hitl_manager import HITLManager
-        from presentation.handlers.state.file_context_manager import FileContextManager
-        from presentation.handlers.state.variable_manager import VariableManager
-        from presentation.handlers.state.plan_manager import PlanManager
+        from presentation.handlers.state.file_context import FileContextManager
+        from presentation.handlers.state.variable_input import VariableInputManager
+        from presentation.handlers.state.plan_manager import PlanApprovalManager
         from presentation.middleware.message_batcher import MessageBatcher
 
         # Create state managers (same as original)
         self._state = UserStateManager(default_working_dir)
         self._hitl = HITLManager()
         self._file_context = FileContextManager()
-        self._variables = VariableManager()
-        self._plans = PlanManager()
+        self._variables = VariableInputManager()
+        self._plans = PlanApprovalManager()
         self._batcher = MessageBatcher()
 
         # Store references
