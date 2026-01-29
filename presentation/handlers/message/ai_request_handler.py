@@ -379,8 +379,41 @@ class AIRequestHandler(BaseMessageHandler):
 
     async def _on_permission_sdk(self, user_id: int, tool: str, details: str, input_data: dict, message: Message):
         """Handle permission request from SDK"""
-        # SDK handles permissions through callbacks - just log
-        pass
+        import html
+        import uuid
+        from presentation.keyboards.keyboards import Keyboards
+
+        # YOLO mode - auto-approve
+        if self.user_state.is_yolo_mode(user_id):
+            streaming = self.user_state.get_streaming_handler(user_id)
+            if streaming:
+                truncated = details[:100] + "..." if len(details) > 100 else details
+                await streaming.append(f"\n**Авто-одобрено:** `{tool}`\n```\n{truncated}\n```\n")
+
+            if self.sdk_service:
+                await self.sdk_service.respond_to_permission(user_id, True)
+            return
+
+        # Normal mode - ask for permission
+        session = self.user_state.get_claude_session(user_id)
+        request_id = str(uuid.uuid4())[:8]
+
+        if session:
+            session.set_waiting_approval(request_id, tool, details)
+
+        text = f"<b>Запрос разрешения</b>\n\n"
+        text += f"<b>Инструмент:</b> <code>{html.escape(tool)}</code>\n"
+        if details:
+            display_details = details if len(details) < 500 else details[:500] + "..."
+            text += f"<b>Детали:</b>\n<pre>{html.escape(display_details)}</pre>"
+
+        perm_msg = await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=Keyboards.claude_permission(user_id, tool, request_id)
+        )
+        self.hitl_manager.set_permission_context(user_id, request_id, tool, details, perm_msg)
+        self.log_info(user_id, f"Permission request sent: {tool}")
 
     async def _on_permission_completed(self, user_id: int, approved: bool):
         """Handle permission completion"""
@@ -389,8 +422,33 @@ class AIRequestHandler(BaseMessageHandler):
 
     async def _on_question_sdk(self, user_id: int, question: str, options: list, message: Message):
         """Handle question from SDK"""
-        # SDK handles questions through callbacks
-        pass
+        import html
+        import uuid
+        from presentation.keyboards.keyboards import Keyboards
+
+        session = self.user_state.get_claude_session(user_id)
+        request_id = str(uuid.uuid4())[:8]
+
+        if session:
+            session.set_waiting_answer(request_id, question, options)
+
+        self.hitl_manager.set_question_context(user_id, request_id, question, options)
+
+        text = f"<b>Вопрос</b>\n\n{html.escape(question)}"
+
+        if options:
+            q_msg = await message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=Keyboards.claude_question(user_id, options, request_id)
+            )
+            self.hitl_manager.set_question_context(user_id, request_id, question, options, q_msg)
+        else:
+            self.hitl_manager.set_expecting_answer(user_id, True)
+            q_msg = await message.answer(f"<b>Вопрос</b>\n\n{html.escape(question)}\n\nВведите ваш ответ:", parse_mode="HTML")
+            self.hitl_manager.set_question_context(user_id, request_id, question, options, q_msg)
+
+        self.log_info(user_id, f"Question sent: {question[:50]}...")
 
     async def _on_question_completed(self, user_id: int, answer: str):
         """Handle question completion"""
@@ -398,9 +456,46 @@ class AIRequestHandler(BaseMessageHandler):
         pass
 
     async def _on_plan_request(self, user_id: int, plan_file: str, input_data: dict, message: Message):
-        """Handle plan approval request"""
-        # SDK handles plans through callbacks
-        pass
+        """Handle plan approval request from SDK (ExitPlanMode)"""
+        import html
+        import uuid
+        import os
+        from presentation.keyboards.keyboards import Keyboards
+
+        self.log_info(user_id, f"Plan request: plan_file={plan_file}")
+        request_id = str(uuid.uuid4())[:8]
+
+        plan_content = ""
+        if plan_file:
+            try:
+                working_dir = self.get_working_dir(user_id)
+                plan_path = os.path.join(working_dir, plan_file)
+
+                if os.path.exists(plan_path):
+                    with open(plan_path, 'r', encoding='utf-8') as f:
+                        plan_content = f.read()
+            except Exception as e:
+                self.log_error(user_id, f"Error reading plan file: {e}")
+
+        if not plan_content:
+            plan_content = input_data.get("planContent", "")
+
+        if plan_content:
+            if len(plan_content) > 3500:
+                plan_content = plan_content[:3500] + "\n\n... (план сокращён)"
+            escaped_content = html.escape(plan_content)
+            text = f"<b>📋 План готов к выполнению</b>\n\n<pre>{escaped_content}</pre>"
+        else:
+            text = "<b>📋 План готов к выполнению</b>\n\n<i>Содержимое плана недоступно</i>"
+
+        plan_msg = await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=Keyboards.plan_approval(user_id, request_id)
+        )
+
+        self.plan_manager.set_context(user_id, request_id, plan_file, plan_content, plan_msg)
+        self.log_info(user_id, f"Plan approval requested, file: {plan_file}")
 
     async def _on_thinking(self, user_id: int, thinking: str):
         """Handle thinking output (extended thinking)"""
