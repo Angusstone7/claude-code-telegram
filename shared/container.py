@@ -288,8 +288,8 @@ class Container:
     def message_handlers(self):
         """Create MessageHandlers with all dependencies"""
         if "message_handlers" not in self._cache:
-            from presentation.handlers.message import MessageHandlers
-            # Refactored MessageHandlers signature
+            # ROLLBACK TO LEGACY: Refactored version has streaming issues
+            from presentation.handlers.messages import MessageHandlers
             self._cache["message_handlers"] = MessageHandlers(
                 bot_service=self.bot_service(),
                 claude_proxy=self.claude_proxy(),
