@@ -101,6 +101,28 @@ def _format_tool_response(tool_name: str, response: Any, max_length: int = 500) 
                 return "Совпадений не найдено"
             return f"Найдено {len(matches)} совпадений"
 
+        # Bash/shell command results
+        if "stdout" in response or "stderr" in response:
+            stdout = response.get("stdout", "").strip()
+            stderr = response.get("stderr", "").strip()
+
+            # Show stdout if present
+            if stdout:
+                truncated = stdout[:max_length]
+                if len(stdout) > max_length:
+                    truncated += "\n... (обрезано)"
+                # Add stderr if present and different
+                if stderr and stderr != stdout:
+                    truncated += f"\n\nОшибки:\n{stderr[:200]}"
+                return truncated
+
+            # Only stderr
+            if stderr:
+                return f"Ошибки:\n{stderr[:max_length]}"
+
+            # Empty result
+            return "(команда выполнена, вывода нет)"
+
         # Generic dict - try to extract useful info
         if "content" in response:
             return str(response["content"])[:max_length]
