@@ -10,9 +10,6 @@ from aiogram import Router
 from aiogram import F
 from aiogram.filters import StateFilter
 
-from .facade import MessageHandlersFacade
-from .coordinator import MessageCoordinator
-
 logger = logging.getLogger(__name__)
 
 
@@ -22,26 +19,24 @@ def register_handlers(router: Router, handlers) -> None:
 
     Args:
         router: Aiogram router
-        handlers: Either MessageHandlersFacade or MessageCoordinator instance
+        handlers: MessageHandlers instance (refactored or legacy)
 
-    This function works with both old facade and new coordinator for flexibility.
+    This function works with any handler that has handle_text, handle_document, handle_photo methods.
     """
-    # Support both facade and coordinator
-    if isinstance(handlers, MessageHandlersFacade):
-        # Legacy facade - use its methods
-        router.message.register(handlers.handle_document, F.document, StateFilter(None))
-        router.message.register(handlers.handle_photo, F.photo, StateFilter(None))
-        router.message.register(handlers.handle_text, F.text, StateFilter(None))
-        logger.info("✓ Message handlers registered (via MessageHandlersFacade)")
-    elif isinstance(handlers, MessageCoordinator):
-        # New coordinator - use handle_message for all
-        async def handle_any_message(message):
-            await handlers.handle_message(message)
+    # Check if handlers has the required methods
+    if not (hasattr(handlers, 'handle_text') and
+            hasattr(handlers, 'handle_document') and
+            hasattr(handlers, 'handle_photo')):
+        logger.error(f"❌ Handlers missing required methods: {type(handlers)}")
+        raise TypeError(
+            f"handlers must have handle_text, handle_document, and handle_photo methods, "
+            f"got {type(handlers)}"
+        )
 
-        router.message.register(handle_any_message, F.document, StateFilter(None))
-        router.message.register(handle_any_message, F.photo, StateFilter(None))
-        router.message.register(handle_any_message, F.text, StateFilter(None))
-        logger.info("✓ Message handlers registered (via MessageCoordinator)")
-    else:
-        logger.error(f"❌ Unknown handlers type: {type(handlers)}")
-        raise TypeError(f"handlers must be MessageHandlersFacade or MessageCoordinator, got {type(handlers)}")
+    # Register handlers using their methods
+    router.message.register(handlers.handle_document, F.document, StateFilter(None))
+    router.message.register(handlers.handle_photo, F.photo, StateFilter(None))
+    router.message.register(handlers.handle_text, F.text, StateFilter(None))
+
+    handler_type = type(handlers).__name__
+    logger.info(f"✓ Message handlers registered (via {handler_type})")
