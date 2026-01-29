@@ -32,6 +32,13 @@ class MessageHandlers:
         context_service=None,
         file_processor_service=None,
         callback_handlers=None,
+        # CRITICAL FIX: Accept shared state manager instances
+        user_state_manager=None,
+        hitl_manager=None,
+        file_context_manager=None,
+        variable_manager=None,
+        plan_manager=None,
+        message_batcher=None,
     ):
         """
         Initialize with original MessageHandlers signature.
@@ -45,22 +52,55 @@ class MessageHandlers:
             context_service: Context service (optional)
             file_processor_service: File processor service (optional)
             callback_handlers: Callback handlers (optional)
+            user_state_manager: Shared UserStateManager instance (optional)
+            hitl_manager: Shared HITLManager instance (optional)
+            file_context_manager: Shared FileContextManager instance (optional)
+            variable_manager: Shared VariableInputManager instance (optional)
+            plan_manager: Shared PlanApprovalManager instance (optional)
+            message_batcher: Shared MessageBatcher instance (optional)
         """
-        # Import managers here to avoid circular dependencies
-        from presentation.handlers.state.user_state import UserStateManager
-        from presentation.handlers.state.hitl_manager import HITLManager
-        from presentation.handlers.state.file_context import FileContextManager
-        from presentation.handlers.state.variable_input import VariableInputManager
-        from presentation.handlers.state.plan_manager import PlanApprovalManager
-        from presentation.middleware.message_batcher import MessageBatcher
+        # Use SHARED instances if provided, otherwise create new
+        if user_state_manager:
+            self._state = user_state_manager
+        else:
+            from presentation.handlers.state.user_state import UserStateManager
+            self._state = UserStateManager(default_working_dir)
 
-        # Create state managers (same as original)
-        self._state = UserStateManager(default_working_dir)
-        self._hitl = HITLManager()
-        self._file_context = FileContextManager()
-        self._variables = VariableInputManager()
-        self._plans = PlanApprovalManager()
-        self._batcher = MessageBatcher()
+        if hitl_manager:
+            self._hitl = hitl_manager
+        else:
+            from presentation.handlers.state.hitl_manager import HITLManager
+            self._hitl = HITLManager()
+
+        if file_context_manager:
+            self._file_context = file_context_manager
+        else:
+            from presentation.handlers.state.file_context import FileContextManager
+            self._file_context = FileContextManager()
+
+        if variable_manager:
+            self._variables = variable_manager
+        else:
+            from presentation.handlers.state.variable_input import VariableInputManager
+            self._variables = VariableInputManager()
+
+        if plan_manager:
+            self._plans = plan_manager
+        else:
+            from presentation.handlers.state.plan_manager import PlanApprovalManager
+            self._plans = PlanApprovalManager()
+
+        if message_batcher:
+            self._batcher = message_batcher
+        else:
+            from presentation.middleware.message_batcher import MessageBatcher
+            self._batcher = MessageBatcher()
+
+        # Log whether using shared or new instances (for debugging)
+        logger.info(
+            f"MessageHandlers: using {'SHARED' if user_state_manager else 'NEW'} state managers "
+            f"(state={id(self._state)}, hitl={id(self._hitl)})"
+        )
 
         # Store references
         self.bot_service = bot_service

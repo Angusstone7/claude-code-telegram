@@ -169,8 +169,22 @@ class AIRequestHandler(BaseMessageHandler):
         session._original_working_dir = working_dir
 
         # === START STREAMING ===
+        # CRITICAL FIX: Explicitly get and pass coordinator
+        from presentation.handlers.state.update_coordinator import get_coordinator
+
+        coordinator = get_coordinator()
+        if coordinator is None:
+            logger.error(f"[{user_id}] CRITICAL: MessageUpdateCoordinator not initialized!")
+        else:
+            logger.info(f"[{user_id}] StreamingHandler using coordinator: {id(coordinator)}")
+
         cancel_keyboard = Keyboards.claude_cancel(user_id)
-        streaming = StreamingHandler(bot, message.chat.id, reply_markup=cancel_keyboard)
+        streaming = StreamingHandler(
+            bot,
+            message.chat.id,
+            reply_markup=cancel_keyboard,
+            coordinator=coordinator  # Pass explicitly
+        )
 
         yolo_indicator = " ⚡" if self.user_state.is_yolo_mode(user_id) else ""
         header = ""
