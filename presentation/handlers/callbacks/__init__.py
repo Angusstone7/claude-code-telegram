@@ -19,10 +19,13 @@ from presentation.handlers.callbacks.base import BaseCallbackHandler
 from presentation.handlers.callbacks.docker import DockerCallbackHandler
 from presentation.handlers.callbacks.claude import ClaudeCallbackHandler
 
-# Re-export for backwards compatibility
+# Re-export from legacy module for backwards compatibility
+from presentation.handlers.callbacks.legacy import CallbackHandlers, register_handlers
+
 __all__ = [
     'BaseCallbackHandler',
     'DockerCallbackHandler',
     'ClaudeCallbackHandler',
     'CallbackHandlers',
+    'register_handlers',
 ]
