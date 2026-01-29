@@ -21,6 +21,7 @@ from presentation.handlers.callbacks.claude import ClaudeCallbackHandler
 from presentation.handlers.callbacks.project import ProjectCallbackHandler
 from presentation.handlers.callbacks.context import ContextCallbackHandler
 from presentation.handlers.callbacks.variables import VariableCallbackHandler
+from presentation.handlers.callbacks.plugins import PluginCallbackHandler
 
 # Re-export from legacy module for backwards compatibility
 from presentation.handlers.callbacks.legacy import CallbackHandlers, register_handlers
@@ -32,6 +33,7 @@ __all__ = [
     'ProjectCallbackHandler',
     'ContextCallbackHandler',
     'VariableCallbackHandler',
+    'PluginCallbackHandler',
     'CallbackHandlers',
     'register_handlers',
 ]
