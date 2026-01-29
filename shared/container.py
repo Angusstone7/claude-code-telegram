@@ -297,7 +297,6 @@ class Container:
                 project_service=self.project_service(),
                 context_service=self.context_service(),
                 file_processor_service=self.file_processor_service(),
-                callback_handlers=self.callback_handlers() if "callback_handlers" in self._cache else None,
             )
         return self._cache["message_handlers"]
 
