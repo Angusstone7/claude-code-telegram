@@ -1,44 +1,17 @@
 """
-Message Handlers - Refactored from God Object
+Message Handlers Package
 
-This package contains specialized message handlers split from the original
-1615-line MessageHandlers class:
+This package re-exports the original MessageHandlers from messages.py
+which contains the full SDK integration logic.
 
-- BaseMessageHandler: Base class with shared dependencies
-- TextMessageHandler: Handles text messages
-- FileMessageHandler: Handles documents and photos
-- HITLHandler: Handles Human-in-the-Loop interactions
-- VariableInputHandler: Handles variable input workflow (3-step)
-- PlanApprovalHandler: Handles plan approval workflow
-- MessageCoordinator: Coordinates all handlers
-- MessageHandlersFacade: Backward compatibility facade (DEPRECATED)
-
-✅ All 6 handlers are now implemented!
-✅ Backward compatibility layer added!
+The refactored handlers (base, text_handler, etc.) are incomplete and
+should not be used until the SDK integration is properly migrated.
 """
 
-from .base import BaseMessageHandler
-from .text_handler import TextMessageHandler
-from .file_handler import FileMessageHandler
-from .hitl_handler import HITLHandler
-from .variable_handler import VariableInputHandler
-from .plan_handler import PlanApprovalHandler
-from .coordinator import MessageCoordinator
-from .facade import MessageHandlersFacade
-from .router import register_handlers
-
-# Backward compatibility alias (old name → new implementation)
-MessageHandlers = MessageHandlersFacade
+# Import the WORKING MessageHandlers from messages.py (not the broken refactored version)
+from presentation.handlers.messages import MessageHandlers, register_handlers
 
 __all__ = [
-    "BaseMessageHandler",
-    "TextMessageHandler",
-    "FileMessageHandler",
-    "HITLHandler",
-    "VariableInputHandler",
-    "PlanApprovalHandler",
-    "MessageCoordinator",
-    "MessageHandlersFacade",  # For backward compatibility
-    "MessageHandlers",  # Legacy alias for MessageHandlersFacade
-    "register_handlers",  # Router registration function
+    "MessageHandlers",
+    "register_handlers",
 ]
