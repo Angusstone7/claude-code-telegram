@@ -326,10 +326,22 @@ class MessageHandlers:
         else:
             return os.path.join(current_dir, new_dir)
 
-    # === Message Handlers ===
+    # === File Handlers (Unified) ===
 
-    async def handle_document(self, message: Message) -> None:
-        """Handle document (file) messages"""
+    async def _handle_file_message(
+        self,
+        message: Message,
+        file_id: str,
+        filename: str,
+        file_size: int,
+        mime_type: str,
+        file_type_label: str = "Файл"
+    ) -> None:
+        """
+        Unified handler for document and photo messages.
+
+        Eliminates code duplication between handle_document and handle_photo.
+        """
         user_id = message.from_user.id
         bot = message.bot
 
@@ -345,32 +357,28 @@ class MessageHandlers:
             )
             return
 
-        document = message.document
-        if not document:
-            return
-
         if not self.file_processor_service:
             await message.answer("Обработка файлов недоступна")
             return
 
-        filename = document.file_name or "unknown"
-        file_size = document.file_size or 0
-
+        # Validate file
         is_valid, error = self.file_processor_service.validate_file(filename, file_size)
         if not is_valid:
             await message.answer(f"{error}")
             return
 
+        # Download file
         try:
-            file = await bot.get_file(document.file_id)
+            file = await bot.get_file(file_id)
             file_content = await bot.download_file(file.file_path)
         except Exception as e:
-            logger.error(f"Error downloading file: {e}")
-            await message.answer(f"Ошибка скачивания файла: {e}")
+            logger.error(f"Error downloading {file_type_label.lower()}: {e}")
+            await message.answer(f"Ошибка скачивания: {e}")
             return
 
+        # Process file
         processed = await self.file_processor_service.process_file(
-            file_content, filename, document.mime_type
+            file_content, filename, mime_type
         )
 
         if processed.error:
@@ -380,36 +388,69 @@ class MessageHandlers:
         caption = message.caption or ""
 
         if caption:
-            if caption.startswith("/"):
-                self._files.cache_file(message.message_id, processed)
-                parts = caption.split(maxsplit=1)
-                command_name = parts[0][1:]
-                command_args = parts[1] if len(parts) > 1 else ""
-                skill_command = f"/{command_name}"
-                if command_args:
-                    skill_command += f" {command_args}"
-
-                prompt = f"run {skill_command}"
-                working_dir = await self.get_project_working_dir(user_id)
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt, working_dir=working_dir)
-
-                file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
-                await message.answer(
-                    f"<b>Команда плагина:</b> <code>{skill_command}</code>\n"
-                    f"{file_info}\n\nПередаю в Claude Code...",
-                    parse_mode="HTML"
-                )
-                await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
-            else:
-                working_dir = await self.get_project_working_dir(user_id)
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption, working_dir=working_dir)
-                file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
-                task_preview = caption[:50] + "..." if len(caption) > 50 else caption
-                await message.answer(f"Получен файл: {file_info}\nЗадача: {task_preview}")
-                await self._execute_task_with_prompt(message, enriched_prompt)
+            await self._process_file_with_caption(message, processed, caption, file_type_label)
         else:
-            # Send confirmation and cache file with the BOT's message ID
-            # (user will reply to bot's message, not original document)
+            await self._cache_file_for_reply(message, processed, file_type_label, user_id)
+
+    async def _process_file_with_caption(
+        self,
+        message: Message,
+        processed: "ProcessedFile",
+        caption: str,
+        file_type_label: str
+    ) -> None:
+        """Process file when caption is provided."""
+        user_id = message.from_user.id
+
+        if caption.startswith("/"):
+            # Plugin command with file
+            self._files.cache_file(message.message_id, processed)
+            parts = caption.split(maxsplit=1)
+            command_name = parts[0][1:]
+            command_args = parts[1] if len(parts) > 1 else ""
+            skill_command = f"/{command_name}"
+            if command_args:
+                skill_command += f" {command_args}"
+
+            prompt = f"run {skill_command}"
+            working_dir = await self.get_project_working_dir(user_id)
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed, prompt, working_dir=working_dir
+            )
+
+            file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
+            await message.answer(
+                f"<b>Команда плагина:</b> <code>{skill_command}</code>\n"
+                f"{file_info}\n\nПередаю в Claude Code...",
+                parse_mode="HTML"
+            )
+            await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
+        else:
+            # Regular task with file
+            working_dir = await self.get_project_working_dir(user_id)
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed, caption, working_dir=working_dir
+            )
+            file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
+            task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+            await message.answer(f"Получен {file_type_label.lower()}: {file_info}\nЗадача: {task_preview}")
+            await self._execute_task_with_prompt(message, enriched_prompt)
+
+    async def _cache_file_for_reply(
+        self,
+        message: Message,
+        processed: "ProcessedFile",
+        file_type_label: str,
+        user_id: int
+    ) -> None:
+        """Cache file and prompt user to reply with task."""
+        if file_type_label == "Изображение":
+            bot_msg = await message.answer(
+                "<b>Изображение получено</b>\n\n"
+                "Сделайте <b>reply</b> на это сообщение с текстом задачи.",
+                parse_mode="HTML"
+            )
+        else:
             bot_msg = await message.answer(
                 f"<b>Файл получен:</b> {processed.filename}\n"
                 f"<b>Размер:</b> {processed.size_bytes // 1024} KB\n"
@@ -418,94 +459,47 @@ class MessageHandlers:
                 f"или командой плагина (например, <code>/ralph-loop</code>)",
                 parse_mode="HTML"
             )
-            # Cache file with bot's response message ID so reply lookup works
-            self._files.cache_file(bot_msg.message_id, processed)
-            logger.info(f"[{user_id}] Document cached with bot message ID: {bot_msg.message_id}")
+
+        self._files.cache_file(bot_msg.message_id, processed)
+        logger.info(f"[{user_id}] {file_type_label} cached with bot message ID: {bot_msg.message_id}")
+
+    # === Message Handlers ===
+
+    async def handle_document(self, message: Message) -> None:
+        """Handle document (file) messages"""
+        document = message.document
+        if not document:
+            return
+
+        await self._handle_file_message(
+            message=message,
+            file_id=document.file_id,
+            filename=document.file_name or "unknown",
+            file_size=document.file_size or 0,
+            mime_type=document.mime_type,
+            file_type_label="Файл"
+        )
 
     async def handle_photo(self, message: Message) -> None:
         """Handle photo messages"""
-        user_id = message.from_user.id
-        bot = message.bot
-
-        user = await self.bot_service.authorize_user(user_id)
-        if not user:
-            await message.answer("Вы не авторизованы для использования этого бота.")
-            return
-
-        if self._is_task_running(user_id):
-            await message.answer("Задача уже выполняется.", reply_markup=Keyboards.claude_cancel(user_id))
-            return
-
         if not message.photo:
             return
 
         photo = message.photo[-1]
-        max_image_size = 5 * 1024 * 1024
+        max_image_size = 5 * 1024 * 1024  # 5 MB
 
         if photo.file_size and photo.file_size > max_image_size:
             await message.answer("Изображение слишком большое (максимум 5 MB)")
             return
 
-        if not self.file_processor_service:
-            await message.answer("Обработка файлов недоступна")
-            return
-
-        try:
-            file = await bot.get_file(photo.file_id)
-            file_content = await bot.download_file(file.file_path)
-        except Exception as e:
-            logger.error(f"Error downloading photo: {e}")
-            await message.answer(f"Ошибка скачивания: {e}")
-            return
-
-        filename = f"image_{photo.file_unique_id}.jpg"
-        processed = await self.file_processor_service.process_file(
-            file_content, filename, "image/jpeg"
+        await self._handle_file_message(
+            message=message,
+            file_id=photo.file_id,
+            filename=f"image_{photo.file_unique_id}.jpg",
+            file_size=photo.file_size or 0,
+            mime_type="image/jpeg",
+            file_type_label="Изображение"
         )
-
-        if processed.error:
-            await message.answer(f"Ошибка обработки: {processed.error}")
-            return
-
-        caption = message.caption or ""
-
-        if caption:
-            if caption.startswith("/"):
-                self._files.cache_file(message.message_id, processed)
-                parts = caption.split(maxsplit=1)
-                command_name = parts[0][1:]
-                command_args = parts[1] if len(parts) > 1 else ""
-                skill_command = f"/{command_name}"
-                if command_args:
-                    skill_command += f" {command_args}"
-
-                prompt = f"run {skill_command}"
-                working_dir = await self.get_project_working_dir(user_id)
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, prompt, working_dir=working_dir)
-
-                await message.answer(
-                    f"<b>Команда плагина:</b> <code>{skill_command}</code>\n"
-                    f"Изображение добавлено в контекст\n\nПередаю в Claude Code...",
-                    parse_mode="HTML"
-                )
-                await self.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
-            else:
-                working_dir = await self.get_project_working_dir(user_id)
-                enriched_prompt = self.file_processor_service.format_for_prompt(processed, caption, working_dir=working_dir)
-                task_preview = caption[:50] + "..." if len(caption) > 50 else caption
-                await message.answer(f"Изображение получено. Задача: {task_preview}")
-                await self._execute_task_with_prompt(message, enriched_prompt)
-        else:
-            # Send confirmation and cache file with the BOT's message ID
-            # (user will reply to bot's message, not original photo)
-            bot_msg = await message.answer(
-                "<b>Изображение получено</b>\n\n"
-                "Сделайте <b>reply</b> на это сообщение с текстом задачи.",
-                parse_mode="HTML"
-            )
-            # Cache file with bot's response message ID so reply lookup works
-            self._files.cache_file(bot_msg.message_id, processed)
-            logger.info(f"[{user_id}] Photo cached with bot message ID: {bot_msg.message_id}")
 
     async def _extract_reply_file_context(
         self, reply_message: Message, bot: Bot

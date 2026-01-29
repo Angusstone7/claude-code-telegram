@@ -46,6 +46,22 @@ PLUGIN_DESCRIPTIONS = {
     "ralph-loop": "RAFL: итеративное решение задач",
 }
 
+# === Output Display ===
+OUTPUT_HEAD_LIMIT = 1000  # chars to show from start
+OUTPUT_TAIL_LIMIT = 500   # chars to show from end
+TEXT_TRUNCATE_LIMIT = 3500  # max text for Telegram callback
+
+# === Docker Logs ===
+DOCKER_LOGS_PAGE_SIZE = 30  # lines per page
+DOCKER_LOGS_MAX_LINES = 200  # max lines to fetch
+
+# === OAuth ===
+OAUTH_URL_TIMEOUT_SECONDS = 30
+
+# === Telegram Limits ===
+TELEGRAM_MESSAGE_LIMIT = 4096
+TELEGRAM_CALLBACK_DATA_LIMIT = 64
+
 # === Error Messages ===
 ERROR_UNAUTHORIZED = "Вы не авторизованы для использования этого бота."
 ERROR_TASK_RUNNING = "Задача уже выполняется.\n\nИспользуйте кнопку отмены или /cancel чтобы остановить."
