@@ -105,6 +105,7 @@ class AccountSettings:
     proxy_url: str = CLAUDE_PROXY
     local_model_config: Optional[LocalModelConfig] = None  # Config for LOCAL_MODEL mode
     yolo_mode: bool = False  # Auto-approve all operations
+    zai_api_key: Optional[str] = None  # User-provided z.ai API key
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -377,6 +378,120 @@ class AccountService:
         logger.info(f"[{user_id}] Set local model: {config.name} ({config.base_url})")
         return settings
 
+    async def set_zai_api_key(
+        self, user_id: int, api_key: str
+    ) -> tuple[bool, str, Optional[AccountSettings]]:
+        """
+        Set z.ai API key for user after validating it.
+
+        Args:
+            user_id: User ID
+            api_key: The z.ai API key to save
+
+        Returns:
+            Tuple of (success, message, settings)
+        """
+        # Validate the API key by making a test request
+        is_valid, error_msg = await self._validate_zai_api_key(api_key)
+
+        if not is_valid:
+            return False, error_msg, None
+
+        # Save the key
+        settings = await self.get_settings(user_id)
+        settings.zai_api_key = api_key
+        settings.updated_at = datetime.now()
+        await self.repository.save(settings)
+
+        logger.info(f"[{user_id}] z.ai API key saved successfully")
+        return True, "✅ API ключ z.ai сохранён и проверен!", settings
+
+    async def delete_zai_api_key(self, user_id: int) -> tuple[bool, str]:
+        """
+        Delete z.ai API key for user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Tuple of (success, message)
+        """
+        settings = await self.get_settings(user_id)
+        if not settings.zai_api_key:
+            return False, "❌ API ключ не найден"
+
+        settings.zai_api_key = None
+        settings.updated_at = datetime.now()
+        await self.repository.save(settings)
+
+        logger.info(f"[{user_id}] z.ai API key deleted")
+        return True, "✅ API ключ удалён"
+
+    async def has_zai_api_key(self, user_id: int) -> bool:
+        """Check if user has a z.ai API key configured."""
+        settings = await self.get_settings(user_id)
+        return bool(settings.zai_api_key)
+
+    async def _validate_zai_api_key(self, api_key: str) -> tuple[bool, str]:
+        """
+        Validate z.ai API key by making a test request.
+
+        Args:
+            api_key: The API key to validate
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        import httpx
+
+        # z.ai API endpoint
+        base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://open.bigmodel.cn/api/anthropic")
+
+        # Make a minimal request to check the key
+        # Using the messages endpoint with a minimal request
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+        }
+
+        # Minimal request body - this will count against the user's quota
+        # but is the only reliable way to validate the key
+        data = {
+            "model": "glm-4.5-air",  # Use cheapest model for validation
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "Hi"}]
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{base_url}/v1/messages",
+                    headers=headers,
+                    json=data
+                )
+
+                if response.status_code == 200:
+                    return True, ""
+                elif response.status_code == 401:
+                    return False, "❌ Неверный API ключ (401 Unauthorized)"
+                elif response.status_code == 403:
+                    return False, "❌ Доступ запрещён (403 Forbidden). Проверьте права ключа."
+                elif response.status_code == 429:
+                    # Rate limited but key is valid
+                    return True, ""
+                else:
+                    error_text = response.text[:200]
+                    return False, f"❌ Ошибка API: {response.status_code}\n{error_text}"
+
+        except httpx.TimeoutException:
+            return False, "❌ Таймаут при проверке ключа. Попробуйте позже."
+        except httpx.ConnectError:
+            return False, "❌ Не удалось подключиться к z.ai API. Проверьте интернет."
+        except Exception as e:
+            logger.error(f"Error validating z.ai API key: {e}")
+            return False, f"❌ Ошибка проверки: {str(e)}"
+
     def get_credentials_info(self) -> CredentialsInfo:
         """Get info about current Claude credentials"""
         return CredentialsInfo.from_file(CREDENTIALS_PATH)
@@ -461,7 +576,8 @@ class AccountService:
             return False, f"Error: {e}"
 
     def get_env_for_mode(
-        self, mode: AuthMode, local_config: Optional[LocalModelConfig] = None
+        self, mode: AuthMode, local_config: Optional[LocalModelConfig] = None,
+        zai_api_key: Optional[str] = None
     ) -> dict[str, str]:
         """
         Build environment variables for the specified auth mode.
@@ -469,6 +585,7 @@ class AccountService:
         Args:
             mode: Authorization mode
             local_config: Local model configuration (required for LOCAL_MODEL mode)
+            zai_api_key: User-provided z.ai API key (overrides env var)
 
         Returns:
             Dict of environment variables to set
@@ -476,10 +593,15 @@ class AccountService:
         env = {}
 
         if mode == AuthMode.ZAI_API:
-            # z.ai API mode - use env vars from settings
+            # z.ai API mode - use user's key if provided, otherwise env vars
             base_url = os.environ.get("ANTHROPIC_BASE_URL")
-            auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
             model = os.environ.get("ANTHROPIC_MODEL")
+
+            # User-provided key takes priority over env var
+            if zai_api_key:
+                auth_token = zai_api_key
+            else:
+                auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
 
             if base_url:
                 env["ANTHROPIC_BASE_URL"] = base_url
@@ -488,7 +610,7 @@ class AccountService:
             if model:
                 env["ANTHROPIC_MODEL"] = model  # Keep z.ai default model in env
 
-            logger.debug(f"z.ai mode env: base_url={base_url is not None}, model={model}")
+            logger.debug(f"z.ai mode env: base_url={base_url is not None}, model={model}, user_key={zai_api_key is not None}")
 
         elif mode == AuthMode.CLAUDE_ACCOUNT:
             # Claude Account mode - use credentials file with proxy
@@ -546,7 +668,8 @@ class AccountService:
         self,
         mode: AuthMode,
         base_env: dict = None,
-        local_config: Optional[LocalModelConfig] = None
+        local_config: Optional[LocalModelConfig] = None,
+        zai_api_key: Optional[str] = None
     ) -> dict[str, str]:
         """
         Apply environment variables for the specified auth mode.
@@ -557,6 +680,7 @@ class AccountService:
             mode: Authorization mode
             base_env: Base environment (defaults to os.environ)
             local_config: Local model configuration (required for LOCAL_MODEL mode)
+            zai_api_key: User-provided z.ai API key (overrides env var)
 
         Returns:
             New environment dict ready for subprocess/SDK
@@ -566,7 +690,7 @@ class AccountService:
         else:
             base_env = dict(base_env)
 
-        mode_env = self.get_env_for_mode(mode, local_config=local_config)
+        mode_env = self.get_env_for_mode(mode, local_config=local_config, zai_api_key=zai_api_key)
 
         # Handle removal markers
         if mode_env.pop("_REMOVE_ANTHROPIC_API_KEY", None):

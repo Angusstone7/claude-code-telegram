@@ -63,6 +63,15 @@ class SQLiteAccountRepository:
                 # Column already exists, that's fine
                 pass
 
+            # Add zai_api_key column if it doesn't exist (migration for user-provided z.ai API keys)
+            try:
+                await db.execute("ALTER TABLE account_settings ADD COLUMN zai_api_key TEXT")
+                await db.commit()
+                logger.info("Added zai_api_key column to account_settings table")
+            except Exception:
+                # Column already exists, that's fine
+                pass
+
             logger.info("Account settings table initialized")
 
     async def find_by_user_id(self, user_id: int) -> Optional["AccountSettings"]:
@@ -90,8 +99,8 @@ class SQLiteAccountRepository:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO account_settings
-                (user_id, auth_mode, model, proxy_url, local_model_config, yolo_mode, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, auth_mode, model, proxy_url, local_model_config, yolo_mode, zai_api_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 settings.user_id,
                 settings.auth_mode.value,
@@ -99,6 +108,7 @@ class SQLiteAccountRepository:
                 settings.proxy_url,
                 local_config_json,
                 1 if getattr(settings, 'yolo_mode', False) else 0,
+                getattr(settings, 'zai_api_key', None),
                 settings.created_at.isoformat() if settings.created_at else None,
                 settings.updated_at.isoformat() if settings.updated_at else None,
             ))
@@ -160,6 +170,11 @@ class SQLiteAccountRepository:
         if "yolo_mode" in row.keys() and row["yolo_mode"]:
             yolo_mode = bool(row["yolo_mode"])
 
+        # Get zai_api_key (may not exist in old rows)
+        zai_api_key = None
+        if "zai_api_key" in row.keys() and row["zai_api_key"]:
+            zai_api_key = row["zai_api_key"]
+
         return AccountSettings(
             user_id=row["user_id"],
             auth_mode=AuthMode(row["auth_mode"]),
@@ -167,6 +182,7 @@ class SQLiteAccountRepository:
             proxy_url=row["proxy_url"],
             local_model_config=local_model_config,
             yolo_mode=yolo_mode,
+            zai_api_key=zai_api_key,
             created_at=(
                 datetime.fromisoformat(row["created_at"])
                 if row["created_at"] else None

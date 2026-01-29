@@ -229,6 +229,8 @@ class AccountStates(StatesGroup):
     waiting_local_url = State()
     waiting_local_model_name = State()
     waiting_local_display_name = State()
+    # z.ai API key setup states
+    waiting_zai_api_key = State()
 
 
 class AccountHandlers:
@@ -314,6 +316,13 @@ class AccountHandlers:
             F.text
         )
 
+        # z.ai API key setup handlers
+        self.router.message.register(
+            self.handle_zai_api_key_input,
+            AccountStates.waiting_zai_api_key,
+            F.text
+        )
+
     async def handle_account_command(self, message: Message, state: FSMContext):
         """Handle /account command - show settings menu"""
         user_id = message.from_user.id
@@ -321,19 +330,24 @@ class AccountHandlers:
         # Get current settings
         settings = await self.account_service.get_settings(user_id)
         creds_info = self.account_service.get_credentials_info()
+        has_zai_key = bool(settings.zai_api_key)
 
         # Build info message
-        current_mode_name = (
-            "z.ai API" if settings.auth_mode == AuthMode.ZAI_API
-            else "Claude Account"
-        )
+        mode_names = {
+            AuthMode.ZAI_API: "z.ai API",
+            AuthMode.CLAUDE_ACCOUNT: "Claude Account",
+            AuthMode.LOCAL_MODEL: "Локальная модель",
+        }
+        current_mode_name = mode_names.get(settings.auth_mode, "Неизвестно")
 
         text = (
             f"🔧 <b>Настройки аккаунта</b>\n\n"
             f"Текущий режим: <b>{current_mode_name}</b>\n\n"
         )
 
-        if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
+        if settings.auth_mode == AuthMode.ZAI_API:
+            text += f"🔑 API ключ: {'✅ настроен' if has_zai_key else '❌ не настроен'}\n"
+        elif settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
             if creds_info.exists:
                 sub = creds_info.subscription_type or "unknown"
                 tier = creds_info.rate_limit_tier or "default"
@@ -354,6 +368,7 @@ class AccountHandlers:
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
                 current_model=settings.model,
+                has_zai_key=has_zai_key,
                 show_back=True,
                 back_to="menu:main"
             )
@@ -429,6 +444,14 @@ class AccountHandlers:
             # Use model name as display name
             await self._handle_local_use_default_name(callback, state)
 
+        elif action == "zai_setup":
+            # Start z.ai API key setup
+            await self._start_zai_api_key_setup(callback, state)
+
+        elif action == "zai_delete":
+            # Delete z.ai API key
+            await self._handle_zai_delete_key(callback, state)
+
         else:
             await callback.answer(f"Неизвестное действие: {action}")
 
@@ -449,11 +472,15 @@ class AccountHandlers:
 
         settings = await self.account_service.get_settings(user_id)
 
-        # If already in this mode, show submenu for Claude Account
+        # If already in this mode, show submenu for Claude Account or z.ai API
         if settings.auth_mode == mode:
             if mode == AuthMode.CLAUDE_ACCOUNT:
                 # Show Claude Account submenu with options
                 await self._show_claude_submenu(callback, state)
+                return
+            elif mode == AuthMode.ZAI_API:
+                # Show z.ai API submenu with key management
+                await self._show_zai_submenu(callback, state)
                 return
             else:
                 await callback.answer("Этот режим уже выбран")
@@ -486,6 +513,27 @@ class AccountHandlers:
             await self._start_local_model_setup(callback, state)
             return
 
+        # For z.ai API, check if user has API key
+        if mode == AuthMode.ZAI_API:
+            has_zai_key = await self.account_service.has_zai_api_key(user_id)
+            if not has_zai_key:
+                # No API key - ask user to add one
+                text = (
+                    "🔑 <b>Настройка z.ai API</b>\n\n"
+                    "Для использования z.ai API нужен API ключ.\n\n"
+                    "Вы можете:\n"
+                    "• <b>Добавить свой ключ</b> - получите его на open.bigmodel.cn\n\n"
+                    "<i>После добавления ключ будет проверен на работоспособность.</i>"
+                )
+
+                await callback.message.edit_text(
+                    text,
+                    reply_markup=Keyboards.zai_auth_options(),
+                    parse_mode="HTML"
+                )
+                await callback.answer()
+                return
+
         # Show confirmation
         if mode == AuthMode.CLAUDE_ACCOUNT:
             creds_info = self.account_service.get_credentials_info()
@@ -497,9 +545,10 @@ class AccountHandlers:
                 f"Все запросы будут идти через вашу подписку Claude."
             )
         else:
+            # z.ai with key
             text = (
                 "🌐 <b>Переключить на z.ai API?</b>\n\n"
-                "Запросы будут идти через z.ai API с оплатой по токенам."
+                "Запросы будут идти через z.ai API с вашим ключом."
             )
 
         await callback.message.edit_text(
@@ -589,6 +638,7 @@ class AccountHandlers:
         user_id = callback.from_user.id
         settings = await self.account_service.get_settings(user_id)
         creds_info = self.account_service.get_credentials_info()
+        has_zai_key = bool(settings.zai_api_key)
 
         mode_names = {
             AuthMode.ZAI_API: "z.ai API",
@@ -597,9 +647,14 @@ class AccountHandlers:
         }
         current_mode_name = mode_names.get(settings.auth_mode, "Неизвестно")
 
+        # Add key status for z.ai mode
+        key_status = ""
+        if settings.auth_mode == AuthMode.ZAI_API:
+            key_status = "\n🔑 API ключ: " + ("✅ настроен" if has_zai_key else "❌ не настроен")
+
         text = (
             f"🔧 <b>Настройки аккаунта</b>\n\n"
-            f"Текущий режим: <b>{current_mode_name}</b>\n\n"
+            f"Текущий режим: <b>{current_mode_name}</b>{key_status}\n\n"
             f"Выберите режим авторизации:"
         )
 
@@ -610,6 +665,7 @@ class AccountHandlers:
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
                 current_model=settings.model,
+                has_zai_key=has_zai_key,
                 show_back=True,
                 back_to="menu:main"
             ),
@@ -639,6 +695,36 @@ class AccountHandlers:
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
                 current_model=settings.model if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT else None
+            ),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+
+    async def _show_zai_submenu(self, callback: CallbackQuery, state: FSMContext):
+        """Show z.ai API submenu with key management options"""
+        user_id = callback.from_user.id
+        settings = await self.account_service.get_settings(user_id)
+        has_key = bool(settings.zai_api_key)
+
+        text = "🌐 <b>z.ai API</b>\n\n"
+
+        if has_key:
+            # Mask the key for display (show first 8 and last 4 chars)
+            key = settings.zai_api_key
+            if len(key) > 16:
+                masked = f"{key[:8]}...{key[-4:]}"
+            else:
+                masked = f"{key[:4]}***"
+            text += f"Статус: ✅ API ключ настроен\n"
+            text += f"Ключ: <code>{masked}</code>\n"
+        else:
+            text += "Статус: ❌ API ключ не настроен\n"
+
+        await callback.message.edit_text(
+            text,
+            reply_markup=Keyboards.zai_api_submenu(
+                has_key=has_key,
+                current_model=settings.model
             ),
             parse_mode="HTML"
         )
@@ -1286,6 +1372,107 @@ class AccountHandlers:
             )
 
         logger.info(f"[{user_id}] Local model configured: {display_name} at {url}")
+
+    # ============== z.ai API Key Setup Handlers ==============
+
+    async def _start_zai_api_key_setup(self, callback: CallbackQuery, state: FSMContext):
+        """Start z.ai API key setup flow - ask for API key"""
+        user_id = callback.from_user.id
+
+        # Check if user already has a key
+        has_key = await self.account_service.has_zai_api_key(user_id)
+
+        text = (
+            "🔑 <b>Настройка API ключа z.ai</b>\n\n"
+        )
+
+        if has_key:
+            text += "✅ <i>У вас уже есть сохранённый ключ.</i>\n\n"
+
+        text += (
+            "Введите ваш API ключ z.ai (ZhipuAI).\n\n"
+            "<b>Как получить ключ:</b>\n"
+            "1. Зарегистрируйтесь на <a href=\"https://open.bigmodel.cn\">open.bigmodel.cn</a>\n"
+            "2. Перейдите в раздел API Keys\n"
+            "3. Создайте новый ключ\n\n"
+            "<i>Ключ будет проверен перед сохранением.</i>"
+        )
+
+        await state.set_state(AccountStates.waiting_zai_api_key)
+        await callback.message.edit_text(
+            text,
+            reply_markup=Keyboards.zai_api_key_input(has_existing_key=has_key),
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+        await callback.answer()
+
+    async def handle_zai_api_key_input(self, message: Message, state: FSMContext):
+        """Handle z.ai API key input from user"""
+        user_id = message.from_user.id
+        api_key = message.text.strip()
+
+        # Check for cancel commands
+        if api_key.lower() in ("отмена", "cancel", "/cancel"):
+            await state.clear()
+            await message.answer("Настройка отменена. Используйте /account для настроек.")
+            return
+
+        # Delete the user's message containing the API key for security
+        try:
+            await message.delete()
+        except Exception:
+            pass  # May not have permission
+
+        # Show processing message
+        processing_msg = await message.answer("⏳ Проверяю API ключ...")
+
+        # Validate and save the key
+        success, result_msg, settings = await self.account_service.set_zai_api_key(user_id, api_key)
+
+        if success:
+            # Key is valid and saved
+            await state.clear()
+
+            creds_info = self.account_service.get_credentials_info()
+            settings = await self.account_service.get_settings(user_id)
+
+            await processing_msg.edit_text(
+                f"{result_msg}\n\n"
+                f"Теперь вы можете использовать z.ai API.\n"
+                f"Ваш ключ будет использоваться для всех запросов.",
+                reply_markup=Keyboards.account_menu(
+                    current_mode=settings.auth_mode.value,
+                    has_credentials=creds_info.exists,
+                    subscription_type=creds_info.subscription_type,
+                    current_model=settings.model,
+                    has_zai_key=True,
+                    show_back=True,
+                    back_to="menu:main"
+                ),
+                parse_mode="HTML"
+            )
+            logger.info(f"[{user_id}] z.ai API key saved successfully")
+        else:
+            # Key is invalid
+            await processing_msg.edit_text(
+                f"{result_msg}\n\n"
+                f"Введите другой ключ или нажмите Отмена.",
+                reply_markup=Keyboards.zai_api_key_input(has_existing_key=False),
+                parse_mode="HTML"
+            )
+
+    async def _handle_zai_delete_key(self, callback: CallbackQuery, state: FSMContext):
+        """Delete z.ai API key"""
+        user_id = callback.from_user.id
+
+        success, message = await self.account_service.delete_zai_api_key(user_id)
+
+        if success:
+            await self._show_menu(callback, state)
+            await callback.answer("✅ API ключ удалён")
+        else:
+            await callback.answer(message, show_alert=True)
 
     async def handle_local_cancel_text(self, message: Message, state: FSMContext):
         """Handle cancel text during local model setup"""

@@ -1173,6 +1173,7 @@ class Keyboards:
         has_credentials: bool = False,
         subscription_type: str = None,
         current_model: str = None,
+        has_zai_key: bool = False,
         show_back: bool = False,
         back_to: str = "menu:settings"
     ) -> InlineKeyboardMarkup:
@@ -1184,16 +1185,18 @@ class Keyboards:
             has_credentials: Whether credentials file exists
             subscription_type: Subscription type from credentials
             current_model: Currently selected model (e.g., "claude-sonnet-4-5")
+            has_zai_key: Whether user has their own z.ai API key
             show_back: Show back button instead of close button
             back_to: Callback data for back button
         """
         buttons = []
 
-        # z.ai API button
+        # z.ai API button with key status
         zai_emoji = "✅" if current_mode == "zai_api" else "🌐"
+        key_indicator = " 🔑" if has_zai_key else ""
         buttons.append([
             InlineKeyboardButton(
-                text=f"{zai_emoji} z.ai API",
+                text=f"{zai_emoji} z.ai API{key_indicator}",
                 callback_data="account:mode:zai_api"
             )
         ])
@@ -1241,6 +1244,16 @@ class Keyboards:
                 )
             ])
 
+        # z.ai API key setup button - only for zai_api mode
+        if current_mode == "zai_api":
+            key_text = "🔑 Изменить API ключ" if has_zai_key else "🔑 Добавить API ключ"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=key_text,
+                    callback_data="account:zai_setup"
+                )
+            ])
+
         # Back or close button
         if show_back:
             buttons.append([
@@ -1267,6 +1280,24 @@ class Keyboards:
                 InlineKeyboardButton(
                     text="📤 Загрузить credentials файл",
                     callback_data="account:upload"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ Назад",
+                    callback_data="account:menu"
+                )
+            ]
+        ])
+
+    @staticmethod
+    def zai_auth_options() -> InlineKeyboardMarkup:
+        """Keyboard with options for z.ai API authorization"""
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔑 Добавить API ключ",
+                    callback_data="account:zai_setup"
                 )
             ],
             [
@@ -1323,6 +1354,67 @@ class Keyboards:
                 InlineKeyboardButton(
                     text="🗑️ Удалить аккаунт Claude",
                     callback_data="account:delete_account"
+                )
+            ])
+
+        # Back button
+        buttons.append([
+            InlineKeyboardButton(
+                text="◀️ Назад",
+callback_data="account:menu"
+            )
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def zai_api_submenu(
+        has_key: bool = False,
+        current_model: str = None
+    ) -> InlineKeyboardMarkup:
+        """
+        Submenu for z.ai API with key management options.
+
+        Args:
+            has_key: Whether user has API key configured
+            current_model: Currently selected model
+        """
+        buttons = []
+
+        # Model selection button
+        model_text = "🤖 Модель"
+        if current_model:
+            model_name = current_model.replace("-", " ").replace("_", " ").title()
+            if len(model_name) > 20:
+                model_name = model_name[:17] + "..."
+            model_text = f"🤖 Модель: {model_name}"
+
+        buttons.append([
+            InlineKeyboardButton(
+                text=model_text,
+                callback_data="account:select_model"
+            )
+        ])
+
+        # API key management
+        if has_key:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🔑 Изменить API ключ",
+                    callback_data="account:zai_setup"
+                )
+            ])
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🗑️ Удалить API ключ",
+                    callback_data="account:zai_delete"
+                )
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🔑 Добавить API ключ",
+                    callback_data="account:zai_setup"
                 )
             ])
 
@@ -1471,6 +1563,25 @@ class Keyboards:
             ],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="account:menu")]
         ])
+
+    @staticmethod
+    def zai_api_key_input(has_existing_key: bool = False) -> InlineKeyboardMarkup:
+        """Keyboard for z.ai API key input"""
+        buttons = []
+
+        if has_existing_key:
+            buttons.append([
+                InlineKeyboardButton(
+                    text="🗑️ Удалить существующий ключ",
+                    callback_data="account:zai_delete"
+                )
+            ])
+
+        buttons.append([
+            InlineKeyboardButton(text="❌ Отмена", callback_data="account:menu")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
     def question_options(

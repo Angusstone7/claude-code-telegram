@@ -244,10 +244,11 @@ class ClaudeAgentSDKService:
 
         try:
             settings = await self.account_service.get_settings(user_id)
-            # Pass local_config for LOCAL_MODEL mode
+            # Pass local_config for LOCAL_MODEL mode and zai_api_key for ZAI_API mode
             env = self.account_service.apply_env_for_mode(
                 settings.auth_mode,
-                local_config=settings.local_model_config
+                local_config=settings.local_model_config,
+                zai_api_key=settings.zai_api_key
             )
             logger.debug(f"[{user_id}] Using auth mode: {settings.auth_mode.value}")
             return env
