@@ -54,7 +54,7 @@ class MessageHandlersFacade:
         file_processor_service=None,
         context_service=None,
         project_service=None,
-        # Legacy parameters (ignored)
+        # Legacy parameters
         use_sdk: bool = True,
         sdk_service=None,
         claude_proxy=None,
@@ -73,9 +73,9 @@ class MessageHandlersFacade:
             file_processor_service: File processor service
             context_service: Context service
             project_service: Project service
-            use_sdk: DEPRECATED - ignored
-            sdk_service: DEPRECATED - ignored
-            claude_proxy: DEPRECATED - ignored
+            use_sdk: Use SDK backend (legacy parameter, ignored)
+            sdk_service: Claude SDK service (passed to coordinator)
+            claude_proxy: Claude CLI proxy service (passed to coordinator)
             **kwargs: Other legacy parameters (ignored)
         """
         logger.warning(
@@ -115,6 +115,9 @@ class MessageHandlersFacade:
             file_processor_service=file_processor_service,
             context_service=context_service,
             project_service=project_service,
+            # CRITICAL FIX: Pass SDK/CLI services (fixes AttributeError: 'NoneType' has no attribute 'run_task')
+            sdk_service=sdk_service,
+            claude_proxy=claude_proxy,
         )
 
         # Store references for compatibility
