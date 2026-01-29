@@ -109,6 +109,10 @@ class MessageHandlers:
         self._plans = PlanApprovalManager()
         self._files = FileContextManager()
 
+        # === Message Batcher (объединяет несколько сообщений за 0.5с в один запрос) ===
+        from presentation.middleware.message_batcher import MessageBatcher
+        self._batcher = MessageBatcher(batch_delay=0.5)
+
         # Reference to callback handlers (for global variable input)
         self.callback_handlers = None
 
@@ -560,7 +564,8 @@ class MessageHandlers:
         self,
         message: Message,
         prompt_override: str = None,
-        force_new_session: bool = False
+        force_new_session: bool = False,
+        _from_batcher: bool = False
     ) -> None:
         """Handle text messages - main entry point"""
         user_id = message.from_user.id
@@ -607,7 +612,7 @@ class MessageHandlers:
                 await self.handle_text(message, prompt_override=enriched_prompt)
                 return
 
-        # === SPECIAL INPUT MODES ===
+        # === SPECIAL INPUT MODES (не батчатся - обрабатываются сразу) ===
         logger.debug(f"[{user_id}] Checking special input modes: "
                     f"expecting_answer={self._hitl.is_expecting_answer(user_id)}, "
                     f"expecting_clarification={self._hitl.is_expecting_clarification(user_id)}")
@@ -656,6 +661,22 @@ class MessageHandlers:
                 handled = await self.callback_handlers.process_user_input(message)
                 if handled:
                     return
+
+        # === MESSAGE BATCHING ===
+        # Объединяем несколько сообщений за 0.5с в один запрос
+        # НЕ батчим если: уже из батчера, есть prompt_override, или задача уже выполняется
+        if not _from_batcher and not prompt_override and not self._is_task_running(user_id):
+            # Добавляем сообщение в batch
+            async def process_batched(first_msg: Message, combined_text: str):
+                await self.handle_text(
+                    first_msg,
+                    prompt_override=combined_text,
+                    force_new_session=force_new_session,
+                    _from_batcher=True
+                )
+
+            await self._batcher.add_message(message, process_batched)
+            return
 
         # === CHECK IF TASK RUNNING ===
         if self._is_task_running(user_id):
