@@ -111,9 +111,7 @@ class AIRequestHandler(BaseMessageHandler):
             force_new_session: Force new session instead of continuing
         """
         user_id = message.from_user.id
-
-        # Import bot here to avoid circular dependency
-        from main import bot
+        bot = message.bot  # Get bot from message
 
         # === GET CONTEXT ===
         working_dir = self.get_working_dir(user_id)
