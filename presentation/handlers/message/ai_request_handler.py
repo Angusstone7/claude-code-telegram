@@ -407,7 +407,7 @@ class AIRequestHandler(BaseMessageHandler):
         # Save session ID to context
         if session and session.context_id and result.session_id:
             try:
-                await self.context_service.update_claude_session_id(
+                await self.context_service.set_claude_session_id(
                     session.context_id,
                     result.session_id
                 )
@@ -429,5 +429,8 @@ class AIRequestHandler(BaseMessageHandler):
         # Clear HITL events
         self.hitl_manager.cleanup(user_id)
 
-        # Clear session (but keep continue_session_id)
-        self.user_state.clear_claude_session(user_id)
+        # Remove streaming handler
+        self.user_state.remove_streaming_handler(user_id)
+
+        # NOTE: Session is NOT cleared here - it stays for potential continuation
+        # Only cleared when force_new_session=True or user explicitly resets
