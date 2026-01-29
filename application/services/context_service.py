@@ -6,6 +6,8 @@ Like Cursor IDE's context/conversation management.
 """
 
 import logging
+import re
+from pathlib import Path
 from typing import List, Optional, Dict
 
 from domain.entities.project_context import ProjectContext, ContextMessage, ContextVariable
@@ -366,6 +368,8 @@ class ContextService:
         """
         Set a global variable that applies to all projects.
 
+        Also syncs to ~/.claude/CLAUDE.md for persistent availability.
+
         Args:
             user_id: User ID
             name: Variable name
@@ -375,9 +379,14 @@ class ContextService:
         await self.context_repository.set_global_variable(user_id, name, value, description)
         logger.info(f"Set global variable '{name}' for user {user_id}")
 
+        # Auto-sync to CLAUDE.md
+        await self.sync_global_variables_to_claude_md(user_id)
+
     async def delete_global_variable(self, user_id: UserId, name: str) -> bool:
         """
         Delete a global variable.
+
+        Also syncs to ~/.claude/CLAUDE.md to reflect the change.
 
         Args:
             user_id: User ID
@@ -389,6 +398,8 @@ class ContextService:
         result = await self.context_repository.delete_global_variable(user_id, name)
         if result:
             logger.info(f"Deleted global variable '{name}' for user {user_id}")
+            # Auto-sync to CLAUDE.md
+            await self.sync_global_variables_to_claude_md(user_id)
         return result
 
     async def get_global_variables(self, user_id: UserId) -> Dict[str, ContextVariable]:
@@ -441,3 +452,86 @@ class ContextService:
         merged.update(context_vars)
 
         return merged
+
+    # ==================== CLAUDE.md Sync ====================
+
+    CLAUDE_MD_START_MARKER = "<!-- GLOBAL_VARIABLES_START -->"
+    CLAUDE_MD_END_MARKER = "<!-- GLOBAL_VARIABLES_END -->"
+
+    async def sync_global_variables_to_claude_md(self, user_id: UserId) -> bool:
+        """
+        Sync global variables to ~/.claude/CLAUDE.md.
+
+        This ensures that global variables are always available to Claude Code
+        without needing to be passed in the prompt. The variables are written
+        to a marked section that gets automatically updated.
+
+        Args:
+            user_id: User ID to get global variables for
+
+        Returns:
+            True if sync was successful, False otherwise
+        """
+        try:
+            variables = await self.get_global_variables(user_id)
+            claude_md_path = Path.home() / ".claude" / "CLAUDE.md"
+
+            # Build the auto-generated section
+            section_lines = [
+                self.CLAUDE_MD_START_MARKER,
+                "## 🌐 Global Context Variables",
+                "",
+                "> ⚠️ This section is auto-generated. Do not edit manually.",
+                "> Variables are synced from Telegram bot settings.",
+                "",
+            ]
+
+            if variables:
+                for var in sorted(variables.values(), key=lambda v: v.name):
+                    section_lines.append(f"### {var.name}")
+                    section_lines.append(f"```")
+                    section_lines.append(var.value)
+                    section_lines.append(f"```")
+                    if var.description:
+                        section_lines.append(f"_{var.description}_")
+                    section_lines.append("")
+            else:
+                section_lines.append("_No global variables configured._")
+                section_lines.append("")
+
+            section_lines.append(self.CLAUDE_MD_END_MARKER)
+            new_section = "\n".join(section_lines)
+
+            # Read existing file or start fresh
+            if claude_md_path.exists():
+                content = claude_md_path.read_text()
+
+                # Check if markers exist
+                if self.CLAUDE_MD_START_MARKER in content and self.CLAUDE_MD_END_MARKER in content:
+                    # Replace existing section
+                    pattern = re.compile(
+                        re.escape(self.CLAUDE_MD_START_MARKER) +
+                        r".*?" +
+                        re.escape(self.CLAUDE_MD_END_MARKER),
+                        re.DOTALL
+                    )
+                    content = pattern.sub(new_section, content)
+                else:
+                    # Append section at the end
+                    content = content.rstrip() + "\n\n" + new_section + "\n"
+            else:
+                # Create new file with header
+                content = "# Claude Global Configuration\n\n" + new_section + "\n"
+
+            # Ensure directory exists
+            claude_md_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write the file
+            claude_md_path.write_text(content)
+            logger.info(f"Synced {len(variables)} global variables to {claude_md_path}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to sync global variables to CLAUDE.md: {e}")
+            return False

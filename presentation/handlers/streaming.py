@@ -1147,19 +1147,41 @@ class StreamingHandler:
         # 3. Увеличиваем счётчик сообщений
         self._message_index += 1
 
-        # 4. Сбрасываем форматтер и UI state для нового сообщения
+        # 4. Вычисляем какой контент не влез в предыдущее сообщение
+        # Сохраняем текущий буфер до сброса
+        old_buffer = self.buffer
+
+        # 5. Сбрасываем форматтер и UI state для нового сообщения
         self._formatter.reset()
         self.ui.reset()  # КРИТИЧНО: сбросить UI state для нового сообщения!
 
-        # 5. Создаём новый буфер с индикатором продолжения
+        # 6. Создаём новый буфер с индикатором продолжения
         continuation_header = f"📨 <b>Часть {self._message_index}</b>\n\n"
-        self.buffer = continuation_header
 
-        # 6. Создаём новое сообщение
+        # 7. Вычисляем "хвост" контента который не влез
+        # Берём последние ~20% буфера как контент для нового сообщения
+        # Это гарантирует что контекст не теряется полностью
+        overflow_content = ""
+        if len(old_buffer) > 500:
+            # Ищем хорошую точку для разрыва (конец абзаца или строки)
+            split_point = len(old_buffer) - min(len(old_buffer) // 5, 2000)  # 20% или max 2000 символов
+
+            # Ищем ближайший перенос строки после split_point
+            newline_pos = old_buffer.find('\n', split_point)
+            if newline_pos != -1 and newline_pos < len(old_buffer) - 100:
+                split_point = newline_pos + 1
+
+            overflow_content = old_buffer[split_point:].lstrip('\n')
+            if overflow_content:
+                logger.info(f"Carrying over {len(overflow_content)} chars to new message")
+
+        self.buffer = continuation_header + overflow_content
+
+        # 8. Создаём новое сообщение
         self.current_message = await self._send_new_message(self.buffer)
         self.last_update_time = time.time()
 
-        logger.info(f"Created continuation message #{self._message_index}")
+        logger.info(f"Created continuation message #{self._message_index} with {len(overflow_content)} chars carried over")
 
     async def _handle_overflow_trim(self, is_final: bool = False):
         """Legacy trimming for final messages - keep only newest content."""
