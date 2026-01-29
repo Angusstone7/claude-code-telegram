@@ -286,942 +286,106 @@ class CallbackHandlers:
     async def handle_project_back(self, callback: CallbackQuery) -> None:
         await self._project.handle_project_back(callback)
 
-    # ============== Context Management Callbacks ==============
-
-    async def _get_context_data(self, callback: CallbackQuery):
-        """Helper to get project, context and user data for context operations"""
-        user_id = callback.from_user.id
-
-        if not self.project_service or not self.context_service:
-            await callback.answer("⚠️ Сервисы недоступны")
-            return None, None, None, None
-
-        from domain.value_objects.user_id import UserId
-        uid = UserId.from_int(user_id)
-
-        project = await self.project_service.get_current(uid)
-        if not project:
-            await callback.answer("❌ Нет активного проекта")
-            return None, None, None, None
-
-        current_ctx = await self.context_service.get_current(project.id)
-        return uid, project, current_ctx, self.context_service
+    # ============== Context Management Callbacks (delegated to _context) ==============
 
     async def handle_context_menu(self, callback: CallbackQuery) -> None:
-        """Show context main menu"""
-        try:
-            uid, project, current_ctx, ctx_service = await self._get_context_data(callback)
-            if not project:
-                return
-
-            ctx_name = current_ctx.name if current_ctx else "не выбран"
-            msg_count = current_ctx.message_count if current_ctx else 0
-            has_session = current_ctx.has_session if current_ctx else False
-
-            session_status = "📜 Есть сессия" if has_session else "✨ Чистый"
-            text = (
-                f"💬 Управление контекстами\n\n"
-                f"📂 Проект: {project.name}\n"
-                f"💬 Контекст: {ctx_name}\n"
-                f"📝 Сообщений: {msg_count}\n"
-                f"📌 Статус: {session_status}"
-            )
-
-            keyboard = Keyboards.context_menu(ctx_name, project.name, msg_count, show_back=True, back_to="menu:context")
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing context menu: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._context.handle_context_menu(callback)
 
     async def handle_context_list(self, callback: CallbackQuery) -> None:
-        """Show list of contexts"""
-        try:
-            uid, project, current_ctx, ctx_service = await self._get_context_data(callback)
-            if not project:
-                return
-
-            contexts = await ctx_service.list_contexts(project.id)
-            current_id = current_ctx.id if current_ctx else None
-
-            if contexts:
-                text = f"💬 Контексты проекта {project.name}\n\nВыберите контекст:"
-                keyboard = Keyboards.context_list(contexts, current_id)
-            else:
-                # Create default context if none exist
-                context = await ctx_service.create_new(project.id, uid, "main", set_as_current=True)
-                text = f"✨ Создан контекст: {context.name}"
-                keyboard = Keyboards.context_menu(context.name, project.name, 0, show_back=True, back_to="menu:context")
-
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error listing contexts: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._context.handle_context_list(callback)
 
     async def handle_context_switch(self, callback: CallbackQuery) -> None:
-        """Handle context switch"""
-        context_id = callback.data.split(":")[-1]
-
-        try:
-            uid, project, _, ctx_service = await self._get_context_data(callback)
-            if not project:
-                return
-
-            context = await ctx_service.switch_context(project.id, context_id)
-
-            if context:
-                session_status = "📜 Есть сессия" if context.has_session else "✨ Чистый"
-                text = (
-                    f"💬 Переключено на контекст:\n\n"
-                    f"📝 {context.name}\n"
-                    f"📊 Сообщений: {context.message_count}\n"
-                    f"📂 Проект: {project.name}\n"
-                    f"📌 Статус: {session_status}"
-                )
-                keyboard = Keyboards.context_menu(context.name, project.name, context.message_count, show_back=True, back_to="menu:context")
-                await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-                await callback.answer(f"Контекст: {context.name}")
-            else:
-                await callback.answer("❌ Контекст не найден")
-
-        except Exception as e:
-            logger.error(f"Error switching context: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._context.handle_context_switch(callback)
 
     async def handle_context_new(self, callback: CallbackQuery) -> None:
-        """Handle new context creation"""
-        try:
-            uid, project, _, ctx_service = await self._get_context_data(callback)
-            if not project:
-                return
-
-            context = await ctx_service.create_new(project.id, uid, set_as_current=True)
-
-            text = (
-                f"✨ Новый контекст создан\n\n"
-                f"📝 {context.name}\n"
-                f"📂 Проект: {project.name}\n\n"
-                f"Чистый старт — без истории!\n"
-                f"Отправьте первое сообщение."
-            )
-            keyboard = Keyboards.context_menu(context.name, project.name, 0, show_back=True, back_to="menu:context")
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer(f"Создан {context.name}")
-
-        except Exception as e:
-            logger.error(f"Error creating context: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._context.handle_context_new(callback)
 
     async def handle_context_clear(self, callback: CallbackQuery) -> None:
-        """Show clear confirmation"""
-        try:
-            uid, project, current_ctx, _ = await self._get_context_data(callback)
-            if not project:
-                return
-
-            if not current_ctx:
-                await callback.answer("❌ Нет активного контекста")
-                return
-
-            text = (
-                f"🗑️ Очистить контекст?\n\n"
-                f"📝 {current_ctx.name}\n"
-                f"📊 Сообщений: {current_ctx.message_count}\n\n"
-                f"⚠️ Вся история будет удалена!"
-            )
-            keyboard = Keyboards.context_clear_confirm()
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing clear confirm: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._context.handle_context_clear(callback)
 
     async def handle_context_clear_confirm(self, callback: CallbackQuery) -> None:
-        """Confirm and clear context - creates NEW context for fresh start"""
-        try:
-            uid, project, current_ctx, ctx_service = await self._get_context_data(callback)
-            if not project:
-                return
-
-            if not current_ctx:
-                await callback.answer("❌ Нет активного контекста")
-                return
-
-            # 1. Create new context (auto-generated name, set as current)
-            new_context = await ctx_service.create_new(
-                project_id=project.id,
-                user_id=uid,
-                name=None,  # Auto-generate name
-                set_as_current=True
-            )
-
-            # 2. Clear in-memory session cache to ensure fresh start
-            user_id = callback.from_user.id
-            if self.message_handlers:
-                self.message_handlers.clear_session_cache(user_id)
-
-            text = (
-                f"✅ Новый контекст создан\n\n"
-                f"📝 {new_context.name}\n"
-                f"📂 Проект: {project.name}\n\n"
-                f"Начните новый диалог."
-            )
-            keyboard = Keyboards.context_menu(new_context.name, project.name, 0, show_back=True, back_to="menu:context")
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer("Новый контекст создан")
-
-        except Exception as e:
-            logger.error(f"Error clearing context: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._context.handle_context_clear_confirm(callback)
 
     async def handle_context_close(self, callback: CallbackQuery) -> None:
-        """Close context menu"""
-        try:
-            await callback.message.delete()
-            await callback.answer()
-        except Exception as e:
-            logger.debug(f"Error closing context menu: {e}")
-            await callback.answer()
+        await self._context.handle_context_close(callback)
 
-    # ============== File Browser Callbacks (/cd command) ==============
+    # ============== File Browser Callbacks (/cd command) - delegated to _project ==============
 
     async def handle_cd_goto(self, callback: CallbackQuery) -> None:
-        """Handle folder navigation in /cd command"""
-        # Extract path from callback data (cd:goto:/path/to/folder)
-        path = callback.data.split(":", 2)[-1] if callback.data.count(":") >= 2 else ""
-
-        if not self.file_browser_service:
-            from application.services.file_browser_service import FileBrowserService
-            self.file_browser_service = FileBrowserService()
-
-        # Validate path is within root
-        if not self.file_browser_service.is_within_root(path):
-            await callback.answer("❌ Доступ запрещен")
-            return
-
-        # Check if directory exists
-        import os
-        if not os.path.isdir(path):
-            await callback.answer("❌ Папка не найдена")
-            return
-
-        try:
-            from presentation.keyboards.keyboards import Keyboards
-
-            # Get content and tree view
-            content = await self.file_browser_service.list_directory(path)
-            tree_view = await self.file_browser_service.get_tree_view(path)
-
-            # Update message
-            await callback.message.edit_text(
-                tree_view,
-                parse_mode=ParseMode.HTML,
-                reply_markup=Keyboards.file_browser(content)
-            )
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error navigating to {path}: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._project.handle_cd_goto(callback)
 
     async def handle_cd_root(self, callback: CallbackQuery) -> None:
-        """Handle going to root directory"""
-        if not self.file_browser_service:
-            from application.services.file_browser_service import FileBrowserService
-            self.file_browser_service = FileBrowserService()
-
-        try:
-            from presentation.keyboards.keyboards import Keyboards
-
-            root_path = self.file_browser_service.ROOT_PATH
-
-            # Ensure root exists
-            import os
-            os.makedirs(root_path, exist_ok=True)
-
-            # Get content and tree view
-            content = await self.file_browser_service.list_directory(root_path)
-            tree_view = await self.file_browser_service.get_tree_view(root_path)
-
-            # Update message
-            await callback.message.edit_text(
-                tree_view,
-                parse_mode=ParseMode.HTML,
-                reply_markup=Keyboards.file_browser(content)
-            )
-            await callback.answer("🏠 Корень")
-
-        except Exception as e:
-            logger.error(f"Error going to root: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._project.handle_cd_root(callback)
 
     async def handle_cd_select(self, callback: CallbackQuery) -> None:
-        """Handle selecting folder as working directory"""
-        # Extract path from callback data (cd:select:/path/to/folder)
-        path = callback.data.split(":", 2)[-1] if callback.data.count(":") >= 2 else ""
-        user_id = callback.from_user.id
-
-        if not self.file_browser_service:
-            from application.services.file_browser_service import FileBrowserService
-            self.file_browser_service = FileBrowserService()
-
-        # Validate path
-        if not self.file_browser_service.is_within_root(path):
-            await callback.answer("❌ Доступ запрещен")
-            return
-
-        import os
-        if not os.path.isdir(path):
-            await callback.answer("❌ Папка не найдена")
-            return
-
-        try:
-            # Set working directory
-            if self.message_handlers:
-                self.message_handlers.set_working_dir(user_id, path)
-
-            # Create/switch project if project_service available
-            project_name = os.path.basename(path) or "root"
-            if self.project_service:
-                from domain.value_objects.user_id import UserId
-                uid = UserId.from_int(user_id)
-
-                # First check if project with exact path exists
-                existing = await self.project_service.project_repository.find_by_path(uid, path)
-                if existing:
-                    # Use existing project
-                    project = existing
-                else:
-                    # Create new project for this exact path (don't use parent)
-                    project = await self.project_service.create_project(uid, project_name, path)
-
-                await self.project_service.switch_project(uid, project.id)
-                project_name = project.name
-
-            # Update message with confirmation
-            import html
-            await callback.message.edit_text(
-                f"✅ <b>Рабочая директория установлена</b>\n\n"
-                f"<b>Путь:</b> <code>{html.escape(path)}</code>\n"
-                f"<b>Проект:</b> {html.escape(project_name)}\n\n"
-                f"Теперь все команды Claude будут выполняться здесь.\n"
-                f"Отправьте сообщение, чтобы начать работу.",
-                parse_mode=ParseMode.HTML
-            )
-            await callback.answer(f"✅ {project_name}")
-
-        except Exception as e:
-            logger.error(f"Error selecting folder {path}: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._project.handle_cd_select(callback)
 
     async def handle_cd_close(self, callback: CallbackQuery) -> None:
-        """Handle closing the file browser"""
-        try:
-            await callback.message.delete()
-            await callback.answer("Закрыто")
-        except Exception as e:
-            logger.error(f"Error closing file browser: {e}")
-            await callback.answer("Закрыто")
+        await self._project.handle_cd_close(callback)
 
-    # ============== Variable Management Callbacks ==============
-
-    async def _get_var_context(self, callback: CallbackQuery):
-        """Helper to get project and context for variable operations"""
-        user_id = callback.from_user.id
-
-        if not self.project_service or not self.context_service:
-            await callback.answer("⚠️ Сервисы недоступны")
-            return None, None
-
-        from domain.value_objects.user_id import UserId
-        uid = UserId.from_int(user_id)
-
-        project = await self.project_service.get_current(uid)
-        if not project:
-            await callback.answer("❌ Нет активного проекта")
-            return None, None
-
-        context = await self.context_service.get_current(project.id)
-        if not context:
-            await callback.answer("❌ Нет активного контекста")
-            return None, None
-
-        return project, context
+    # ============== Variable Management Callbacks (delegated to _variables) ==============
 
     async def handle_vars_list(self, callback: CallbackQuery) -> None:
-        """Show variables list menu"""
-        try:
-            project, context = await self._get_var_context(callback)
-            if not project or not context:
-                return
-
-            from presentation.keyboards.keyboards import Keyboards
-
-            variables = await self.context_service.get_variables(context.id)
-
-            if variables:
-                lines = [f"📋 Переменные контекста\n"]
-                lines.append(f"📂 {project.name} / {context.name}\n")
-                for name in sorted(variables.keys()):
-                    var = variables[name]
-                    # Mask value for security
-                    display_val = var.value[:8] + "***" if len(var.value) > 8 else var.value
-                    lines.append(f"• {name} = {display_val}")
-                    if var.description:
-                        lines.append(f"  ↳ {var.description[:50]}")
-                text = "\n".join(lines)
-            else:
-                text = (
-                    f"📋 Переменные контекста\n\n"
-                    f"📂 {project.name} / {context.name}\n\n"
-                    f"Переменных пока нет.\n"
-                    f"Нажмите ➕ Добавить для создания."
-                )
-
-            keyboard = Keyboards.variables_menu(variables, project.name, context.name, show_back=True, back_to="menu:context")
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing variables list: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._variables.handle_vars_list(callback)
 
     async def handle_vars_add(self, callback: CallbackQuery) -> None:
-        """Start variable add flow - ask for name"""
-        try:
-            project, context = await self._get_var_context(callback)
-            if not project or not context:
-                return
-
-            from presentation.keyboards.keyboards import Keyboards
-
-            # Set state in message handlers to expect variable name
-            user_id = callback.from_user.id
-            if hasattr(self.message_handlers, 'start_var_input'):
-                self.message_handlers.start_var_input(user_id, callback.message)
-
-            text = (
-                "📝 Добавление переменной\n\n"
-                "Введите имя переменной:\n"
-                "(например: GITLAB_TOKEN, API_KEY)"
-            )
-            keyboard = Keyboards.variable_cancel()
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer("Введите имя")
-
-        except Exception as e:
-            logger.error(f"Error starting var add: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._variables.handle_vars_add(callback)
 
     async def handle_vars_show(self, callback: CallbackQuery) -> None:
-        """Show full variable info"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            project, context = await self._get_var_context(callback)
-            if not project or not context:
-                return
-
-            from presentation.keyboards.keyboards import Keyboards
-
-            var = await self.context_service.get_variable(context.id, var_name)
-            if not var:
-                await callback.answer("❌ Переменная не найдена")
-                return
-
-            text = (
-                f"📋 Переменная: {var.name}\n\n"
-                f"📂 {project.name} / {context.name}\n\n"
-                f"Значение:\n{var.value}\n"
-            )
-            if var.description:
-                text += f"\nОписание:\n{var.description}"
-
-            # Back button
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"var:e:{var_name[:20]}"),
-                    InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"var:d:{var_name[:20]}")
-                ],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="var:list")]
-            ])
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing variable: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._variables.handle_vars_show(callback)
 
     async def handle_vars_edit(self, callback: CallbackQuery) -> None:
-        """Start variable edit flow"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            project, context = await self._get_var_context(callback)
-            if not project or not context:
-                return
-
-            from presentation.keyboards.keyboards import Keyboards
-
-            var = await self.context_service.get_variable(context.id, var_name)
-            if not var:
-                await callback.answer("❌ Переменная не найдена")
-                return
-
-            # Set state in message handlers to expect new value
-            user_id = callback.from_user.id
-            if hasattr(self.message_handlers, 'start_var_edit'):
-                self.message_handlers.start_var_edit(user_id, var_name, callback.message)
-
-            text = (
-                f"✏️ Редактирование: {var.name}\n\n"
-                f"Текущее значение:\n{var.value}\n\n"
-                f"Введите новое значение:"
-            )
-            keyboard = Keyboards.variable_cancel()
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer("Введите новое значение")
-
-        except Exception as e:
-            logger.error(f"Error starting var edit: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._variables.handle_vars_edit(callback)
 
     async def handle_vars_delete(self, callback: CallbackQuery) -> None:
-        """Show delete confirmation"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            project, context = await self._get_var_context(callback)
-            if not project or not context:
-                return
-
-            from presentation.keyboards.keyboards import Keyboards
-
-            var = await self.context_service.get_variable(context.id, var_name)
-            if not var:
-                await callback.answer("❌ Переменная не найдена")
-                return
-
-            text = (
-                f"🗑️ Удалить переменную?\n\n"
-                f"📋 {var.name}\n"
-                f"📂 {project.name} / {context.name}\n\n"
-                f"⚠️ Это действие нельзя отменить!"
-            )
-            keyboard = Keyboards.variable_delete_confirm(var_name)
-            await callback.message.edit_text(text, parse_mode=None, reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing delete confirm: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._variables.handle_vars_delete(callback)
 
     async def handle_vars_delete_confirm(self, callback: CallbackQuery) -> None:
-        """Confirm and delete variable"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            project, context = await self._get_var_context(callback)
-            if not project or not context:
-                return
-
-            deleted = await self.context_service.delete_variable(context.id, var_name)
-
-            if deleted:
-                await callback.answer(f"✅ {var_name} удалена")
-                # Show updated list
-                await self.handle_vars_list(callback)
-            else:
-                await callback.answer("❌ Переменная не найдена")
-
-        except Exception as e:
-            logger.error(f"Error deleting variable: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        await self._variables.handle_vars_delete_confirm(callback)
 
     async def handle_vars_close(self, callback: CallbackQuery) -> None:
-        """Close variables menu"""
-        try:
-            await callback.message.delete()
-            await callback.answer()
-        except Exception as e:
-            logger.debug(f"Error closing vars menu: {e}")
-            await callback.answer()
+        await self._variables.handle_vars_close(callback)
 
     async def handle_vars_cancel(self, callback: CallbackQuery) -> None:
-        """Cancel variable input and return to list"""
-        user_id = callback.from_user.id
-
-        # Clear input state
-        if hasattr(self.message_handlers, 'cancel_var_input'):
-            self.message_handlers.cancel_var_input(user_id)
-
-        await callback.answer("Отменено")
-        # Show list again
-        await self.handle_vars_list(callback)
+        await self._variables.handle_vars_cancel(callback)
 
     async def handle_vars_skip_desc(self, callback: CallbackQuery) -> None:
-        """Skip description input and save variable"""
-        user_id = callback.from_user.id
+        await self._variables.handle_vars_skip_desc(callback)
 
-        try:
-            # Get pending variable data and save without description
-            if hasattr(self.message_handlers, 'save_variable_skip_desc'):
-                await self.message_handlers.save_variable_skip_desc(user_id, callback.message)
-                await callback.answer("✅ Переменная сохранена")
-                # Show updated list
-                await self.handle_vars_list(callback)
-            else:
-                await callback.answer("❌ Нет данных для сохранения")
-
-        except Exception as e:
-            logger.error(f"Error saving variable: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
-
-    # ============== Global Variables Handlers ==============
-
-    # State storage for global variable input flow
-    _gvar_input_state = {}  # {user_id: {"step": "name"|"value"|"desc", "name": str, "value": str}}
+    # ============== Global Variables Handlers (delegated to _variables) ==============
 
     async def handle_gvar_list(self, callback: CallbackQuery) -> None:
-        """Show global variables list menu"""
-        try:
-            from domain.value_objects.user_id import UserId
-            from presentation.keyboards.keyboards import Keyboards
-
-            user_id = callback.from_user.id
-            uid = UserId.from_int(user_id)
-
-            variables = await self.context_service.get_global_variables(uid)
-
-            if variables:
-                lines = ["🌍 <b>Глобальные переменные</b>\n"]
-                lines.append("<i>Наследуются всеми проектами</i>\n")
-                for name in sorted(variables.keys()):
-                    var = variables[name]
-                    display_val = var.value[:8] + "***" if len(var.value) > 8 else var.value
-                    lines.append(f"• <code>{name}</code> = {display_val}")
-                    if var.description:
-                        lines.append(f"  ↳ <i>{var.description[:50]}</i>")
-                text = "\n".join(lines)
-            else:
-                text = (
-                    "🌍 <b>Глобальные переменные</b>\n\n"
-                    "<i>Наследуются всеми проектами</i>\n\n"
-                    "Переменных пока нет.\n"
-                    "Нажмите ➕ Добавить для создания."
-                )
-
-            keyboard = Keyboards.global_variables_menu(variables, show_back=True, back_to="menu:settings")
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing global variables list: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_list(callback)
 
     async def handle_gvar_add(self, callback: CallbackQuery) -> None:
-        """Start global variable add flow"""
-        try:
-            from presentation.keyboards.keyboards import Keyboards
-
-            user_id = callback.from_user.id
-
-            # Set state to expect name input
-            self._gvar_input_state[user_id] = {"step": "name", "name": None, "value": None}
-
-            text = (
-                "🌍 <b>Добавление глобальной переменной</b>\n\n"
-                "Введите имя переменной:\n"
-                "<i>(например: GITLAB_TOKEN, API_KEY)</i>"
-            )
-            keyboard = Keyboards.global_variable_cancel()
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-            await callback.answer("Введите имя")
-
-        except Exception as e:
-            logger.error(f"Error starting gvar add: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_add(callback)
 
     async def handle_gvar_show(self, callback: CallbackQuery) -> None:
-        """Show full global variable info"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            from domain.value_objects.user_id import UserId
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-            user_id = callback.from_user.id
-            uid = UserId.from_int(user_id)
-
-            var = await self.context_service.get_global_variable(uid, var_name)
-            if not var:
-                await callback.answer("❌ Переменная не найдена")
-                return
-
-            text = (
-                f"🌍 <b>Глобальная переменная</b>\n\n"
-                f"📋 <b>Имя:</b> <code>{var.name}</code>\n"
-                f"📝 <b>Значение:</b> <code>{var.value}</code>\n"
-            )
-            if var.description:
-                text += f"💬 <b>Описание:</b> {var.description}\n"
-
-            text += "\n<i>Наследуется всеми проектами и контекстами</i>"
-
-            buttons = [
-                [
-                    InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"gvar:e:{var_name[:20]}"),
-                    InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"gvar:d:{var_name[:20]}")
-                ],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="gvar:list")]
-            ]
-            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing global variable: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_show(callback)
 
     async def handle_gvar_edit(self, callback: CallbackQuery) -> None:
-        """Start global variable edit flow"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            from domain.value_objects.user_id import UserId
-            from presentation.keyboards.keyboards import Keyboards
-
-            user_id = callback.from_user.id
-            uid = UserId.from_int(user_id)
-
-            var = await self.context_service.get_global_variable(uid, var_name)
-            if not var:
-                await callback.answer("❌ Переменная не найдена")
-                return
-
-            # Set state to expect value input (editing existing var)
-            self._gvar_input_state[user_id] = {
-                "step": "value",
-                "name": var_name,
-                "value": None,
-                "editing": True,
-                "old_desc": var.description
-            }
-
-            text = (
-                f"✏️ <b>Редактирование: {var_name}</b>\n\n"
-                f"Текущее значение: <code>{var.value}</code>\n\n"
-                f"Введите новое значение:"
-            )
-            keyboard = Keyboards.global_variable_cancel()
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-            await callback.answer("Введите новое значение")
-
-        except Exception as e:
-            logger.error(f"Error starting gvar edit: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_edit(callback)
 
     async def handle_gvar_delete(self, callback: CallbackQuery) -> None:
-        """Show delete confirmation for global variable"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            from domain.value_objects.user_id import UserId
-            from presentation.keyboards.keyboards import Keyboards
-
-            user_id = callback.from_user.id
-            uid = UserId.from_int(user_id)
-
-            var = await self.context_service.get_global_variable(uid, var_name)
-            if not var:
-                await callback.answer("❌ Переменная не найдена")
-                return
-
-            text = (
-                f"🗑️ <b>Удалить глобальную переменную?</b>\n\n"
-                f"📋 <code>{var.name}</code>\n\n"
-                f"⚠️ Это действие нельзя отменить!\n"
-                f"Переменная перестанет наследоваться всеми проектами."
-            )
-            keyboard = Keyboards.global_variable_delete_confirm(var_name)
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-            await callback.answer()
-
-        except Exception as e:
-            logger.error(f"Error showing delete confirm: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_delete(callback)
 
     async def handle_gvar_delete_confirm(self, callback: CallbackQuery) -> None:
-        """Confirm and delete global variable"""
-        var_name = callback.data.split(":")[-1]
-
-        try:
-            from domain.value_objects.user_id import UserId
-
-            user_id = callback.from_user.id
-            uid = UserId.from_int(user_id)
-
-            deleted = await self.context_service.delete_global_variable(uid, var_name)
-
-            if deleted:
-                await callback.answer(f"✅ {var_name} удалена")
-                await self.handle_gvar_list(callback)
-            else:
-                await callback.answer("❌ Переменная не найдена")
-
-        except Exception as e:
-            logger.error(f"Error deleting global variable: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_delete_confirm(callback)
 
     async def handle_gvar_cancel(self, callback: CallbackQuery) -> None:
-        """Cancel global variable input and return to list"""
-        user_id = callback.from_user.id
-
-        # Clear input state
-        if user_id in self._gvar_input_state:
-            del self._gvar_input_state[user_id]
-
-        await callback.answer("Отменено")
-        await self.handle_gvar_list(callback)
+        await self._variables.handle_gvar_cancel(callback)
 
     async def handle_gvar_skip_desc(self, callback: CallbackQuery) -> None:
-        """Skip description input and save global variable"""
-        user_id = callback.from_user.id
-
-        try:
-            from domain.value_objects.user_id import UserId
-
-            state = self._gvar_input_state.get(user_id)
-            if not state or not state.get("name") or not state.get("value"):
-                await callback.answer("❌ Нет данных для сохранения")
-                return
-
-            uid = UserId.from_int(user_id)
-
-            await self.context_service.set_global_variable(
-                uid,
-                state["name"],
-                state["value"],
-                ""  # No description
-            )
-
-            # Clear state
-            del self._gvar_input_state[user_id]
-
-            await callback.answer(f"✅ {state['name']} сохранена")
-            await self.handle_gvar_list(callback)
-
-        except Exception as e:
-            logger.error(f"Error saving global variable: {e}")
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+        await self._variables.handle_gvar_skip_desc(callback)
 
     def is_gvar_input_active(self, user_id: int) -> bool:
-        """Check if user is in global variable input flow"""
-        return user_id in self._gvar_input_state
+        return self._variables.is_gvar_input_active(user_id)
 
     def get_gvar_input_step(self, user_id: int) -> Optional[str]:
-        """Get current input step for user"""
-        state = self._gvar_input_state.get(user_id)
-        return state.get("step") if state else None
+        return self._variables.get_gvar_input_step(user_id)
 
     async def process_gvar_input(self, user_id: int, text: str, message) -> bool:
-        """Process text input for global variable flow. Returns True if handled."""
-        state = self._gvar_input_state.get(user_id)
-        if not state:
-            return False
-
-        from domain.value_objects.user_id import UserId
-        from presentation.keyboards.keyboards import Keyboards
-
-        step = state.get("step")
-        uid = UserId.from_int(user_id)
-
-        if step == "name":
-            # Validate name
-            var_name = text.strip().upper()
-            if not var_name or not var_name.replace("_", "").isalnum():
-                await message.answer(
-                    "❌ Недопустимое имя переменной.\n"
-                    "Используйте только буквы, цифры и подчёркивание.",
-                    reply_markup=Keyboards.global_variable_cancel()
-                )
-                return True
-
-            state["name"] = var_name
-            state["step"] = "value"
-
-            await message.answer(
-                f"✅ Имя: <code>{var_name}</code>\n\n"
-                f"Введите значение переменной:",
-                parse_mode="HTML",
-                reply_markup=Keyboards.global_variable_cancel()
-            )
-            return True
-
-        elif step == "value":
-            var_value = text.strip()
-            if not var_value:
-                await message.answer(
-                    "❌ Значение не может быть пустым.",
-                    reply_markup=Keyboards.global_variable_cancel()
-                )
-                return True
-
-            state["value"] = var_value
-
-            # If editing, use old description
-            if state.get("editing"):
-                old_desc = state.get("old_desc", "")
-                await self.context_service.set_global_variable(
-                    uid, state["name"], var_value, old_desc
-                )
-                del self._gvar_input_state[user_id]
-                await message.answer(f"✅ Переменная {state['name']} обновлена!")
-
-                # Show list
-                variables = await self.context_service.get_global_variables(uid)
-                await message.answer(
-                    "🌍 <b>Глобальные переменные</b>",
-                    parse_mode="HTML",
-                    reply_markup=Keyboards.global_variables_menu(variables, show_back=True, back_to="menu:settings")
-                )
-                return True
-
-            # Move to description step
-            state["step"] = "desc"
-            await message.answer(
-                f"✅ Значение установлено\n\n"
-                f"Введите описание (для Claude) или нажмите «Пропустить»:",
-                reply_markup=Keyboards.global_variable_skip_description()
-            )
-            return True
-
-        elif step == "desc":
-            var_desc = text.strip()
-
-            await self.context_service.set_global_variable(
-                uid, state["name"], state["value"], var_desc
-            )
-
-            del self._gvar_input_state[user_id]
-            await message.answer(f"✅ Глобальная переменная {state['name']} сохранена!")
-
-            # Show list
-            variables = await self.context_service.get_global_variables(uid)
-            await message.answer(
-                "🌍 <b>Глобальные переменные</b>",
-                parse_mode="HTML",
-                reply_markup=Keyboards.global_variables_menu(variables, show_back=True, back_to="menu:settings")
-            )
-            return True
-
-        return False
+        return await self._variables.process_gvar_input(user_id, text, message)
 
     # ============== Plugin Management Handlers ==============
 
