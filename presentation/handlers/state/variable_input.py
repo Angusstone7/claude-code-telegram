@@ -86,6 +86,10 @@ class VariableInputManager:
         """Check if user is in variable input flow"""
         return self.get_step(user_id) != VariableInputStep.IDLE
 
+    def is_expecting_input(self, user_id: int) -> bool:
+        """Alias for is_active() - check if expecting any variable input"""
+        return self.is_active(user_id)
+
     def is_expecting_name(self, user_id: int) -> bool:
         """Check if expecting variable name input"""
         return self.get_step(user_id) == VariableInputStep.EXPECTING_NAME
