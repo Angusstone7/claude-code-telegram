@@ -519,22 +519,57 @@ class AIRequestHandler(BaseMessageHandler):
         streaming = self.user_state.get_streaming_handler(user_id)
         session = self.user_state.get_claude_session(user_id)
 
-        if streaming:
-            await streaming.finalize()
+        # Handle cancellation
+        if result.cancelled:
+            if streaming:
+                await streaming.finalize("**Задача отменена**")
+                # Show file changes even on cancel (user might want to see what was done)
+                await streaming.show_file_changes_summary()
+            if session:
+                session.cancel()
+            return
 
-        # Save session ID to context
-        if session and session.context_id and result.session_id:
-            try:
-                await self.context_service.set_claude_session_id(
-                    session.context_id,
-                    result.session_id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to save session ID: {e}")
+        # Handle success
+        if result.success:
+            if streaming:
+                # Show completion status (✅)
+                await streaming.send_completion(success=True)
+                # Show file changes summary (Cursor-style)
+                await streaming.show_file_changes_summary()
+                # Finalize the stream
+                await streaming.finalize()
 
-        # Set continue session if successful
-        if result.success and result.session_id:
-            self.user_state.set_continue_session_id(user_id, result.session_id)
+            # Mark session as complete
+            if session:
+                session.complete(result.session_id)
+
+            # Save session ID to context
+            if session and session.context_id and result.session_id:
+                try:
+                    await self.context_service.set_claude_session_id(
+                        session.context_id,
+                        result.session_id
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to save session ID: {e}")
+
+            # Set continue session if successful
+            if result.session_id:
+                self.user_state.set_continue_session_id(user_id, result.session_id)
+
+        # Handle failure
+        else:
+            if streaming:
+                # Show completion status (⚠️)
+                await streaming.send_completion(success=False)
+                # Show file changes even on error (user might want to see what was done)
+                await streaming.show_file_changes_summary()
+                # Finalize the stream
+                await streaming.finalize()
+
+            # Mark session as failed
+            if session:
+                session.fail(result.error or "Unknown error")
 
     async def _cleanup_after_task(self, user_id: int):
         """Cleanup after task completes"""
