@@ -19,6 +19,7 @@ from .base import BaseMessageHandler
 from presentation.keyboards.keyboards import Keyboards
 from presentation.handlers.streaming.handler import StreamingHandler
 from presentation.handlers.streaming.trackers import HeartbeatTracker
+from presentation.handlers.streaming.step_handler import StepStreamingHandler
 
 if TYPE_CHECKING:
     from infrastructure.claude_code.sdk_service import ClaudeAgentSDKService
@@ -95,6 +96,27 @@ class AIRequestHandler(BaseMessageHandler):
         # Determine which backend to use
         self.use_sdk = sdk_service is not None
         self.log_info(0, f"AIRequestHandler initialized with SDK: {self.use_sdk}")
+
+        # Step streaming handlers cache
+        self._step_handlers: dict[int, StepStreamingHandler] = {}
+
+    def _get_step_handler(self, user_id: int) -> Optional[StepStreamingHandler]:
+        """Get or create StepStreamingHandler for user in step streaming mode."""
+        streaming = self.user_state.get_streaming_handler(user_id)
+        if not streaming:
+            return None
+        if user_id not in self._step_handlers:
+            self._step_handlers[user_id] = StepStreamingHandler(streaming)
+        return self._step_handlers[user_id]
+
+    def _cleanup_step_handler(self, user_id: int):
+        """Clean up step handler for user."""
+        if user_id in self._step_handlers:
+            del self._step_handlers[user_id]
+
+    def is_step_streaming_mode(self, user_id: int) -> bool:
+        """Check if step streaming mode is enabled for user."""
+        return self.user_state.is_step_streaming_mode(user_id)
 
     def is_task_running(self, user_id: int) -> bool:
         """Check if a task is currently running for this user"""
@@ -361,6 +383,15 @@ class AIRequestHandler(BaseMessageHandler):
 
             heartbeat.set_action(action, detail)
 
+        # Step streaming mode: show brief tool notifications
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                await step_handler.on_tool_start(tool, input_data)
+            # Still show todo lists and plan mode in step streaming
+            if tool.lower() not in ("todowrite", "enterplanmode", "exitplanmode"):
+                return  # Skip detailed streaming for other tools
+
         # Track file changes
         if streaming and tool.lower() in ("edit", "write", "bash"):
             streaming.track_file_change(tool, input_data)
@@ -368,6 +399,17 @@ class AIRequestHandler(BaseMessageHandler):
     async def _on_tool_result(self, user_id: int, tool_id: str, output: str):
         """Handle tool result"""
         streaming = self.user_state.get_streaming_handler(user_id)
+
+        # Step streaming mode: show brief completion status
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                # Get current tool name from step handler
+                tool_name = step_handler.get_current_tool()
+                if tool_name and tool_name.lower() not in ("todowrite", "enterplanmode", "exitplanmode"):
+                    # Show brief completion in step mode
+                    await step_handler.on_tool_complete(output[:200] if output else "")
+                    return  # Skip detailed result
 
         if streaming and output:
             await streaming.show_tool_result(output, success=True)
@@ -394,6 +436,12 @@ class AIRequestHandler(BaseMessageHandler):
                 await self.sdk_service.respond_to_permission(user_id, True)
             return
 
+        # Step streaming mode: показываем ожидание разрешения в основном сообщении
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                await step_handler.on_permission_request(tool, input_data)
+
         # Normal mode - ask for permission
         session = self.user_state.get_claude_session(user_id)
         request_id = str(uuid.uuid4())[:8]
@@ -417,8 +465,13 @@ class AIRequestHandler(BaseMessageHandler):
 
     async def _on_permission_completed(self, user_id: int, approved: bool):
         """Handle permission completion"""
-        # SDK handles this internally
-        pass
+        # В step streaming mode обновляем статус "Ожидаю" -> "Выполняю"
+        if self.is_step_streaming_mode(user_id) and approved:
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                # Получаем имя инструмента из HITL контекста
+                tool_name = self.hitl_manager.get_pending_tool_name(user_id) or "tool"
+                await step_handler.on_permission_granted(tool_name)
 
     async def _on_question_sdk(self, user_id: int, question: str, options: list, message: Message):
         """Handle question from SDK"""
@@ -499,10 +552,17 @@ class AIRequestHandler(BaseMessageHandler):
 
     async def _on_thinking(self, user_id: int, thinking: str):
         """Handle thinking output (extended thinking)"""
-        streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming and thinking:
-            # Show thinking in italic
-            await streaming.append(f"\n*{thinking[:200]}...*\n" if len(thinking) > 200 else f"\n*{thinking}*\n")
+        # Step streaming mode: показываем thinking в сворачиваемом блоке
+        if self.is_step_streaming_mode(user_id):
+            step_handler = self._get_step_handler(user_id)
+            if step_handler:
+                await step_handler.on_thinking(thinking)
+        else:
+            # Normal mode: show thinking inline
+            streaming = self.user_state.get_streaming_handler(user_id)
+            if streaming and thinking:
+                # Show thinking in italic
+                await streaming.append(f"\n*{thinking[:200]}...*\n" if len(thinking) > 200 else f"\n*{thinking}*\n")
 
     async def _on_error(self, user_id: int, error: str):
         """Handle error"""
@@ -584,6 +644,9 @@ class AIRequestHandler(BaseMessageHandler):
 
         # Remove streaming handler
         self.user_state.remove_streaming_handler(user_id)
+
+        # Cleanup step handler
+        self._cleanup_step_handler(user_id)
 
         # NOTE: Session is NOT cleared here - it stays for potential continuation
         # Only cleared when force_new_session=True or user explicitly resets

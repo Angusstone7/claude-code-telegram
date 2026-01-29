@@ -123,6 +123,10 @@ class MessageHandlersFacade:
         self.sdk_service = sdk_service
         self.claude_proxy = claude_proxy
 
+        # Reference to callback handlers (for global variable input)
+        # Will be set by container after both handlers are created
+        self.callback_handlers = None
+
         logger.info("MessageHandlersFacade initialized (delegating to MessageCoordinator)")
 
     # === Main message handlers (delegate to coordinator) ===
@@ -169,6 +173,20 @@ class MessageHandlersFacade:
         """Clean up state"""
         self._coordinator.cleanup(user_id)
 
+    # === HITL Response Handlers ===
+
+    async def handle_permission_response(self, user_id: int, approved: bool, clarification_text: str = None) -> bool:
+        """Handle permission response from callback"""
+        return await self._coordinator.handle_permission_response(user_id, approved, clarification_text)
+
+    async def handle_question_response(self, user_id: int, answer: str):
+        """Handle question response from callback"""
+        await self._coordinator.handle_question_response(user_id, answer)
+
+    async def handle_plan_response(self, user_id: int, response: str) -> bool:
+        """Handle plan response from callback"""
+        return await self._coordinator.handle_plan_response(user_id, response)
+
     # === Variable methods (delegate to variable handler) ===
 
     def is_expecting_var_input(self, user_id: int) -> bool:
@@ -187,6 +205,30 @@ class MessageHandlersFacade:
         """Cancel variable input"""
         self._coordinator._variable_handler.cancel_var_input(user_id)
 
+    def clear_var_state(self, user_id: int):
+        """Clear variable input state"""
+        self._coordinator.clear_var_state(user_id)
+
+    def get_pending_var_message(self, user_id: int):
+        """Get pending variable message"""
+        return self._coordinator.get_pending_var_message(user_id)
+
+    def set_expecting_var_name(self, user_id: int, expecting: bool, menu_msg=None):
+        """Set expecting variable name input"""
+        self._coordinator.set_expecting_var_name(user_id, expecting, menu_msg)
+
+    def set_expecting_var_value(self, user_id: int, var_name: str, menu_msg=None):
+        """Set expecting variable value input"""
+        self._coordinator.set_expecting_var_value(user_id, var_name, menu_msg)
+
+    def set_expecting_var_desc(self, user_id: int, var_name: str, var_value: str, menu_msg=None):
+        """Set expecting variable description input"""
+        self._coordinator.set_expecting_var_desc(user_id, var_name, var_value, menu_msg)
+
+    async def save_variable_skip_desc(self, user_id: int, message):
+        """Save variable without description"""
+        await self._coordinator.save_variable_skip_desc(user_id, message)
+
     # === Plan methods (delegate to plan handler) ===
 
     def set_expecting_plan_clarification(self, user_id: int, expecting: bool) -> None:
@@ -202,6 +244,24 @@ class MessageHandlersFacade:
     def set_expecting_path(self, user_id: int, expecting: bool) -> None:
         """Set expecting path"""
         self._coordinator._hitl_manager.set_expecting_path(user_id, expecting)
+
+    def get_pending_question_option(self, user_id: int, index: int) -> str:
+        """Get pending question option by index"""
+        return self._coordinator.get_pending_question_option(user_id, index)
+
+    # === Session methods ===
+
+    def set_continue_session(self, user_id: int, session_id: str):
+        """Set continue session ID"""
+        self._coordinator.set_continue_session(user_id, session_id)
+
+    def clear_session_cache(self, user_id: int) -> None:
+        """Clear session cache"""
+        self._coordinator.clear_session_cache(user_id)
+
+    async def get_project_working_dir(self, user_id: int) -> str:
+        """Get project working directory (async)"""
+        return await self._coordinator.get_project_working_dir(user_id)
 
     # === Backward compatibility methods that may not work ===
 

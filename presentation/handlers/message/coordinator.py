@@ -89,6 +89,8 @@ class MessageCoordinator:
         self._claude_proxy = claude_proxy
         self._message_batcher = message_batcher
         self._callback_handlers = callback_handlers
+        self._project_service = project_service
+        self._context_service = context_service
 
         # Initialize AI request handler (handles SDK/CLI integration)
         self._ai_request_handler = AIRequestHandler(
@@ -214,8 +216,99 @@ class MessageCoordinator:
         """Set user's working directory"""
         self._user_state.set_working_dir(user_id, path)
 
+    async def get_project_working_dir(self, user_id: int) -> str:
+        """Get working directory from current project (async, more accurate)"""
+        if hasattr(self, '_project_service') and self._project_service:
+            try:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self._project_service.get_current(uid)
+                if project and project.working_dir:
+                    return project.working_dir
+            except Exception as e:
+                logger.warning(f"Error getting project working_dir: {e}")
+        # Fallback to state
+        return self._user_state.get_working_dir(user_id)
+
     def cleanup(self, user_id: int) -> None:
         """Clean up all state for user"""
         self._user_state.cleanup(user_id)
         self._hitl_manager.cleanup(user_id)
         logger.debug(f"[{user_id}] State cleaned up")
+
+    # === HITL Response Handlers (called by callback handlers) ===
+
+    async def handle_permission_response(self, user_id: int, approved: bool, clarification_text: str = None) -> bool:
+        """Handle permission response from callback. Returns True if response was accepted."""
+        if self._sdk_service:
+            success = await self._sdk_service.respond_to_permission(user_id, approved, clarification_text)
+            if success:
+                return True
+
+        # Fall back to HITL manager handling
+        result = await self._hitl_manager.respond_to_permission(user_id, approved, clarification_text)
+        return result if result is not None else False
+
+    async def handle_question_response(self, user_id: int, answer: str):
+        """Handle question response from callback"""
+        if self._sdk_service:
+            success = await self._sdk_service.respond_to_question(user_id, answer)
+            if success:
+                return
+
+        await self._hitl_manager.respond_to_question(user_id, answer)
+
+    async def handle_plan_response(self, user_id: int, response: str) -> bool:
+        """Handle plan approval response from callback. Returns True if response was accepted."""
+        if self._sdk_service:
+            success = await self._sdk_service.respond_to_plan(user_id, response)
+            if success:
+                self._plans.cleanup(user_id)
+                return True
+        logger.warning(f"[{user_id}] Failed to respond to plan: {response}")
+        return False
+
+    # === Variable Input State (delegated to VariableInputManager) ===
+
+    def clear_var_state(self, user_id: int):
+        """Clear variable input state"""
+        self._variables.clear_state(user_id)
+
+    def get_pending_var_message(self, user_id: int):
+        """Get pending variable message"""
+        return self._variables.get_pending_message(user_id)
+
+    def set_expecting_var_name(self, user_id: int, expecting: bool, menu_msg=None):
+        """Set expecting variable name input"""
+        self._variables.set_expecting_name(user_id, expecting, menu_msg)
+
+    def set_expecting_var_value(self, user_id: int, var_name: str, menu_msg=None):
+        """Set expecting variable value input"""
+        self._variables.set_expecting_value(user_id, var_name, menu_msg)
+
+    def set_expecting_var_desc(self, user_id: int, var_name: str, var_value: str, menu_msg=None):
+        """Set expecting variable description input"""
+        self._variables.set_expecting_description(user_id, var_name, var_value, menu_msg)
+
+    async def save_variable_skip_desc(self, user_id: int, message):
+        """Save variable without description"""
+        var_name = self._variables.get_var_name(user_id)
+        var_value = self._variables.get_var_value(user_id)
+        if var_name and var_value:
+            await self._variables_handler._save_variable(message, var_name, var_value, "")
+
+    # === Question State ===
+
+    def get_pending_question_option(self, user_id: int, index: int) -> str:
+        """Get pending question option by index"""
+        return self._hitl_manager.get_pending_question_option(user_id, index)
+
+    # === Session State ===
+
+    def set_continue_session(self, user_id: int, session_id: str):
+        """Set continue session ID"""
+        self._user_state.set_continue_session_id(user_id, session_id)
+
+    def clear_session_cache(self, user_id: int) -> None:
+        """Clear session cache"""
+        self._user_state.clear_session_cache(user_id)

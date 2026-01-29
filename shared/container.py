@@ -295,16 +295,21 @@ class Container:
     def message_handlers(self):
         """Create MessageHandlers with all dependencies"""
         if "message_handlers" not in self._cache:
-            # LEGACY VERSION - refactored has issues, rolled back
-            from presentation.handlers.messages import MessageHandlers
+            # REFACTORED VERSION - using MessageHandlersFacade (backward compatible)
+            from presentation.handlers.message import MessageHandlers
             self._cache["message_handlers"] = MessageHandlers(
                 bot_service=self.bot_service(),
+                user_state=self.user_state_manager(),
+                hitl_manager=self.hitl_manager(),
+                file_context_manager=self.file_context_manager(),
+                variable_manager=self.variable_manager(),
+                plan_manager=self.plan_manager(),
+                file_processor_service=self.file_processor_service(),
+                context_service=self.context_service(),
+                project_service=self.project_service(),
+                # Legacy parameters (for backward compatibility)
                 claude_proxy=self.claude_proxy(),
                 sdk_service=self.claude_sdk(),
-                default_working_dir=self.config.claude_working_dir,
-                project_service=self.project_service(),
-                context_service=self.context_service(),
-                file_processor_service=self.file_processor_service(),
             )
         return self._cache["message_handlers"]
 
