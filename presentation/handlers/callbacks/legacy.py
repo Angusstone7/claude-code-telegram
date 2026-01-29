@@ -2,15 +2,31 @@ import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
-from presentation.keyboards.keyboards import CallbackData
+from presentation.keyboards.keyboards import CallbackData, Keyboards
 from typing import Optional
+
+# Import specialized handlers
+from presentation.handlers.callbacks.docker import DockerCallbackHandler
+from presentation.handlers.callbacks.claude import ClaudeCallbackHandler
+from presentation.handlers.callbacks.project import ProjectCallbackHandler
+from presentation.handlers.callbacks.context import ContextCallbackHandler
+from presentation.handlers.callbacks.variables import VariableCallbackHandler
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 
 class CallbackHandlers:
-    """Bot callback query handlers"""
+    """
+    Bot callback query handlers.
+
+    Delegates to specialized handlers:
+    - DockerCallbackHandler: docker_*, metrics_*
+    - ClaudeCallbackHandler: claude_*, plan_*
+    - ProjectCallbackHandler: project_*, cd_*
+    - ContextCallbackHandler: context_*
+    - VariableCallbackHandler: vars_*, gvar_*
+    """
 
     def __init__(
         self,
@@ -31,8 +47,23 @@ class CallbackHandlers:
         self.file_browser_service = file_browser_service
         self._user_states = {}  # For tracking user input states (e.g., waiting for folder name)
 
+        # Initialize specialized handlers
+        handler_args = (
+            bot_service, message_handlers, claude_proxy, sdk_service,
+            project_service, context_service, file_browser_service
+        )
+        self._docker = DockerCallbackHandler(*handler_args)
+        self._claude = ClaudeCallbackHandler(*handler_args)
+        self._project = ProjectCallbackHandler(*handler_args)
+        self._context = ContextCallbackHandler(*handler_args)
+        self._variables = VariableCallbackHandler(*handler_args)
+
     def get_user_state(self, user_id: int) -> dict | None:
-        """Get current user state if any"""
+        """Get current user state if any."""
+        # Check project handler state first
+        project_state = self._project.get_user_state(user_id)
+        if project_state:
+            return project_state
         return self._user_states.get(user_id)
 
     async def process_user_input(self, message) -> bool:
@@ -41,15 +72,19 @@ class CallbackHandlers:
         Returns True if input was consumed, False otherwise.
         """
         user_id = message.from_user.id
-        state = self._user_states.get(user_id)
 
+        # Try project handler first
+        if await self._project.process_user_input(message):
+            return True
+
+        # Try global variable input
+        if self._variables.is_gvar_input_active(user_id):
+            return await self._variables.process_gvar_input(user_id, message.text, message)
+
+        # Legacy state handling
+        state = self._user_states.get(user_id)
         if not state:
             return False
-
-        state_name = state.get("state")
-
-        if state_name == "waiting_project_mkdir":
-            return await self.handle_project_mkdir_input(message, message.text.strip())
 
         return False
 
@@ -117,277 +152,43 @@ class CallbackHandlers:
 
         await callback.answer()
 
+    # ============== Docker Handlers (delegated to _docker) ==============
+
     async def handle_metrics_refresh(self, callback: CallbackQuery) -> None:
-        """Handle metrics refresh callback"""
-        try:
-            info = await self.bot_service.get_system_info()
-            metrics = info["metrics"]
-
-            text = (
-                f"📊 <b>Метрики системы</b>\n\n"
-                f"💻 <b>CPU:</b> {metrics['cpu_percent']:.1f}%\n"
-                f"🧠 <b>Память:</b> {metrics['memory_percent']:.1f}% ({metrics['memory_used_gb']}GB / {metrics['memory_total_gb']}GB)\n"
-                f"💾 <b>Диск:</b> {metrics['disk_percent']:.1f}% ({metrics['disk_used_gb']}GB / {metrics['disk_total_gb']}GB)\n"
-            )
-
-            if metrics.get('load_average', [0])[0] > 0:
-                text += f"📈 <b>Нагрузка:</b> {metrics['load_average'][0]:.2f}\n"
-
-            # Alerts
-            if info.get("alerts"):
-                text += "\n⚠️ <b>Предупреждения:</b>\n"
-                text += "\n".join(info["alerts"])
-
-            await callback.message.edit_text(text, parse_mode="HTML")
-
-        except Exception as e:
-            logger.error(f"Error refreshing metrics: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
-
-        await callback.answer()
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_metrics_refresh(callback)
 
     async def handle_docker_list(self, callback: CallbackQuery) -> None:
-        """Handle docker list callback"""
-        try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            from presentation.keyboards.keyboards import Keyboards
-            monitor = SystemMonitor()
-            containers = await monitor.get_docker_containers()
-
-            if not containers:
-                text = "🐳 Контейнеры не найдены"
-                await callback.message.edit_text(text, parse_mode=None)
-            else:
-                lines = ["🐳 <b>Docker контейнеры:</b>\n"]
-                for c in containers:
-                    status_emoji = "🟢" if c["status"] == "running" else "🔴"
-                    lines.append(f"\n{status_emoji} <b>{c['name']}</b>")
-                    lines.append(f"   Статус: {c['status']}")
-                    lines.append(f"   Образ: <code>{c['image'][:30]}</code>")
-
-                text = "\n".join(lines)
-                await callback.message.edit_text(
-                    text,
-                    parse_mode="HTML",
-                    reply_markup=Keyboards.docker_list(containers, show_back=True, back_to="menu:system")
-                )
-
-        except Exception as e:
-            logger.error(f"Error listing containers: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
-
-        await callback.answer()
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_list(callback)
 
     async def handle_docker_stop(self, callback: CallbackQuery) -> None:
-        """Handle docker stop container"""
-        container_id = callback.data.split(":")[-1]
-        try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
-            success, message = await monitor.docker_stop(container_id)
-
-            if success:
-                await callback.answer(f"✅ {message}")
-                await self.handle_docker_list(callback)
-            else:
-                await callback.answer(f"❌ {message}")
-
-        except Exception as e:
-            logger.error(f"Error stopping container: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_stop(callback)
 
     async def handle_docker_start(self, callback: CallbackQuery) -> None:
-        """Handle docker start container"""
-        container_id = callback.data.split(":")[-1]
-        try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
-            success, message = await monitor.docker_start(container_id)
-
-            if success:
-                await callback.answer(f"✅ {message}")
-                await self.handle_docker_list(callback)
-            else:
-                await callback.answer(f"❌ {message}")
-
-        except Exception as e:
-            logger.error(f"Error starting container: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_start(callback)
 
     async def handle_docker_restart(self, callback: CallbackQuery) -> None:
-        """Handle docker restart container"""
-        container_id = callback.data.split(":")[-1]
-        try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
-            success, message = await monitor.docker_restart(container_id)
-
-            if success:
-                await callback.answer(f"✅ {message}")
-                await self.handle_docker_list(callback)
-            else:
-                await callback.answer(f"❌ {message}")
-
-        except Exception as e:
-            logger.error(f"Error restarting container: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_restart(callback)
 
     async def handle_docker_logs(self, callback: CallbackQuery) -> None:
-        """Handle docker logs with pagination"""
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-        # Parse callback: docker:logs:container_id or docker:logs:container_id:offset
-        parts = callback.data.split(":")
-        container_id = parts[2] if len(parts) > 2 else ""
-        offset = int(parts[3]) if len(parts) > 3 and parts[3].lstrip('-').isdigit() else 0
-
-        lines_per_page = 30
-
-        try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
-
-            # Get more logs to enable pagination
-            # offset=0 means latest, offset=30 means 30 lines before latest, etc.
-            total_lines = 200  # Max lines to fetch
-            success, all_logs = await monitor.docker_logs(container_id, lines=total_lines)
-
-            if not success:
-                await callback.answer(f"❌ {all_logs}")
-                return
-
-            # Split logs into lines
-            log_lines = all_logs.strip().split("\n") if all_logs.strip() else []
-            total = len(log_lines)
-
-            if total == 0:
-                text = f"📋 <b>Логи</b> ({container_id})\n\n<i>(пусто)</i>"
-                buttons = [[InlineKeyboardButton(text="🔙 К контейнерам", callback_data="menu:system:docker:0")]]
-                await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
-                await callback.answer()
-                return
-
-            # Calculate pagination (from end, offset 0 = latest)
-            # offset is how many lines to skip from the end
-            offset = max(0, min(offset, total - lines_per_page))
-            start_idx = max(0, total - lines_per_page - offset)
-            end_idx = total - offset
-
-            page_logs = log_lines[start_idx:end_idx]
-            current_page = offset // lines_per_page + 1
-            total_pages = (total + lines_per_page - 1) // lines_per_page
-
-            # Format logs
-            logs_text = "\n".join(page_logs)
-            if len(logs_text) > 3500:
-                logs_text = logs_text[-3500:]
-
-            text = f"📋 <b>Логи</b> ({container_id}) — {current_page}/{total_pages}\n\n<pre>{logs_text}</pre>"
-
-            # Navigation buttons
-            buttons = []
-            nav_row = []
-
-            # "Older" = increase offset (go back in time)
-            if offset + lines_per_page < total:
-                nav_row.append(InlineKeyboardButton(text="⬅️ Старше", callback_data=f"docker:logs:{container_id}:{offset + lines_per_page}"))
-
-            # "Newer" = decrease offset (go forward in time)
-            if offset > 0:
-                new_offset = max(0, offset - lines_per_page)
-                nav_row.append(InlineKeyboardButton(text="Новее ➡️", callback_data=f"docker:logs:{container_id}:{new_offset}"))
-
-            if nav_row:
-                buttons.append(nav_row)
-
-            # Refresh and back buttons
-            buttons.append([
-                InlineKeyboardButton(text="🔄 Обновить", callback_data=f"docker:logs:{container_id}:{offset}"),
-                InlineKeyboardButton(text="🔙 Назад", callback_data="menu:system:docker:0")
-            ])
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-        except Exception as e:
-            logger.error(f"Error getting logs: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
-
-        await callback.answer()
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_logs(callback)
 
     async def handle_docker_rm(self, callback: CallbackQuery) -> None:
-        """Handle docker remove container"""
-        container_id = callback.data.split(":")[-1]
-        try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
-            success, message = await monitor.docker_remove(container_id, force=True)
-
-            if success:
-                await callback.answer(f"✅ {message}")
-                await self.handle_docker_list(callback)
-            else:
-                await callback.answer(f"❌ {message}")
-
-        except Exception as e:
-            logger.error(f"Error removing container: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_rm(callback)
 
     async def handle_docker_info(self, callback: CallbackQuery) -> None:
-        """Handle docker container info - show detailed view with actions"""
-        container_id = callback.data.split(":")[-1]
-        try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
-            from presentation.keyboards.keyboards import Keyboards
-            monitor = SystemMonitor()
-            containers = await monitor.get_docker_containers()
-
-            container = next((c for c in containers if c["id"] == container_id), None)
-            if container:
-                text = (
-                    f"🐳 <b>Контейнер: {container['name']}</b>\n\n"
-                    f"<b>ID:</b> <code>{container['id']}</code>\n"
-                    f"<b>Статус:</b> {container['status']}\n"
-                    f"<b>Образ:</b> <code>{container['image']}</code>\n"
-                )
-                if container.get("ports"):
-                    text += f"<b>Порты:</b> {', '.join(str(p) for p in container['ports'])}\n"
-
-                await callback.message.edit_text(
-                    text,
-                    parse_mode="HTML",
-                    reply_markup=Keyboards.container_actions(container_id, container["status"], show_back=True, back_to="docker:list")
-                )
-            else:
-                await callback.answer("Контейнер не найден")
-
-        except Exception as e:
-            logger.error(f"Error getting container info: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
-
-        await callback.answer()
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_docker_info(callback)
 
     async def handle_metrics_top(self, callback: CallbackQuery) -> None:
-        """Handle top processes request"""
-        try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
-            processes = await monitor.get_top_processes(limit=10)
-
-            lines = ["📈 <b>Топ процессов:</b>\n"]
-            for p in processes:
-                lines.append(
-                    f"<code>{p.pid:>6}</code> | CPU: {p.cpu_percent:>5.1f}% | MEM: {p.memory_percent:>5.1f}% | {p.name[:20]}"
-                )
-
-            text = "\n".join(lines)
-            await callback.message.edit_text(text, parse_mode="HTML")
-
-        except Exception as e:
-            logger.error(f"Error getting top processes: {e}")
-            await callback.answer(f"❌ Ошибка: {e}")
-
-        await callback.answer()
+        """Delegate to DockerCallbackHandler."""
+        await self._docker.handle_metrics_top(callback)
 
     async def handle_commands_history(self, callback: CallbackQuery) -> None:
         """Handle commands history request"""
