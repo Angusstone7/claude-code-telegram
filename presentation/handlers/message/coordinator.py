@@ -15,6 +15,7 @@ from .file_handler import FileMessageHandler
 from .hitl_handler import HITLHandler
 from .variable_handler import VariableInputHandler
 from .plan_handler import PlanApprovalHandler
+from .ai_request_handler import AIRequestHandler
 
 if TYPE_CHECKING:
     from application.services.bot_service import BotService
@@ -53,6 +54,10 @@ class MessageCoordinator:
         file_processor_service=None,
         context_service=None,
         project_service=None,
+        sdk_service=None,
+        claude_proxy=None,
+        message_batcher=None,
+        callback_handlers=None,
     ):
         """
         Initialize coordinator with shared dependencies.
@@ -67,6 +72,10 @@ class MessageCoordinator:
             file_processor_service: File processor service (optional)
             context_service: Context service for variables (optional)
             project_service: Project service (optional)
+            sdk_service: Claude SDK service (optional)
+            claude_proxy: Claude CLI proxy service (optional)
+            message_batcher: Message batcher (optional)
+            callback_handlers: Callback handlers (optional)
         """
         # Store dependencies
         self._bot_service = bot_service
@@ -76,6 +85,24 @@ class MessageCoordinator:
         self._variables = variable_manager
         self._plans = plan_manager
         self._file_processor = file_processor_service
+        self._sdk_service = sdk_service
+        self._claude_proxy = claude_proxy
+        self._message_batcher = message_batcher
+        self._callback_handlers = callback_handlers
+
+        # Initialize AI request handler (handles SDK/CLI integration)
+        self._ai_request_handler = AIRequestHandler(
+            bot_service=bot_service,
+            user_state=user_state,
+            hitl_manager=hitl_manager,
+            file_context_manager=file_context_manager,
+            variable_manager=variable_manager,
+            plan_manager=plan_manager,
+            sdk_service=sdk_service,
+            claude_proxy=claude_proxy,
+            project_service=project_service,
+            context_service=context_service,
+        )
 
         # Initialize specialized handlers
         self._text_handler = TextMessageHandler(
@@ -85,6 +112,9 @@ class MessageCoordinator:
             file_context_manager=file_context_manager,
             variable_manager=variable_manager,
             plan_manager=plan_manager,
+            ai_request_handler=self._ai_request_handler,
+            message_batcher=message_batcher,
+            callback_handlers=callback_handlers,
         )
 
         self._file_handler = FileMessageHandler(
