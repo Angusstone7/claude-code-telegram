@@ -37,8 +37,9 @@ docker-compose logs -f claude-bot
 # Manual deployment:
 docker-compose -f docker-compose.prod.yml up -d --build
 
-# View production logs
-docker logs -f claude_agent
+# View production logs via HTTP API (ALWAYS USE THIS, docker CLI not available)
+curl "http://192.168.0.116:9999/logs/claude_agent?tail=100"  # View last 100 lines
+curl http://192.168.0.116:9999/containers                    # List all containers
 
 # Build telegram-mcp TypeScript plugin
 cd telegram-mcp && npm run build
@@ -473,6 +474,19 @@ cd telegram-mcp && npm run build
 
 ### Log Locations
 
+**IMPORTANT: Docker CLI is NOT available. Always use HTTP API for container logs.**
+
+- **Container logs via HTTP API** (ALWAYS USE THIS):
+  ```bash
+  # View last 100 lines of bot logs
+  curl "http://192.168.0.116:9999/logs/claude_agent?tail=100"
+
+  # List all running containers
+  curl http://192.168.0.116:9999/containers
+
+  # Get logs for any container
+  curl "http://192.168.0.116:9999/logs/{container_name}?tail=100"
+  ```
+
 - **Application logs**: `./logs/bot.log` (or `/app/logs/bot.log` in container)
-- **Docker logs**: `docker logs -f claude_agent`
 - **Claude Code logs**: Check `~/.claude/logs` or environment-specific log path
