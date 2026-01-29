@@ -284,73 +284,117 @@ class AIRequestHandler(BaseMessageHandler):
             # Cleanup
             await self._cleanup_after_task(user_id)
 
-    # === SDK Callbacks ===
+    # === SDK Callbacks (copied from legacy messages.py) ===
 
-    def _on_text(self, user_id: int, text: str):
-        """Handle text output from SDK"""
+    async def _on_text(self, user_id: int, text: str):
+        """Handle streaming text output"""
         streaming = self.user_state.get_streaming_handler(user_id)
         if streaming:
-            streaming.append_text(text)
+            await streaming.append(text)
 
-    def _on_tool_use(self, user_id: int, tool: str, input_data: dict, message: Message):
+        # Update heartbeat
+        heartbeat = self.user_state.get_heartbeat(user_id)
+        if heartbeat:
+            heartbeat.set_action("thinking")
+
+    async def _on_tool_use(self, user_id: int, tool: str, input_data: dict, message: Message):
         """Handle tool use notification"""
         streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.add_tool_use(tool, input_data)
+        heartbeat = self.user_state.get_heartbeat(user_id)
 
-    def _on_tool_result(self, user_id: int, tool_id: str, output: str):
+        # Update heartbeat with current action
+        if heartbeat:
+            tool_lower = tool.lower()
+            action_map = {
+                "read": "reading",
+                "glob": "searching",
+                "grep": "searching",
+                "ls": "searching",
+                "write": "writing",
+                "edit": "editing",
+                "notebookedit": "editing",
+                "bash": "executing",
+                "task": "thinking",
+                "webfetch": "reading",
+                "websearch": "searching",
+                "todowrite": "planning",
+                "enterplanmode": "planning",
+                "exitplanmode": "planning",
+                "askuserquestion": "waiting",
+            }
+            action = action_map.get(tool_lower, "thinking")
+
+            # Get detail (filename, command, pattern)
+            detail = ""
+            if tool_lower in ("read", "write", "edit", "notebookedit"):
+                detail = input_data.get("file_path", "")
+                if detail:
+                    detail = detail.split("/")[-1]  # Just filename
+            elif tool_lower == "bash":
+                cmd = input_data.get("command", "")
+                detail = cmd[:30] if cmd else ""
+            elif tool_lower in ("glob", "grep"):
+                detail = input_data.get("pattern", "")[:30]
+
+            heartbeat.set_action(action, detail)
+
+        # Track file changes
+        if streaming and tool.lower() in ("edit", "write", "bash"):
+            streaming.track_file_change(tool, input_data)
+
+    async def _on_tool_result(self, user_id: int, tool_id: str, output: str):
         """Handle tool result"""
         streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.add_tool_result(tool_id, output)
 
-    def _on_permission_sdk(self, user_id: int, tool: str, details: str, input_data: dict, message: Message):
+        if streaming and output:
+            await streaming.show_tool_result(output, success=True)
+
+        # Reset heartbeat
+        heartbeat = self.user_state.get_heartbeat(user_id)
+        if heartbeat:
+            heartbeat.set_action("analyzing")
+
+    async def _on_permission_sdk(self, user_id: int, tool: str, details: str, input_data: dict, message: Message):
         """Handle permission request from SDK"""
-        streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.pause()
+        # SDK handles permissions through callbacks - just log
+        pass
 
-        self.hitl_manager.request_permission(user_id, tool, details, input_data, message)
-
-    def _on_permission_completed(self, user_id: int, approved: bool):
+    async def _on_permission_completed(self, user_id: int, approved: bool):
         """Handle permission completion"""
-        streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.resume()
+        # SDK handles this internally
+        pass
 
-    def _on_question_sdk(self, user_id: int, question: str, options: list, message: Message):
+    async def _on_question_sdk(self, user_id: int, question: str, options: list, message: Message):
         """Handle question from SDK"""
-        streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.pause()
+        # SDK handles questions through callbacks
+        pass
 
-        self.hitl_manager.request_question(user_id, question, options, message)
-
-    def _on_question_completed(self, user_id: int, answer: str):
+    async def _on_question_completed(self, user_id: int, answer: str):
         """Handle question completion"""
-        streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.resume()
+        # SDK handles this internally
+        pass
 
-    def _on_plan_request(self, user_id: int, plan_file: str, input_data: dict, message: Message):
+    async def _on_plan_request(self, user_id: int, plan_file: str, input_data: dict, message: Message):
         """Handle plan approval request"""
+        # SDK handles plans through callbacks
+        pass
+
+    async def _on_thinking(self, user_id: int, thinking: str):
+        """Handle thinking output (extended thinking)"""
         streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.pause()
+        if streaming and thinking:
+            # Show thinking in italic
+            await streaming.append(f"\n*{thinking[:200]}...*\n" if len(thinking) > 200 else f"\n*{thinking}*\n")
 
-        self.plans.request_approval(user_id, plan_file, input_data, message)
-
-    def _on_thinking(self, user_id: int, thinking: str):
-        """Handle thinking output"""
-        streaming = self.user_state.get_streaming_handler(user_id)
-        if streaming:
-            streaming.set_thinking(thinking)
-
-    def _on_error(self, user_id: int, error: str):
+    async def _on_error(self, user_id: int, error: str):
         """Handle error"""
         streaming = self.user_state.get_streaming_handler(user_id)
         if streaming:
-            streaming.set_error(error)
+            await streaming.send_error(error)
+
+        session = self.user_state.get_claude_session(user_id)
+        if session:
+            session.fail(error)
 
     async def _handle_result(self, user_id: int, result: TaskResult, message: Message):
         """Handle task completion result"""
@@ -380,7 +424,7 @@ class AIRequestHandler(BaseMessageHandler):
         heartbeat = self.user_state.get_heartbeat(user_id)
         if heartbeat:
             await heartbeat.stop()
-            self.user_state.clear_heartbeat(user_id)
+            self.user_state.remove_heartbeat(user_id)
 
         # Clear HITL events
         self.hitl_manager.cleanup(user_id)
