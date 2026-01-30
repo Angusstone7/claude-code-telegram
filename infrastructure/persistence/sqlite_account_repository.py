@@ -72,6 +72,15 @@ class SQLiteAccountRepository:
                 # Column already exists, that's fine
                 pass
 
+            # Add language column if it doesn't exist (migration for i18n)
+            try:
+                await db.execute("ALTER TABLE account_settings ADD COLUMN language TEXT DEFAULT 'ru'")
+                await db.commit()
+                logger.info("Added language column to account_settings table")
+            except Exception:
+                # Column already exists, that's fine
+                pass
+
             logger.info("Account settings table initialized")
 
     async def find_by_user_id(self, user_id: int) -> Optional["AccountSettings"]:
@@ -99,8 +108,8 @@ class SQLiteAccountRepository:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO account_settings
-                (user_id, auth_mode, model, proxy_url, local_model_config, yolo_mode, zai_api_key, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, auth_mode, model, proxy_url, local_model_config, yolo_mode, zai_api_key, language, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 settings.user_id,
                 settings.auth_mode.value,
@@ -109,6 +118,7 @@ class SQLiteAccountRepository:
                 local_config_json,
                 1 if getattr(settings, 'yolo_mode', False) else 0,
                 getattr(settings, 'zai_api_key', None),
+                getattr(settings, 'language', 'ru'),
                 settings.created_at.isoformat() if settings.created_at else None,
                 settings.updated_at.isoformat() if settings.updated_at else None,
             ))
@@ -141,6 +151,34 @@ class SQLiteAccountRepository:
                 if row:
                     return bool(row[0])
         return False
+
+    async def set_language(self, user_id: int, language: str) -> None:
+        """Set language preference for user"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # First ensure row exists
+            await db.execute("""
+                INSERT OR IGNORE INTO account_settings (user_id, auth_mode, language, created_at)
+                VALUES (?, 'zai_api', ?, ?)
+            """, (user_id, language, datetime.utcnow().isoformat()))
+
+            # Then update
+            await db.execute(
+                "UPDATE account_settings SET language = ?, updated_at = ? WHERE user_id = ?",
+                (language, datetime.utcnow().isoformat(), user_id)
+            )
+            await db.commit()
+
+    async def get_language(self, user_id: int) -> Optional[str]:
+        """Get language preference for user"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT language FROM account_settings WHERE user_id = ?",
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    return row[0]
+        return None
 
     async def delete(self, user_id: int) -> None:
         """Delete account settings for user"""
@@ -175,6 +213,11 @@ class SQLiteAccountRepository:
         if "zai_api_key" in row.keys() and row["zai_api_key"]:
             zai_api_key = row["zai_api_key"]
 
+        # Get language (may not exist in old rows)
+        language = "ru"  # Default to Russian
+        if "language" in row.keys() and row["language"]:
+            language = row["language"]
+
         return AccountSettings(
             user_id=row["user_id"],
             auth_mode=AuthMode(row["auth_mode"]),
@@ -183,6 +226,7 @@ class SQLiteAccountRepository:
             local_model_config=local_model_config,
             yolo_mode=yolo_mode,
             zai_api_key=zai_api_key,
+            language=language,
             created_at=(
                 datetime.fromisoformat(row["created_at"])
                 if row["created_at"] else None

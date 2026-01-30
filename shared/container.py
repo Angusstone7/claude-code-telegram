@@ -336,6 +336,7 @@ class Container:
                 project_service=self.project_service(),
                 context_service=self.context_service(),
                 file_browser_service=self.file_browser_service(),
+                account_service=self.account_service(),
             )
             handlers.message_handlers = self.message_handlers()
             self._cache["command_handlers"] = handlers

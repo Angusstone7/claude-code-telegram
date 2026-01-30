@@ -34,7 +34,8 @@ class CommandHandlers:
         message_handlers=None,  # Optional, set after initialization
         project_service=None,   # ProjectService for /change
         context_service=None,   # ContextService for /context
-        file_browser_service=None  # FileBrowserService for /cd
+        file_browser_service=None,  # FileBrowserService for /cd
+        account_service=None  # AccountService for language
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy
@@ -42,6 +43,7 @@ class CommandHandlers:
         self.project_service = project_service
         self.context_service = context_service
         self.file_browser_service = file_browser_service
+        self.account_service = account_service
 
     async def start(self, message: Message) -> None:
         """Handle /start command - show main inline menu"""
@@ -53,6 +55,24 @@ class CommandHandlers:
         )
 
         user_id = message.from_user.id
+
+        # Check if user has language set (first launch detection)
+        user_lang = None
+        if self.account_service:
+            user_lang = await self.account_service.get_user_language(user_id)
+
+        # If no language set, show language selection first
+        if not user_lang or user_lang == "":
+            await message.answer(
+                "🌐 <b>Select language / Выберите язык / 选择语言</b>",
+                parse_mode="HTML",
+                reply_markup=Keyboards.language_select()
+            )
+            return
+
+        # Load translator for user's language
+        from shared.i18n import get_translator
+        t = get_translator(user_lang)
 
         # Get working directory and project info
         working_dir = "/root"
@@ -85,21 +105,21 @@ class CommandHandlers:
         if not has_task:
             has_task = self.claude_proxy.is_task_running(user_id)
 
-        # Build status text
-        project_info = f"📂 {project_name}" if project_name else "📂 Нет проекта"
+        # Build status text using translations
+        project_info = t("start.project", name=project_name) if project_name else t("start.no_project")
         path_info = f"📁 <code>{working_dir}</code>"
 
         status_parts = [project_info, path_info]
         if yolo_enabled:
-            status_parts.append("⚡ YOLO: ON")
+            status_parts.append(t("start.yolo_on"))
         if has_task:
-            status_parts.append("🔄 Задача выполняется")
+            status_parts.append(t("start.task_running"))
 
         text = (
             f"🤖 <b>Claude Code Telegram</b>\n\n"
-            f"Привет, {user.first_name}!\n\n"
+            f"{t('start.greeting', name=user.first_name)}\n\n"
             f"{chr(10).join(status_parts)}\n\n"
-            f"<i>Напишите задачу или выберите раздел:</i>"
+            f"<i>{t('start.ready')}</i>"
         )
 
         await message.answer(

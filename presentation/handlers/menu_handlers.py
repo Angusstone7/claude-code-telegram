@@ -59,6 +59,12 @@ class MenuHandlers:
             F.data.startswith("menu:")
         )
 
+        # Language selection callbacks
+        self.router.callback_query.register(
+            self.handle_language_callback,
+            F.data.startswith("lang:")
+        )
+
     # ============== Helper Methods ==============
 
     async def _get_yolo_enabled(self, user_id: int) -> bool:
@@ -221,6 +227,70 @@ class MenuHandlers:
 
         else:
             await callback.answer(f"Неизвестный раздел: {section}")
+
+    async def handle_language_callback(self, callback: CallbackQuery, **kwargs):
+        """Handle language selection callbacks (lang:ru, lang:en, lang:zh)"""
+        user_id = callback.from_user.id
+        data = callback.data
+
+        # Parse: lang:code
+        parts = data.split(":")
+        lang_code = parts[1] if len(parts) > 1 else "ru"
+
+        # Validate language code
+        from shared.i18n import SUPPORTED_LANGUAGES
+        if lang_code not in SUPPORTED_LANGUAGES:
+            lang_code = "ru"
+
+        # Save language preference
+        if self.account_service:
+            await self.account_service.set_user_language(user_id, lang_code)
+
+        # Get translator for new language
+        from shared.i18n import get_translator
+        t = get_translator(lang_code)
+
+        # Show confirmation message in selected language
+        await callback.message.edit_text(
+            t("lang.changed"),
+            parse_mode="HTML"
+        )
+        await callback.answer(t("lang.changed"))
+
+        # After brief pause, show main menu
+        import asyncio
+        await asyncio.sleep(1)
+
+        # Show main menu with translated content
+        project_name, working_dir = await self._get_project_info(user_id)
+        yolo_enabled = await self._get_yolo_enabled(user_id)
+        has_task = self._is_task_running(user_id)
+
+        project_info = t("start.project", name=project_name) if project_name else t("start.no_project")
+        path_info = f"📁 <code>{working_dir}</code>"
+
+        status_parts = [project_info, path_info]
+        if yolo_enabled:
+            status_parts.append(t("start.yolo_on"))
+        if has_task:
+            status_parts.append(t("start.task_running"))
+
+        text = (
+            f"🤖 <b>Claude Code Telegram</b>\n\n"
+            f"{chr(10).join(status_parts)}\n\n"
+            f"<i>{t('start.ready')}</i>"
+        )
+
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=Keyboards.main_menu_inline(
+                working_dir=working_dir,
+                project_name=project_name,
+                yolo_enabled=yolo_enabled,
+                has_active_task=has_task
+            )
+        )
 
     # ============== Main Menu ==============
 
@@ -707,6 +777,31 @@ class MenuHandlers:
         elif action == "global_vars":
             # Show global variables menu
             await self._show_global_variables(callback)
+
+        elif action == "language":
+            # Show language selection
+            await self._show_language_selection(callback)
+
+    async def _show_language_selection(self, callback: CallbackQuery):
+        """Show language selection menu"""
+        user_id = callback.from_user.id
+
+        # Get current language
+        current_lang = "ru"
+        if self.account_service:
+            current_lang = await self.account_service.get_user_language(user_id)
+
+        text = (
+            "🌐 <b>Select language / Выберите язык / 选择语言</b>\n\n"
+            f"Current: {current_lang.upper()}"
+        )
+
+        await callback.message.edit_text(
+            text,
+            reply_markup=Keyboards.language_select(current_lang),
+            parse_mode="HTML"
+        )
+        await callback.answer()
 
     async def _show_global_variables(self, callback: CallbackQuery):
         """Show global variables menu"""

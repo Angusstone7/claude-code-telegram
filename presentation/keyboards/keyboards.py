@@ -119,6 +119,33 @@ class Keyboards:
             ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+    # ============== Language Selection ==============
+
+    @staticmethod
+    def language_select(current_lang: str = None) -> InlineKeyboardMarkup:
+        """Language selection keyboard for first launch or settings"""
+        languages = [
+            ("ru", "🇷🇺 Русский"),
+            ("en", "🇬🇧 English"),
+            ("zh", "🇨🇳 中文"),
+        ]
+
+        buttons = []
+        for code, name in languages:
+            # Add checkmark if this is the current language
+            text = f"✓ {name}" if code == current_lang else name
+            buttons.append([
+                InlineKeyboardButton(text=text, callback_data=f"lang:{code}")
+            ])
+
+        # Add back button only if we have current language (i.e., not first launch)
+        if current_lang:
+            buttons.append([
+                InlineKeyboardButton(text="◀️ Назад / Back", callback_data="menu:settings")
+            ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
     @staticmethod
     def is_proxy_callback(callback_data: str) -> bool:
         """Check if this is a proxy settings callback"""
@@ -271,6 +298,12 @@ class Keyboards:
                 InlineKeyboardButton(
                     text="🌐 Прокси",
                     callback_data="menu:proxy"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🌍 Язык / Language",
+                    callback_data="menu:settings:language"
                 ),
             ],
             [

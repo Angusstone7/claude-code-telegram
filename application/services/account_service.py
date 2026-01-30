@@ -103,6 +103,7 @@ class AccountSettings:
     local_model_config: Optional[LocalModelConfig] = None  # Config for LOCAL_MODEL mode
     yolo_mode: bool = False  # Auto-approve all operations
     zai_api_key: Optional[str] = None  # User-provided z.ai API key
+    language: str = "ru"  # Language preference (ru, en, zh)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -297,6 +298,31 @@ class AccountService:
         await self.repository.save(settings)
         logger.info(f"[{user_id}] Model set to: {model or 'default'}")
         return settings
+
+    async def get_user_language(self, user_id: int) -> str:
+        """
+        Get user's language preference.
+
+        Returns:
+            Language code (ru, en, zh). Defaults to 'ru'.
+        """
+        lang = await self.repository.get_language(user_id)
+        return lang or "ru"
+
+    async def set_user_language(self, user_id: int, language: str) -> None:
+        """
+        Set user's language preference.
+
+        Args:
+            user_id: User ID
+            language: Language code (ru, en, zh)
+        """
+        from shared.i18n import SUPPORTED_LANGUAGES
+        if language not in SUPPORTED_LANGUAGES:
+            language = "ru"
+
+        await self.repository.set_language(user_id, language)
+        logger.info(f"[{user_id}] Language set to: {language}")
 
     async def get_available_models(self, user_id: int) -> list[dict]:
         """
