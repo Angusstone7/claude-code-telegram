@@ -36,7 +36,7 @@ build-image:
     - chmod 644 ~/.ssh/known_hosts
   script:
     - echo "Building bot image on runner..."
-    - docker build -t "$BOT_IMAGE_NAME:$CI_COMMIT_SHA" .
+    - docker build --no-cache -t "$BOT_IMAGE_NAME:$CI_COMMIT_SHA" .
     - docker tag "$BOT_IMAGE_NAME:$CI_COMMIT_SHA" "$BOT_IMAGE_NAME:latest"
     - docker save "$BOT_IMAGE_NAME:latest" | gzip -c > /tmp/ubuntu-claude-bot-image.tar.gz
     - ssh -o StrictHostKeyChecking=no -p "$HOST_SSH_PORT" "$SERVER_USER@$SERVER_HOST" "mkdir -p /tmp/ubuntu-claude-ci"
