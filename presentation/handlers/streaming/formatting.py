@@ -72,8 +72,8 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
         lang = lang_match.group(1) if lang_match else ""
         code_content = unclosed_code[lang_match.end():] if lang_match else unclosed_code
 
-        # Escape code content
-        escaped_code = html_module.escape(code_content)
+        # Escape code content - only escape <, >, & (not quotes, they display as &quot; in Telegram)
+        escaped_code = code_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         lang_class = f' class="language-{lang}"' if lang else ''
 
         # WITHOUT closing tags - prepare_html_for_telegram will add them
@@ -87,7 +87,8 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
         key = get_placeholder(len(placeholders))
         lang = m.group(1) or ''
         code = m.group(2)
-        escaped_code = html_module.escape(code)
+        # Escape only <, >, & (not quotes, they display as &quot; in Telegram)
+        escaped_code = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         lang_class = f' class="language-{lang}"' if lang else ''
         placeholders.append(f'<pre><code{lang_class}>{escaped_code}</code></pre>')
         return key
@@ -101,7 +102,10 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
     # 3. Protect inline code (but not partial backticks at end during streaming)
     def protect_inline_code(m: re.Match) -> str:
         key = get_placeholder(len(placeholders))
-        placeholders.append(f'<code>{html_module.escape(m.group(1))}</code>')
+        # Escape only <, >, & (not quotes, they display as &quot; in Telegram)
+        code = m.group(1)
+        escaped_code = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        placeholders.append(f'<code>{escaped_code}</code>')
         return key
 
     text = re.sub(r'`([^`\n]+)`', protect_inline_code, text)
