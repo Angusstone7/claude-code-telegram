@@ -21,7 +21,8 @@ class BaseCallbackHandler:
         sdk_service=None,
         project_service=None,
         context_service=None,
-        file_browser_service=None
+        file_browser_service=None,
+        account_service=None
     ):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
@@ -30,6 +31,15 @@ class BaseCallbackHandler:
         self.project_service = project_service
         self.context_service = context_service
         self.file_browser_service = file_browser_service
+        self.account_service = account_service
+
+    async def _get_user_lang(self, user_id: int) -> str:
+        """Get user's language preference."""
+        if self.account_service:
+            lang = await self.account_service.get_user_language(user_id)
+            if lang:
+                return lang
+        return "ru"
 
     async def _validate_same_user(
         self,

@@ -54,6 +54,18 @@ class CommandHandlers:
             last_name=message.from_user.last_name
         )
 
+        # Access denied - user not in ALLOWED_USER_ID whitelist
+        if user is None:
+            await message.answer(
+                "🚫 <b>Access Denied</b>\n\n"
+                "You are not authorized to use this bot.\n"
+                f"Your Telegram ID: <code>{message.from_user.id}</code>\n\n"
+                "<i>Contact the bot administrator to request access.</i>",
+                parse_mode="HTML"
+            )
+            logger.warning(f"Access denied for user {message.from_user.id} (@{message.from_user.username})")
+            return
+
         user_id = message.from_user.id
 
         # Check if user has language set (first launch detection)

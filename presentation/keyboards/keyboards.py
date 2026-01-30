@@ -9,112 +9,128 @@ class Keyboards:
     # NOTE: Moved to top to ensure loading (debug for AttributeError)
 
     @staticmethod
-    def proxy_settings_menu(has_proxy: bool = False, proxy_status: str = "") -> InlineKeyboardMarkup:
+    def proxy_settings_menu(has_proxy: bool = False, proxy_status: str = "", lang: str = "ru") -> InlineKeyboardMarkup:
         """
         Proxy settings main menu.
 
         Args:
             has_proxy: Whether proxy is currently configured
             proxy_status: Current proxy status text
+            lang: User language code
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         if has_proxy:
             buttons.append([
-                InlineKeyboardButton(text=f"📡 Текущий прокси: {proxy_status}", callback_data="proxy:status")
+                InlineKeyboardButton(text=t("proxy.current", proxy=proxy_status), callback_data="proxy:status")
             ])
             buttons.append([
-                InlineKeyboardButton(text="🔄 Изменить прокси", callback_data="proxy:change"),
-                InlineKeyboardButton(text="🧪 Тест", callback_data="proxy:test")
+                InlineKeyboardButton(text="🔄 " + t("menu.edit").replace("✏️ ", ""), callback_data="proxy:change"),
+                InlineKeyboardButton(text=t("proxy.test"), callback_data="proxy:test")
             ])
             buttons.append([
-                InlineKeyboardButton(text="❌ Отключить прокси", callback_data="proxy:disable")
+                InlineKeyboardButton(text=t("proxy.disable"), callback_data="proxy:disable")
             ])
         else:
             buttons.append([
-                InlineKeyboardButton(text="➕ Настроить прокси", callback_data="proxy:setup")
+                InlineKeyboardButton(text=t("proxy.setup"), callback_data="proxy:setup")
             ])
 
         buttons.append([
-            InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:settings")
+            InlineKeyboardButton(text=t("menu.back"), callback_data="menu:settings")
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def proxy_type_selection() -> InlineKeyboardMarkup:
+    def proxy_type_selection(lang: str = "ru") -> InlineKeyboardMarkup:
         """Select proxy type"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="🌐 HTTP", callback_data="proxy:type:http"),
+                InlineKeyboardButton(text=t("proxy.type_http"), callback_data="proxy:type:http"),
                 InlineKeyboardButton(text="🔒 HTTPS", callback_data="proxy:type:https")
             ],
             [
-                InlineKeyboardButton(text="🧦 SOCKS5", callback_data="proxy:type:socks5")
+                InlineKeyboardButton(text=t("proxy.type_socks5"), callback_data="proxy:type:socks5")
             ],
             [
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
+                InlineKeyboardButton(text=t("menu.back"), callback_data="proxy:cancel")
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def proxy_auth_options() -> InlineKeyboardMarkup:
+    def proxy_auth_options(lang: str = "ru") -> InlineKeyboardMarkup:
         """Proxy authentication options"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="🔓 Без авторизации", callback_data="proxy:auth:no")
+                InlineKeyboardButton(text=t("proxy.auth_no"), callback_data="proxy:auth:no")
             ],
             [
-                InlineKeyboardButton(text="🔐 С логином/паролем", callback_data="proxy:auth:yes")
+                InlineKeyboardButton(text=t("proxy.auth_yes"), callback_data="proxy:auth:yes")
             ],
             [
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
+                InlineKeyboardButton(text=t("menu.back"), callback_data="proxy:cancel")
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def proxy_scope_selection() -> InlineKeyboardMarkup:
+    def proxy_scope_selection(lang: str = "ru") -> InlineKeyboardMarkup:
         """Select proxy scope (user or global)"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="👤 Только для меня", callback_data="proxy:scope:user")
+                InlineKeyboardButton(text=t("proxy.scope_user"), callback_data="proxy:scope:user")
             ],
             [
-                InlineKeyboardButton(text="🌍 Глобально (для всех)", callback_data="proxy:scope:global")
+                InlineKeyboardButton(text=t("proxy.scope_global"), callback_data="proxy:scope:global")
             ],
             [
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
+                InlineKeyboardButton(text=t("menu.back"), callback_data="proxy:cancel")
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def proxy_confirm_test(success: bool) -> InlineKeyboardMarkup:
+    def proxy_confirm_test(success: bool, lang: str = "ru") -> InlineKeyboardMarkup:
         """Confirm proxy test result"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         if success:
             buttons = [
                 [
-                    InlineKeyboardButton(text="✅ Сохранить", callback_data="proxy:save")
+                    InlineKeyboardButton(text=t("menu.save"), callback_data="proxy:save")
                 ],
                 [
-                    InlineKeyboardButton(text="🔄 Изменить", callback_data="proxy:change")
+                    InlineKeyboardButton(text=t("menu.edit"), callback_data="proxy:change")
                 ],
                 [
-                    InlineKeyboardButton(text="❌ Отменить", callback_data="proxy:cancel")
+                    InlineKeyboardButton(text=t("menu.cancel"), callback_data="proxy:cancel")
                 ]
             ]
         else:
             buttons = [
                 [
-                    InlineKeyboardButton(text="🔄 Повторить тест", callback_data="proxy:test")
+                    InlineKeyboardButton(text=t("menu.refresh") + " " + t("proxy.test").replace("🧪 ", ""), callback_data="proxy:test")
                 ],
                 [
-                    InlineKeyboardButton(text="✏️ Изменить настройки", callback_data="proxy:change")
+                    InlineKeyboardButton(text=t("menu.edit"), callback_data="proxy:change")
                 ],
                 [
-                    InlineKeyboardButton(text="❌ Отменить", callback_data="proxy:cancel")
+                    InlineKeyboardButton(text=t("menu.cancel"), callback_data="proxy:cancel")
                 ]
             ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -671,26 +687,29 @@ class Keyboards:
         ])
 
     @staticmethod
-    def plan_approval(user_id: int, request_id: str) -> InlineKeyboardMarkup:
+    def plan_approval(user_id: int, request_id: str, lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard for plan approval (ExitPlanMode)"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
                 InlineKeyboardButton(
-                    text="✅ Одобрить план",
+                    text=t("claude.plan_approve"),
                     callback_data=f"plan:approve:{user_id}:{request_id}"
                 ),
                 InlineKeyboardButton(
-                    text="❌ Отклонить",
+                    text=t("claude.plan_reject"),
                     callback_data=f"plan:reject:{user_id}:{request_id}"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="✏️ Уточнить план",
+                    text=t("claude.plan_clarify"),
                     callback_data=f"plan:clarify:{user_id}:{request_id}"
                 ),
                 InlineKeyboardButton(
-                    text="🛑 Отменить задачу",
+                    text=t("cancel.confirm"),
                     callback_data=f"plan:cancel:{user_id}:{request_id}"
                 )
             ]
@@ -698,8 +717,11 @@ class Keyboards:
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def project_selection(projects: List[Dict[str, str]]) -> InlineKeyboardMarkup:
+    def project_selection(projects: List[Dict[str, str]], lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard for project selection"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
         for proj in projects[:10]:  # Max 10 projects
             name = proj.get("name", "Unknown")
@@ -712,7 +734,7 @@ class Keyboards:
             ])
 
         buttons.append([
-            InlineKeyboardButton(text="📂 Указать путь...", callback_data="project:custom")
+            InlineKeyboardButton(text="📂 ...", callback_data="project:custom")
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -967,7 +989,8 @@ class Keyboards:
     @staticmethod
     def file_browser(
         content,  # DirectoryContent
-        folders_per_row: int = 2
+        folders_per_row: int = 2,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Keyboard for /cd command - interactive folder navigation.
@@ -975,12 +998,16 @@ class Keyboards:
         Args:
             content: DirectoryContent object with entries
             folders_per_row: Number of folder buttons per row
+            lang: User language code
 
         Features:
         - Folder buttons for navigation
         - Back, Root, Select buttons
         - Close button
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # Collect folder entries (only directories get buttons)
@@ -1012,7 +1039,7 @@ class Keyboards:
         if content.parent_path:
             nav_row.append(
                 InlineKeyboardButton(
-                    text="⬆️ Назад",
+                    text=t("menu.back"),
                     callback_data=f"cd:goto:{content.parent_path}"
                 )
             )
@@ -1021,7 +1048,7 @@ class Keyboards:
         if not content.is_root:
             nav_row.append(
                 InlineKeyboardButton(
-                    text="🏠 Корень",
+                    text="🏠 Root",
                     callback_data="cd:root"
                 )
             )
@@ -1029,7 +1056,7 @@ class Keyboards:
         # Select current folder
         nav_row.append(
             InlineKeyboardButton(
-                text="✅ Выбрать",
+                text=t("menu.confirm"),
                 callback_data=f"cd:select:{content.path[:50]}"
             )
         )
@@ -1039,7 +1066,7 @@ class Keyboards:
 
         # Close button
         buttons.append([
-            InlineKeyboardButton(text="❌ Закрыть", callback_data="cd:close")
+            InlineKeyboardButton(text=t("menu.close"), callback_data="cd:close")
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1053,7 +1080,8 @@ class Keyboards:
         project_name: str = "",
         context_name: str = "",
         show_back: bool = True,
-        back_to: str = "menu:context"
+        back_to: str = "menu:context",
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Main variables menu with list of existing variables.
@@ -1064,6 +1092,7 @@ class Keyboards:
             context_name: Current context name for display
             show_back: Whether to show back button
             back_to: Callback data for back button
+            lang: User language code
 
         Returns:
             InlineKeyboardMarkup with:
@@ -1071,6 +1100,9 @@ class Keyboards:
             - "Add new" button
             - "Back" button
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # List variables (max 10)
@@ -1096,42 +1128,51 @@ class Keyboards:
 
         # Add button
         buttons.append([
-            InlineKeyboardButton(text="➕ Добавить", callback_data="var:add")
+            InlineKeyboardButton(text=t("vars.add"), callback_data="var:add")
         ])
 
         # Back button
         if show_back:
             buttons.append([
-                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+                InlineKeyboardButton(text=t("menu.back"), callback_data=back_to)
             ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def variable_delete_confirm(name: str) -> InlineKeyboardMarkup:
+    def variable_delete_confirm(name: str, lang: str = "ru") -> InlineKeyboardMarkup:
         """Confirmation keyboard for variable deletion"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         callback_name = name[:20]
         return InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"var:dc:{callback_name}"),
-                InlineKeyboardButton(text="⬅️ Отмена", callback_data="var:list")
+                InlineKeyboardButton(text=t("confirm.yes"), callback_data=f"var:dc:{callback_name}"),
+                InlineKeyboardButton(text=t("menu.cancel"), callback_data="var:list")
             ]
         ])
 
     @staticmethod
-    def variable_cancel() -> InlineKeyboardMarkup:
+    def variable_cancel(lang: str = "ru") -> InlineKeyboardMarkup:
         """Cancel button for variable input flows"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="var:list")]
+            [InlineKeyboardButton(text=t("menu.cancel"), callback_data="var:list")]
         ])
 
     @staticmethod
-    def variable_skip_description() -> InlineKeyboardMarkup:
+    def variable_skip_description(lang: str = "ru") -> InlineKeyboardMarkup:
         """Skip description button during variable creation"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="⏭️ Пропустить описание", callback_data="var:skip_desc"),
-                InlineKeyboardButton(text="❌ Отмена", callback_data="var:list")
+                InlineKeyboardButton(text=t("vars.skip_desc"), callback_data="var:skip_desc"),
+                InlineKeyboardButton(text=t("menu.cancel"), callback_data="var:list")
             ]
         ])
 
@@ -1141,7 +1182,8 @@ class Keyboards:
     def global_variables_menu(
         variables: Dict,  # Dict[str, ContextVariable]
         show_back: bool = True,
-        back_to: str = "menu:settings"
+        back_to: str = "menu:settings",
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Global variables menu - variables inherited by all projects.
@@ -1150,6 +1192,7 @@ class Keyboards:
             variables: Dict of name -> ContextVariable
             show_back: Whether to show back button
             back_to: Callback data for back button
+            lang: User language code
 
         Returns:
             InlineKeyboardMarkup with:
@@ -1157,6 +1200,9 @@ class Keyboards:
             - "Add new" button
             - "Back" button
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # List variables (max 10)
@@ -1182,42 +1228,51 @@ class Keyboards:
 
         # Add button
         buttons.append([
-            InlineKeyboardButton(text="➕ Добавить", callback_data="gvar:add")
+            InlineKeyboardButton(text=t("vars.add"), callback_data="gvar:add")
         ])
 
         # Back button
         if show_back:
             buttons.append([
-                InlineKeyboardButton(text="🔙 Назад", callback_data=back_to)
+                InlineKeyboardButton(text=t("menu.back"), callback_data=back_to)
             ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def global_variable_delete_confirm(name: str) -> InlineKeyboardMarkup:
+    def global_variable_delete_confirm(name: str, lang: str = "ru") -> InlineKeyboardMarkup:
         """Confirmation keyboard for global variable deletion"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         callback_name = name[:20]
         return InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"gvar:dc:{callback_name}"),
-                InlineKeyboardButton(text="⬅️ Отмена", callback_data="gvar:list")
+                InlineKeyboardButton(text=t("confirm.yes"), callback_data=f"gvar:dc:{callback_name}"),
+                InlineKeyboardButton(text=t("menu.cancel"), callback_data="gvar:list")
             ]
         ])
 
     @staticmethod
-    def global_variable_cancel() -> InlineKeyboardMarkup:
+    def global_variable_cancel(lang: str = "ru") -> InlineKeyboardMarkup:
         """Cancel button for global variable input flows"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="gvar:list")]
+            [InlineKeyboardButton(text=t("menu.cancel"), callback_data="gvar:list")]
         ])
 
     @staticmethod
-    def global_variable_skip_description() -> InlineKeyboardMarkup:
+    def global_variable_skip_description(lang: str = "ru") -> InlineKeyboardMarkup:
         """Skip description button during global variable creation"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="⏭️ Пропустить описание", callback_data="gvar:skip_desc"),
-                InlineKeyboardButton(text="❌ Отмена", callback_data="gvar:list")
+                InlineKeyboardButton(text=t("vars.skip_desc"), callback_data="gvar:skip_desc"),
+                InlineKeyboardButton(text=t("menu.cancel"), callback_data="gvar:list")
             ]
         ])
 
@@ -1366,7 +1421,8 @@ class Keyboards:
         current_model: str = None,
         has_zai_key: bool = False,
         show_back: bool = False,
-        back_to: str = "menu:settings"
+        back_to: str = "menu:settings",
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Account settings menu keyboard.
@@ -1379,7 +1435,11 @@ class Keyboards:
             has_zai_key: Whether user has their own z.ai API key
             show_back: Show back button instead of close button
             back_to: Callback data for back button
+            lang: User language code
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # z.ai API button with key status
@@ -1411,7 +1471,7 @@ class Keyboards:
         local_emoji = "✅" if current_mode == "local_model" else "🖥️"
         buttons.append([
             InlineKeyboardButton(
-                text=f"{local_emoji} Локальная модель",
+                text=f"{local_emoji} Local Model",
                 callback_data="account:mode:local_model"
             )
         ])
@@ -1419,14 +1479,14 @@ class Keyboards:
         # Model selection button - only for non-Claude modes
         # (Claude mode has its own submenu with model selection)
         if current_mode != "claude_account":
-            model_text = "🤖 Модель"
+            model_text = t("account.model")
             if current_model:
                 # Use a simple formatting for model name
                 model_name = current_model.replace("-", " ").replace("_", " ").title()
                 # Keep short for display
                 if len(model_name) > 20:
                     model_name = model_name[:17] + "..."
-                model_text = f"🤖 Модель: {model_name}"
+                model_text = t("account.model_current", model=model_name)
 
             buttons.append([
                 InlineKeyboardButton(
@@ -1437,7 +1497,7 @@ class Keyboards:
 
         # z.ai API key setup button - only for zai_api mode
         if current_mode == "zai_api":
-            key_text = "🔑 Изменить API ключ" if has_zai_key else "🔑 Добавить API ключ"
+            key_text = "🔑 API Key" if not has_zai_key else "🔑 Change API Key"
             buttons.append([
                 InlineKeyboardButton(
                     text=key_text,
@@ -1448,52 +1508,58 @@ class Keyboards:
         # Back or close button
         if show_back:
             buttons.append([
-                InlineKeyboardButton(text="◀️ Назад", callback_data=back_to)
+                InlineKeyboardButton(text=t("menu.back"), callback_data=back_to)
             ])
         else:
             buttons.append([
-                InlineKeyboardButton(text="❌ Закрыть", callback_data="account:close")
+                InlineKeyboardButton(text=t("menu.close"), callback_data="account:close")
             ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def account_auth_options() -> InlineKeyboardMarkup:
+    def account_auth_options(lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard with options for Claude Account authorization"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔐 Войти через браузер",
+                    text="🔐 Login via browser",
                     callback_data="account:login"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="📤 Загрузить credentials файл",
+                    text="📤 Upload credentials file",
                     callback_data="account:upload"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="◀️ Назад",
+                    text=t("menu.back"),
                     callback_data="account:menu"
                 )
             ]
         ])
 
     @staticmethod
-    def zai_auth_options() -> InlineKeyboardMarkup:
+    def zai_auth_options(lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard with options for z.ai API authorization"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔑 Добавить API ключ",
+                    text="🔑 Add API Key",
                     callback_data="account:zai_setup"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="◀️ Назад",
+                    text=t("menu.back"),
                     callback_data="account:menu"
                 )
             ]
@@ -1503,7 +1569,8 @@ class Keyboards:
     def claude_account_submenu(
         has_credentials: bool = False,
         subscription_type: str = None,
-        current_model: str = None
+        current_model: str = None,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Submenu for Claude Account with management options.
@@ -1512,16 +1579,20 @@ class Keyboards:
             has_credentials: Whether credentials file exists
             subscription_type: Subscription type from credentials
             current_model: Currently selected model
+            lang: User language code
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # Model selection button
-        model_text = "🤖 Модель"
+        model_text = t("account.model")
         if current_model:
             model_name = current_model.replace("-", " ").replace("_", " ").title()
             if len(model_name) > 20:
                 model_name = model_name[:17] + "..."
-            model_text = f"🤖 Модель: {model_name}"
+            model_text = t("account.model_current", model=model_name)
 
         buttons.append([
             InlineKeyboardButton(
@@ -1531,7 +1602,7 @@ class Keyboards:
         ])
 
         # Status button with subscription info
-        status_text = f"ℹ️ Статус ({subscription_type})" if subscription_type else "ℹ️ Статус авторизации"
+        status_text = f"ℹ️ Status ({subscription_type})" if subscription_type else "ℹ️ Auth Status"
         buttons.append([
             InlineKeyboardButton(
                 text=status_text,
@@ -1543,7 +1614,7 @@ class Keyboards:
         if has_credentials:
             buttons.append([
                 InlineKeyboardButton(
-                    text="🗑️ Удалить аккаунт Claude",
+                    text=t("account.logout"),
                     callback_data="account:delete_account"
                 )
             ])
@@ -1551,8 +1622,8 @@ class Keyboards:
         # Back button
         buttons.append([
             InlineKeyboardButton(
-                text="◀️ Назад",
-callback_data="account:menu"
+                text=t("menu.back"),
+                callback_data="account:menu"
             )
         ])
 
@@ -1561,7 +1632,8 @@ callback_data="account:menu"
     @staticmethod
     def zai_api_submenu(
         has_key: bool = False,
-        current_model: str = None
+        current_model: str = None,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Submenu for z.ai API with key management options.
@@ -1569,16 +1641,20 @@ callback_data="account:menu"
         Args:
             has_key: Whether user has API key configured
             current_model: Currently selected model
+            lang: User language code
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # Model selection button
-        model_text = "🤖 Модель"
+        model_text = t("account.model")
         if current_model:
             model_name = current_model.replace("-", " ").replace("_", " ").title()
             if len(model_name) > 20:
                 model_name = model_name[:17] + "..."
-            model_text = f"🤖 Модель: {model_name}"
+            model_text = t("account.model_current", model=model_name)
 
         buttons.append([
             InlineKeyboardButton(
@@ -1591,20 +1667,20 @@ callback_data="account:menu"
         if has_key:
             buttons.append([
                 InlineKeyboardButton(
-                    text="🔑 Изменить API ключ",
+                    text="🔑 Change API Key",
                     callback_data="account:zai_setup"
                 )
             ])
             buttons.append([
                 InlineKeyboardButton(
-                    text="🗑️ Удалить API ключ",
+                    text=t("menu.delete") + " API Key",
                     callback_data="account:zai_delete"
                 )
             ])
         else:
             buttons.append([
                 InlineKeyboardButton(
-                    text="🔑 Добавить API ключ",
+                    text="🔑 Add API Key",
                     callback_data="account:zai_setup"
                 )
             ])
@@ -1612,7 +1688,7 @@ callback_data="account:menu"
         # Back button
         buttons.append([
             InlineKeyboardButton(
-                text="◀️ Назад",
+                text=t("menu.back"),
                 callback_data="account:menu"
             )
         ])
@@ -1620,24 +1696,30 @@ callback_data="account:menu"
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def account_upload_credentials() -> InlineKeyboardMarkup:
+    def account_upload_credentials(lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard shown when waiting for credentials file upload"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ Отмена",
+                    text=t("menu.cancel"),
                     callback_data="account:cancel_upload"
                 )
             ]
         ])
 
     @staticmethod
-    def account_cancel_login() -> InlineKeyboardMarkup:
+    def account_cancel_login(lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard shown during OAuth login flow"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ Отмена",
+                    text=t("menu.cancel"),
                     callback_data="account:cancel_login"
                 )
             ]
@@ -1647,7 +1729,8 @@ callback_data="account:menu"
     def model_select(
         models: list = None,
         auth_mode: str = "zai_api",
-        current_model: str = None
+        current_model: str = None,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Dynamic model selection keyboard based on auth mode.
@@ -1656,7 +1739,11 @@ callback_data="account:menu"
             models: List of model dicts with id, name, is_selected (from AccountService.get_available_models())
             auth_mode: Current auth mode
             current_model: Currently selected model
+            lang: User language code
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         if models:
@@ -1686,7 +1773,7 @@ callback_data="account:menu"
         default_emoji = "✅" if not current_model else "🔄"
         buttons.append([
             InlineKeyboardButton(
-                text=f"{default_emoji} По умолчанию (авто)",
+                text=f"{default_emoji} {t('account.model_default')}",
                 callback_data="account:model:default"
             )
         ])
@@ -1695,7 +1782,7 @@ callback_data="account:menu"
         if auth_mode == "local_model":
             buttons.append([
                 InlineKeyboardButton(
-                    text="⚙️ Изменить настройки",
+                    text=t("menu.settings"),
                     callback_data="account:local_setup"
                 )
             ])
@@ -1703,7 +1790,7 @@ callback_data="account:menu"
         # Back button
         buttons.append([
             InlineKeyboardButton(
-                text="🔙 Назад",
+                text=t("menu.back"),
                 callback_data="account:menu"
             )
         ])
@@ -1711,14 +1798,17 @@ callback_data="account:menu"
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def account_confirm_mode_switch(mode: str) -> InlineKeyboardMarkup:
+    def account_confirm_mode_switch(mode: str, lang: str = "ru") -> InlineKeyboardMarkup:
         """Confirmation keyboard for mode switch"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         if mode == "claude_account":
-            text = "✅ Да, переключить на Claude Account"
+            text = t("confirm.yes") + " Claude Account"
         elif mode == "local_model":
-            text = "✅ Да, настроить локальную модель"
+            text = t("confirm.yes") + " Local Model"
         else:
-            text = "✅ Да, переключить на z.ai API"
+            text = t("confirm.yes") + " z.ai API"
 
         return InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -1729,47 +1819,56 @@ callback_data="account:menu"
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ Отмена",
+                    text=t("menu.cancel"),
                     callback_data="account:menu"
                 )
             ]
         ])
 
     @staticmethod
-    def cancel_only(back_to: str = "account:menu") -> InlineKeyboardMarkup:
+    def cancel_only(back_to: str = "account:menu", lang: str = "ru") -> InlineKeyboardMarkup:
         """Simple cancel button keyboard"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data=back_to)]
+            [InlineKeyboardButton(text=t("menu.cancel"), callback_data=back_to)]
         ])
 
     @staticmethod
-    def local_model_skip_name(default_name: str) -> InlineKeyboardMarkup:
+    def local_model_skip_name(default_name: str, lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard for skipping display name input"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"✅ Использовать '{default_name}'",
+                    text=t("account.local_skip_name", name=default_name),
                     callback_data=f"account:local_use_default_name"
                 )
             ],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="account:menu")]
+            [InlineKeyboardButton(text=t("menu.cancel"), callback_data="account:menu")]
         ])
 
     @staticmethod
-    def zai_api_key_input(has_existing_key: bool = False) -> InlineKeyboardMarkup:
+    def zai_api_key_input(has_existing_key: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
         """Keyboard for z.ai API key input"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         if has_existing_key:
             buttons.append([
                 InlineKeyboardButton(
-                    text="🗑️ Удалить существующий ключ",
+                    text=t("account.delete_credentials"),
                     callback_data="account:zai_delete"
                 )
             ])
 
         buttons.append([
-            InlineKeyboardButton(text="❌ Отмена", callback_data="account:menu")
+            InlineKeyboardButton(text=t("menu.cancel"), callback_data="account:menu")
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1777,7 +1876,8 @@ callback_data="account:menu"
     @staticmethod
     def question_options(
         questions: List[Dict],
-        question_id: str
+        question_id: str,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Build keyboard for AskUserQuestion response from Claude.
@@ -1785,10 +1885,14 @@ callback_data="account:menu"
         Args:
             questions: List of question dicts with question, header, options
             question_id: Unique ID for callback matching (e.g., "q_1234567890")
+            lang: User language code
 
         Returns:
             InlineKeyboardMarkup with option buttons and "Other" option
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = []
 
         # Support only first question for now (Claude usually sends one at a time)
@@ -1796,7 +1900,7 @@ callback_data="account:menu"
             options = question.get("options", [])
 
             for opt_idx, opt in enumerate(options[:4]):  # Max 4 options
-                label = opt.get("label", f"Вариант {opt_idx + 1}")
+                label = opt.get("label", f"Option {opt_idx + 1}")
                 # Format: question:{question_id}:{question_idx}:{option_idx}
                 # Keep callback data under 64 bytes
                 callback = f"q:{question_id}:{q_idx}:{opt_idx}"
@@ -1807,7 +1911,7 @@ callback_data="account:menu"
         # Add "Other" option for custom text input
         buttons.append([
             InlineKeyboardButton(
-                text="💬 Другой ответ",
+                text=t("claude.question_other"),
                 callback_data=f"q:{question_id}:other"
             )
         ])

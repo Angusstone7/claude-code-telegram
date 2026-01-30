@@ -259,6 +259,14 @@ class AccountHandlers:
         self._oauth_sessions: dict[int, OAuthLoginSession] = {}
         self._register_handlers()
 
+    async def _get_user_lang(self, user_id: int) -> str:
+        """Get user's language preference"""
+        if self.account_service:
+            lang = await self.account_service.get_user_language(user_id)
+            if lang:
+                return lang
+        return "ru"
+
     def _register_handlers(self):
         """Register all handlers"""
         # Command handler
@@ -326,6 +334,9 @@ class AccountHandlers:
     async def handle_account_command(self, message: Message, state: FSMContext):
         """Handle /account command - show settings menu"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Get current settings
         settings = await self.account_service.get_settings(user_id)
@@ -336,29 +347,30 @@ class AccountHandlers:
         mode_names = {
             AuthMode.ZAI_API: "z.ai API",
             AuthMode.CLAUDE_ACCOUNT: "Claude Account",
-            AuthMode.LOCAL_MODEL: "Локальная модель",
+            AuthMode.LOCAL_MODEL: t("account.local_model"),
         }
-        current_mode_name = mode_names.get(settings.auth_mode, "Неизвестно")
+        current_mode_name = mode_names.get(settings.auth_mode, "Unknown")
 
         text = (
-            f"🔧 <b>Настройки аккаунта</b>\n\n"
-            f"Текущий режим: <b>{current_mode_name}</b>\n\n"
+            f"{t('account.title')}\n\n"
+            f"{t('account.current_mode', mode=current_mode_name)}\n\n"
         )
 
         if settings.auth_mode == AuthMode.ZAI_API:
-            text += f"🔑 API ключ: {'✅ настроен' if has_zai_key else '❌ не настроен'}\n"
+            key_status = "✅" if has_zai_key else "❌"
+            text += f"🔑 API key: {key_status}\n"
         elif settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
             if creds_info.exists:
                 sub = creds_info.subscription_type or "unknown"
                 tier = creds_info.rate_limit_tier or "default"
-                text += f"📊 Подписка: {sub}\n"
-                text += f"⚡ Rate limit: {tier}\n"
+                text += f"{t('account.status_subscription', sub=sub)}\n"
+                text += f"{t('account.status_rate_limit', tier=tier)}\n"
                 if creds_info.expires_at:
-                    text += f"⏰ Истекает: {creds_info.expires_at.strftime('%d.%m.%Y %H:%M')}\n"
+                    text += f"{t('account.status_expires', date=creds_info.expires_at.strftime('%d.%m.%Y %H:%M'))}\n"
             else:
-                text += "⚠️ Credentials файл не найден\n"
+                text += f"{t('account.status_creds_not_found')}\n"
 
-        text += "\nВыберите режим авторизации:"
+        text += f"\n{t('account.select_mode')}"
 
         # Send menu
         await message.answer(
@@ -370,13 +382,18 @@ class AccountHandlers:
                 current_model=settings.model,
                 has_zai_key=has_zai_key,
                 show_back=True,
-                back_to="menu:main"
+                back_to="menu:main",
+                lang=lang
             )
         )
 
     async def handle_account_callback(self, callback: CallbackQuery, state: FSMContext):
         """Handle account settings callbacks"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         data = CallbackData.parse_account_callback(callback.data)
         action = data.get("action", "")
 
@@ -409,7 +426,7 @@ class AccountHandlers:
             # Cancel credentials upload
             await state.clear()
             await self._show_menu(callback, state)
-            await callback.answer("Загрузка отменена")
+            await callback.answer(t("account.upload_cancelled"))
 
         elif action == "login":
             # Start OAuth login flow
@@ -486,24 +503,29 @@ class AccountHandlers:
                 await callback.answer("Этот режим уже выбран")
                 return
 
+        # Get user language
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         # For Claude Account, check if credentials exist
         if mode == AuthMode.CLAUDE_ACCOUNT:
             creds_info = self.account_service.get_credentials_info()
             if not creds_info.exists:
                 # No credentials - offer login or upload options
                 text = (
-                    "🔐 <b>Авторизация Claude Account</b>\n\n"
-                    "Для использования Claude Account нужна авторизация.\n\n"
-                    "<b>Выберите способ:</b>\n\n"
-                    "🔐 <b>Войти через браузер</b>\n"
-                    "Вы получите ссылку, авторизуетесь и введёте код\n\n"
-                    "📤 <b>Загрузить credentials файл</b>\n"
-                    "Если уже есть <code>.credentials.json</code>"
+                    f"{t('account.claude_auth_title')}\n\n"
+                    f"{t('account.claude_auth_desc')}\n\n"
+                    f"{t('account.claude_auth_select')}\n\n"
+                    f"{t('account.claude_auth_browser')}\n"
+                    f"{t('account.claude_auth_browser_desc')}\n\n"
+                    f"{t('account.claude_auth_upload')}\n"
+                    f"{t('account.claude_auth_upload_desc')}"
                 )
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.account_auth_options()
+                    reply_markup=Keyboards.account_auth_options(lang=lang)
                 )
                 await callback.answer()
                 return
@@ -519,16 +541,16 @@ class AccountHandlers:
             if not has_zai_key:
                 # No API key - ask user to add one
                 text = (
-                    "🔑 <b>Настройка z.ai API</b>\n\n"
-                    "Для использования z.ai API нужен API ключ.\n\n"
-                    "Вы можете:\n"
-                    "• <b>Добавить свой ключ</b> - получите его на open.bigmodel.cn\n\n"
-                    "<i>После добавления ключ будет проверен на работоспособность.</i>"
+                    f"{t('account.zai_auth_title')}\n\n"
+                    f"{t('account.zai_auth_desc')}\n\n"
+                    f"{t('account.zai_auth_options')}\n"
+                    f"{t('account.zai_auth_add_key')}\n\n"
+                    f"{t('account.zai_auth_note')}"
                 )
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.zai_auth_options(),
+                    reply_markup=Keyboards.zai_auth_options(lang=lang),
                     parse_mode="HTML"
                 )
                 await callback.answer()
@@ -539,21 +561,21 @@ class AccountHandlers:
             creds_info = self.account_service.get_credentials_info()
             sub = creds_info.subscription_type or "unknown"
             text = (
-                f"☁️ <b>Переключить на Claude Account?</b>\n\n"
-                f"Подписка: {sub}\n"
-                f"Прокси: Настройки → 🌐 Прокси\n\n"
-                f"Все запросы будут идти через вашу подписку Claude."
+                f"{t('account.confirm_switch_claude')}\n\n"
+                f"{t('account.confirm_switch_claude_sub', sub=sub)}\n"
+                f"{t('account.confirm_switch_claude_proxy')}\n\n"
+                f"{t('account.confirm_switch_claude_note')}"
             )
         else:
             # z.ai with key
             text = (
-                "🌐 <b>Переключить на z.ai API?</b>\n\n"
-                "Запросы будут идти через z.ai API с вашим ключом."
+                f"{t('account.confirm_switch_zai')}\n\n"
+                f"{t('account.confirm_switch_zai_note')}"
             )
 
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.account_confirm_mode_switch(mode.value)
+            reply_markup=Keyboards.account_confirm_mode_switch(mode.value, lang=lang)
         )
         await callback.answer()
 
@@ -565,11 +587,14 @@ class AccountHandlers:
     ):
         """Handle confirmed mode switch"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         try:
             mode = AuthMode(mode_str)
         except ValueError:
-            await callback.answer(f"Неизвестный режим: {mode_str}")
+            await callback.answer(t("account.unknown_mode", mode=mode_str))
             return
 
         # Switch mode
@@ -577,13 +602,13 @@ class AccountHandlers:
 
         if not success:
             # Failed to switch - show error
-            await callback.answer(error_msg, show_alert=True)
+            await callback.answer(t("account.switch_error", error=error_msg), show_alert=True)
             # Show menu with current (unchanged) mode
             await self._show_menu(callback, state)
             return
 
         mode_name = "z.ai API" if mode == AuthMode.ZAI_API else "Claude Account"
-        await callback.answer(f"✅ Режим: {mode_name}")
+        await callback.answer(t("account.switch_success", mode=mode_name))
 
         # Show updated menu
         await self._show_menu(callback, state)
@@ -591,43 +616,48 @@ class AccountHandlers:
     async def _handle_status(self, callback: CallbackQuery):
         """Show detailed auth status"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         settings = await self.account_service.get_settings(user_id)
         creds_info = self.account_service.get_credentials_info()
 
-        text = "📊 <b>Статус авторизации</b>\n\n"
+        text = f"{t('account.status_title')}\n\n"
 
         # Current mode
         mode_name = "z.ai API" if settings.auth_mode == AuthMode.ZAI_API else "Claude Account"
-        text += f"<b>Текущий режим:</b> {mode_name}\n\n"
+        text += f"{t('account.status_mode', mode=mode_name)}\n\n"
 
         # z.ai API info
         import os
-        zai_base = os.environ.get("ANTHROPIC_BASE_URL", "не задан")
-        zai_token = "✅ задан" if os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY") else "❌ не задан"
-        text += f"<b>z.ai API:</b>\n"
-        text += f"  Base URL: <code>{zai_base[:40]}...</code>\n" if len(zai_base) > 40 else f"  Base URL: <code>{zai_base}</code>\n"
-        text += f"  Token: {zai_token}\n\n"
+        zai_base = os.environ.get("ANTHROPIC_BASE_URL", t("account.status_not_set"))
+        zai_token = t("account.status_token_set") if os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY") else t("account.status_token_not_set")
+        text += f"{t('account.status_zai')}\n"
+        url_display = f"{zai_base[:40]}..." if len(zai_base) > 40 else zai_base
+        text += f"{t('account.status_base_url', url=url_display)}\n"
+        text += f"{zai_token}\n\n"
 
         # Claude Account info
-        text += f"<b>Claude Account:</b>\n"
+        text += f"{t('account.status_claude')}\n"
         if creds_info.exists:
-            text += f"  Статус: ✅ credentials найден\n"
-            text += f"  Подписка: {creds_info.subscription_type or 'unknown'}\n"
-            text += f"  Rate limit: {creds_info.rate_limit_tier or 'default'}\n"
+            text += f"{t('account.status_creds_found')}\n"
+            text += f"{t('account.status_subscription', sub=creds_info.subscription_type or 'unknown')}\n"
+            text += f"{t('account.status_rate_limit', tier=creds_info.rate_limit_tier or 'default')}\n"
             if creds_info.expires_at:
-                text += f"  Истекает: {creds_info.expires_at.strftime('%d.%m.%Y %H:%M')}\n"
+                text += f"{t('account.status_expires', date=creds_info.expires_at.strftime('%d.%m.%Y %H:%M'))}\n"
             if creds_info.scopes:
-                text += f"  Scopes: {', '.join(creds_info.scopes[:3])}\n"
+                text += f"{t('account.status_scopes', scopes=', '.join(creds_info.scopes[:3]))}\n"
         else:
-            text += f"  Статус: ❌ credentials не найден\n"
-            text += f"  Путь: <code>{CREDENTIALS_PATH}</code>\n"
+            text += f"{t('account.status_creds_not_found')}\n"
+            text += f"{t('account.status_path', path=CREDENTIALS_PATH)}\n"
 
-        text += f"\n<b>Прокси:</b> Настройки → 🌐 Прокси"
+        text += f"\n{t('account.status_proxy')}"
 
         await callback.message.edit_text(
             text,
             parse_mode="HTML",
-            reply_markup=Keyboards.menu_back_only("account:menu")
+            reply_markup=Keyboards.menu_back_only("account:menu", lang=lang)
         )
         await callback.answer()
 
@@ -636,6 +666,10 @@ class AccountHandlers:
         await state.clear()
 
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         settings = await self.account_service.get_settings(user_id)
         creds_info = self.account_service.get_credentials_info()
         has_zai_key = bool(settings.zai_api_key)
@@ -643,19 +677,19 @@ class AccountHandlers:
         mode_names = {
             AuthMode.ZAI_API: "z.ai API",
             AuthMode.CLAUDE_ACCOUNT: "Claude Account",
-            AuthMode.LOCAL_MODEL: "Локальная модель",
+            AuthMode.LOCAL_MODEL: "Local Model",
         }
-        current_mode_name = mode_names.get(settings.auth_mode, "Неизвестно")
+        current_mode_name = mode_names.get(settings.auth_mode, "Unknown")
 
         # Add key status for z.ai mode
         key_status = ""
         if settings.auth_mode == AuthMode.ZAI_API:
-            key_status = "\n🔑 API ключ: " + ("✅ настроен" if has_zai_key else "❌ не настроен")
+            key_status = "\n🔑 API Key: " + ("✅" if has_zai_key else "❌")
 
         text = (
-            f"🔧 <b>Настройки аккаунта</b>\n\n"
-            f"Текущий режим: <b>{current_mode_name}</b>{key_status}\n\n"
-            f"Выберите режим авторизации:"
+            f"{t('account.title')}\n\n"
+            f"{t('account.current_mode', mode=current_mode_name)}{key_status}\n\n"
+            f"{t('account.select_mode')}"
         )
 
         await callback.message.edit_text(
@@ -667,7 +701,8 @@ class AccountHandlers:
                 current_model=settings.model,
                 has_zai_key=has_zai_key,
                 show_back=True,
-                back_to="menu:main"
+                back_to="menu:main",
+                lang=lang
             ),
             parse_mode="HTML"
         )
@@ -675,26 +710,29 @@ class AccountHandlers:
     async def _show_claude_submenu(self, callback: CallbackQuery, state: FSMContext):
         """Show Claude Account submenu with options"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+
         settings = await self.account_service.get_settings(user_id)
         creds_info = self.account_service.get_credentials_info()
 
         text = "☁️ <b>Claude Account</b>\n\n"
 
         if creds_info.exists:
-            text += f"Статус: ✅ Авторизован\n"
+            text += f"Status: ✅ Authorized\n"
             if creds_info.subscription_type:
-                text += f"Подписка: {creds_info.subscription_type}\n"
+                text += f"Subscription: {creds_info.subscription_type}\n"
             if creds_info.rate_limit_tier:
                 text += f"Rate limit: {creds_info.rate_limit_tier}\n"
         else:
-            text += "Статус: ❌ Не авторизован\n"
+            text += "Status: ❌ Not authorized\n"
 
         await callback.message.edit_text(
             text,
             reply_markup=Keyboards.claude_account_submenu(
                 has_credentials=creds_info.exists,
                 subscription_type=creds_info.subscription_type,
-                current_model=settings.model if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT else None
+                current_model=settings.model if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT else None,
+                lang=lang
             ),
             parse_mode="HTML"
         )
@@ -703,6 +741,8 @@ class AccountHandlers:
     async def _show_zai_submenu(self, callback: CallbackQuery, state: FSMContext):
         """Show z.ai API submenu with key management options"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+
         settings = await self.account_service.get_settings(user_id)
         has_key = bool(settings.zai_api_key)
 
@@ -715,16 +755,17 @@ class AccountHandlers:
                 masked = f"{key[:8]}...{key[-4:]}"
             else:
                 masked = f"{key[:4]}***"
-            text += f"Статус: ✅ API ключ настроен\n"
-            text += f"Ключ: <code>{masked}</code>\n"
+            text += f"Status: ✅ API key configured\n"
+            text += f"Key: <code>{masked}</code>\n"
         else:
-            text += "Статус: ❌ API ключ не настроен\n"
+            text += "Status: ❌ API key not configured\n"
 
         await callback.message.edit_text(
             text,
             reply_markup=Keyboards.zai_api_submenu(
                 has_key=has_key,
-                current_model=settings.model
+                current_model=settings.model,
+                lang=lang
             ),
             parse_mode="HTML"
         )
@@ -732,26 +773,34 @@ class AccountHandlers:
 
     async def _show_upload_prompt(self, callback: CallbackQuery, state: FSMContext):
         """Show credentials file upload prompt"""
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         await state.set_state(AccountStates.waiting_credentials_file)
 
         text = (
-            "📤 <b>Загрузите credentials файл</b>\n\n"
-            "Отправьте файл <code>.credentials.json</code>.\n\n"
-            "<b>Где найти файл:</b>\n"
-            "• Linux/Mac: <code>~/.claude/.credentials.json</code>\n"
-            "• Windows: <code>C:\\Users\\[user]\\.claude\\.credentials.json</code>\n\n"
-            "<i>Файл создаётся после выполнения <code>claude /login</code></i>"
+            f"{t('account.upload_title')}\n\n"
+            f"{t('account.upload_send_file')}\n\n"
+            f"{t('account.upload_where')}\n"
+            f"{t('account.upload_path_linux')}\n"
+            f"{t('account.upload_path_win')}\n\n"
+            f"{t('account.upload_note')}"
         )
 
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.account_upload_credentials()
+            reply_markup=Keyboards.account_upload_credentials(lang=lang)
         )
         await callback.answer()
 
     async def _show_model_selection(self, callback: CallbackQuery, state: FSMContext):
         """Show model selection menu based on current auth mode"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Get settings and available models for current auth mode
         settings = await self.account_service.get_settings(user_id)
@@ -759,13 +808,13 @@ class AccountHandlers:
 
         # Build title based on auth mode
         titles = {
-            AuthMode.CLAUDE_ACCOUNT: ("Claude", "Официальные модели Anthropic"),
-            AuthMode.ZAI_API: ("z.ai API", "Модели ZhipuAI"),
-            AuthMode.LOCAL_MODEL: ("Локальная модель", "LMStudio / Ollama / LLama"),
+            AuthMode.CLAUDE_ACCOUNT: ("Claude", t("account.model_subtitle_claude")),
+            AuthMode.ZAI_API: ("z.ai API", t("account.model_subtitle_zai")),
+            AuthMode.LOCAL_MODEL: (t("account.local_model"), t("account.model_subtitle_local")),
         }
-        title, subtitle = titles.get(settings.auth_mode, ("Модели", ""))
+        title, subtitle = titles.get(settings.auth_mode, (t("account.model"), ""))
 
-        text = f"🤖 <b>Выбор модели - {title}</b>\n"
+        text = f"{t('account.model_title', title=title)}\n"
         if subtitle:
             text += f"<i>{subtitle}</i>\n\n"
 
@@ -778,16 +827,17 @@ class AccountHandlers:
 
         if not models:
             if settings.auth_mode == AuthMode.LOCAL_MODEL:
-                text += "\n<i>Локальная модель не настроена. Нажмите '⚙️ Изменить настройки' чтобы добавить.</i>"
+                text += f"\n<i>{t('account.model_no_local')}</i>"
             else:
-                text += "\n<i>Нет доступных моделей</i>"
+                text += f"\n<i>{t('account.model_empty')}</i>"
 
         await callback.message.edit_text(
             text,
             reply_markup=Keyboards.model_select(
                 models=models,
                 auth_mode=settings.auth_mode.value,
-                current_model=settings.model
+                current_model=settings.model,
+                lang=lang
             ),
             parse_mode="HTML"
         )
@@ -801,6 +851,9 @@ class AccountHandlers:
     ):
         """Handle model selection with session reset"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Get old model before changing
         old_model = await self.account_service.get_model(user_id)
@@ -810,7 +863,7 @@ class AccountHandlers:
 
         if model_value == "default":
             await self.account_service.set_model(user_id, None)
-            model_name = "По умолчанию (авто)"
+            model_name = t("account.model_default")
         else:
             await self.account_service.set_model(user_id, model_value)
             from application.services.account_service import ClaudeModel
@@ -840,14 +893,17 @@ class AccountHandlers:
 
         # Return to menu with success message
         await self._show_menu(callback, state)
-        msg = f"✅ Модель: {model_name}"
+        msg = t("account.model_changed", model=model_name)
         if session_reset:
-            msg += "\n🔄 Сессия сброшена"
+            msg += f"\n{t('account.session_reset')}"
         await callback.answer(msg, show_alert=session_reset)
 
     async def _handle_delete_account(self, callback: CallbackQuery, state: FSMContext):
         """Handle Claude Account deletion (credentials file)"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         try:
             # Delete credentials file
@@ -861,17 +917,20 @@ class AccountHandlers:
 
                 # Return to menu
                 await self._show_menu(callback, state)
-                await callback.answer("✅ Аккаунт Claude удалён")
+                await callback.answer(t("account.logged_out"))
             else:
                 await callback.answer(message, show_alert=True)
 
         except Exception as e:
             logger.error(f"[{user_id}] Error deleting account: {e}", exc_info=True)
-            await callback.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+            await callback.answer(t("account.upload_error", error=str(e)), show_alert=True)
 
     async def handle_credentials_upload(self, message: Message, state: FSMContext):
         """Handle credentials file upload"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Download file
         document = message.document
@@ -879,18 +938,18 @@ class AccountHandlers:
         # Check filename
         if document.file_name and not document.file_name.endswith(".json"):
             await message.answer(
-                "❌ Файл должен быть .json\n"
-                "Ожидается файл <code>.credentials.json</code>",
-                reply_markup=Keyboards.account_upload_credentials()
+                f"{t('account.upload_must_json')}\n"
+                f"{t('account.upload_retry')}",
+                reply_markup=Keyboards.account_upload_credentials(lang=lang)
             )
             return
 
         # Check file size (credentials should be small)
         if document.file_size > 50 * 1024:  # 50 KB max
             await message.answer(
-                "❌ Файл слишком большой (макс 50 KB)\n"
-                "Убедитесь что это правильный файл credentials",
-                reply_markup=Keyboards.account_upload_credentials()
+                f"{t('account.upload_too_large')}\n"
+                f"{t('account.upload_retry_size')}",
+                reply_markup=Keyboards.account_upload_credentials(lang=lang)
             )
             return
 
@@ -911,13 +970,14 @@ class AccountHandlers:
                     # This shouldn't happen since we just saved credentials, but handle it
                     settings = await self.account_service.get_settings(user_id)
                     await message.answer(
-                        f"⚠️ Credentials сохранены, но не удалось переключить режим:\n{mode_error}",
+                        f"⚠️ {t('account.creds_saved')}\n{t('account.switch_error', error=mode_error)}",
                         reply_markup=Keyboards.account_menu(
                             current_mode=AuthMode.ZAI_API.value,
                             has_credentials=True,
                             current_model=settings.model,
                             show_back=True,
-                            back_to="menu:main"
+                            back_to="menu:main",
+                            lang=lang
                         )
                     )
                     await state.clear()
@@ -927,18 +987,19 @@ class AccountHandlers:
                 settings = await self.account_service.get_settings(user_id)
 
                 await message.answer(
-                    f"✅ <b>Авторизация успешна!</b>\n\n"
-                    f"Режим: Claude Account\n"
-                    f"Подписка: {creds_info.subscription_type or 'unknown'}\n"
-                    f"Rate limit: {creds_info.rate_limit_tier or 'default'}\n\n"
-                    f"Теперь все запросы идут через вашу подписку Claude.",
+                    f"{t('account.upload_success')}\n\n"
+                    f"{t('account.current_mode', mode='Claude Account')}\n"
+                    f"{t('account.status_subscription', sub=creds_info.subscription_type or 'unknown')}\n"
+                    f"{t('account.status_rate_limit', tier=creds_info.rate_limit_tier or 'default')}\n\n"
+                    f"{t('account.confirm_switch_claude_note')}",
                     reply_markup=Keyboards.account_menu(
                         current_mode=AuthMode.CLAUDE_ACCOUNT.value,
                         has_credentials=True,
                         subscription_type=creds_info.subscription_type,
                         current_model=settings.model,
                         show_back=True,
-                        back_to="menu:main"
+                        back_to="menu:main",
+                        lang=lang
                     )
                 )
                 await state.clear()
@@ -946,29 +1007,34 @@ class AccountHandlers:
 
             else:
                 await message.answer(
-                    f"❌ {msg}\n\n"
-                    "Попробуйте ещё раз или отмените.",
-                    reply_markup=Keyboards.account_upload_credentials()
+                    f"{t('account.upload_error', error=msg)}\n\n"
+                    f"{t('account.upload_send_or_cancel')}",
+                    reply_markup=Keyboards.account_upload_credentials(lang=lang)
                 )
 
         except Exception as e:
             logger.error(f"[{user_id}] Error uploading credentials: {e}")
             await message.answer(
-                f"❌ Ошибка: {e}\n\n"
-                "Попробуйте ещё раз или отмените.",
-                reply_markup=Keyboards.account_upload_credentials()
+                f"{t('account.upload_error', error=str(e))}\n\n"
+                f"{t('account.upload_send_or_cancel')}",
+                reply_markup=Keyboards.account_upload_credentials(lang=lang)
             )
 
     async def handle_cancel_upload_text(self, message: Message, state: FSMContext):
         """Handle text input during credentials upload state"""
+        user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         if message.text and message.text.lower() in ("отмена", "cancel", "/cancel"):
             await state.clear()
-            await message.answer("Загрузка отменена. Используйте /account для настроек.")
+            await message.answer(t("account.upload_cancelled_use"))
         else:
             await message.answer(
-                "Ожидается файл <code>.credentials.json</code>\n"
-                "Отправьте файл или нажмите Отмена.",
-                reply_markup=Keyboards.account_upload_credentials()
+                f"{t('account.upload_send_file')}\n"
+                f"{t('account.upload_send_or_cancel')}",
+                reply_markup=Keyboards.account_upload_credentials(lang=lang)
             )
 
     # ============== OAuth Login Handlers ==============
@@ -976,16 +1042,19 @@ class AccountHandlers:
     async def handle_login_command(self, message: Message, state: FSMContext):
         """Handle /login command - start OAuth login flow"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Check if credentials already exist
         creds_info = self.account_service.get_credentials_info()
         if creds_info.exists:
             sub = creds_info.subscription_type or "unknown"
             await message.answer(
-                f"✅ <b>Уже авторизованы!</b>\n\n"
-                f"Подписка: {sub}\n"
-                f"Rate limit: {creds_info.rate_limit_tier or 'default'}\n\n"
-                f"Используйте /account для переключения режима.",
+                f"{t('account.oauth_success')}\n\n"
+                f"{t('account.status_subscription', sub=sub)}\n"
+                f"{t('account.status_rate_limit', tier=creds_info.rate_limit_tier or 'default')}\n\n"
+                f"/account",
                 parse_mode="HTML"
             )
             return
@@ -995,17 +1064,24 @@ class AccountHandlers:
 
     async def _handle_login(self, callback: CallbackQuery, state: FSMContext):
         """Handle login button callback - start OAuth login"""
-        await callback.answer("Запускаю авторизацию...")
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+        await callback.answer(t("status.loading"))
         await self._start_oauth_login_callback(callback, state)
 
     async def _start_oauth_login(self, message: Message, state: FSMContext):
         """Start OAuth login flow (from message)"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Show loading message
         loading_msg = await message.answer(
-            "⏳ <b>Запускаю авторизацию...</b>\n\n"
-            "Получаю ссылку для входа...",
+            f"{t('account.login_step1')}\n\n"
+            f"{t('account.login_wait')}",
             parse_mode="HTML"
         )
 
@@ -1019,37 +1095,39 @@ class AccountHandlers:
             await state.set_state(AccountStates.waiting_oauth_code)
 
             await loading_msg.edit_text(
-                f"🔐 <b>Авторизация Claude Account</b>\n\n"
-                f"1️⃣ Перейдите по ссылке:\n"
-                f"<a href=\"{oauth_url}\">Открыть страницу авторизации</a>\n\n"
-                f"2️⃣ Войдите в свой аккаунт Claude\n"
-                f"3️⃣ Скопируйте код авторизации\n"
-                f"4️⃣ Отправьте код сюда\n\n"
-                f"<i>Ссылка действительна 5 минут</i>",
+                f"{t('account.oauth_title')}\n\n"
+                f"{t('account.oauth_step1', button=t('account.oauth_open_btn'))}\n"
+                f"<a href=\"{oauth_url}\">{t('account.oauth_open_btn')}</a>\n\n"
+                f"{t('account.oauth_step2')}\n"
+                f"{t('account.oauth_step3')}\n"
+                f"{t('account.oauth_step4')}\n\n"
+                f"<i>⏱️ 5 min</i>",
                 parse_mode="HTML",
-                reply_markup=Keyboards.account_cancel_login(),
+                reply_markup=Keyboards.account_cancel_login(lang=lang),
                 disable_web_page_preview=True
             )
         else:
             # Failed to get URL
-            output = "\n".join(session._output_lines[-3:]) if session._output_lines else "Нет вывода"
+            output = "\n".join(session._output_lines[-3:]) if session._output_lines else "No output"
             await loading_msg.edit_text(
-                f"❌ <b>Не удалось запустить авторизацию</b>\n\n"
-                f"Claude CLI вернул:\n<pre>{output[:200]}</pre>\n\n"
-                f"Убедитесь что claude установлен и доступен.",
+                f"{t('account.oauth_failed')}\n\n"
+                f"Claude CLI:\n<pre>{output[:200]}</pre>",
                 parse_mode="HTML",
-                reply_markup=Keyboards.menu_back_only("account:menu")
+                reply_markup=Keyboards.menu_back_only("account:menu", lang=lang)
             )
             self._oauth_sessions.pop(user_id, None)
 
     async def _start_oauth_login_callback(self, callback: CallbackQuery, state: FSMContext):
         """Start OAuth login flow (from callback)"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Edit message to show loading
         await callback.message.edit_text(
-            "⏳ <b>Запускаю авторизацию...</b>\n\n"
-            "Получаю ссылку для входа...",
+            f"{t('account.login_step1')}\n\n"
+            f"{t('account.login_wait')}",
             parse_mode="HTML"
         )
 
@@ -1063,32 +1141,35 @@ class AccountHandlers:
             await state.set_state(AccountStates.waiting_oauth_code)
 
             await callback.message.edit_text(
-                f"🔐 <b>Авторизация Claude Account</b>\n\n"
-                f"1️⃣ Перейдите по ссылке:\n"
-                f"<a href=\"{oauth_url}\">Открыть страницу авторизации</a>\n\n"
-                f"2️⃣ Войдите в свой аккаунт Claude\n"
-                f"3️⃣ Скопируйте код авторизации\n"
-                f"4️⃣ Отправьте код сюда\n\n"
-                f"<i>Ссылка действительна 5 минут</i>",
+                f"{t('account.oauth_title')}\n\n"
+                f"{t('account.oauth_step1', button=t('account.oauth_open_btn'))}\n"
+                f"<a href=\"{oauth_url}\">{t('account.oauth_open_btn')}</a>\n\n"
+                f"{t('account.oauth_step2')}\n"
+                f"{t('account.oauth_step3')}\n"
+                f"{t('account.oauth_step4')}\n\n"
+                f"<i>⏱️ 5 min</i>",
                 parse_mode="HTML",
-                reply_markup=Keyboards.account_cancel_login(),
+                reply_markup=Keyboards.account_cancel_login(lang=lang),
                 disable_web_page_preview=True
             )
         else:
             # Failed to get URL
-            output = "\n".join(session._output_lines[-3:]) if session._output_lines else "Нет вывода"
+            output = "\n".join(session._output_lines[-3:]) if session._output_lines else "No output"
             await callback.message.edit_text(
-                f"❌ <b>Не удалось запустить авторизацию</b>\n\n"
-                f"Claude CLI вернул:\n<pre>{output[:200]}</pre>\n\n"
-                f"Убедитесь что claude установлен и доступен.",
+                f"{t('account.oauth_failed')}\n\n"
+                f"Claude CLI:\n<pre>{output[:200]}</pre>",
                 parse_mode="HTML",
-                reply_markup=Keyboards.menu_back_only("account:menu")
+                reply_markup=Keyboards.menu_back_only("account:menu", lang=lang)
             )
             self._oauth_sessions.pop(user_id, None)
 
     async def handle_oauth_code_input(self, message: Message, state: FSMContext):
         """Handle OAuth code input from user"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         code = message.text.strip()
 
         # Check for cancel commands
@@ -1100,14 +1181,11 @@ class AccountHandlers:
         session = self._oauth_sessions.get(user_id)
         if not session or session.status != "waiting_code":
             await state.clear()
-            await message.answer(
-                "❌ Сессия авторизации не найдена или истекла.\n"
-                "Используйте /login чтобы начать заново."
-            )
+            await message.answer(t("error.session_expired"))
             return
 
         # Show processing message
-        processing_msg = await message.answer("⏳ Проверяю код...")
+        processing_msg = await message.answer(t("status.processing"))
 
         # Submit code
         success, result_msg = await session.submit_code(code)
@@ -1120,14 +1198,15 @@ class AccountHandlers:
                 # This shouldn't happen since OAuth just saved credentials, but handle it
                 settings = await self.account_service.get_settings(user_id)
                 await processing_msg.edit_text(
-                    f"⚠️ OAuth успешен, но не удалось переключить режим:\n{mode_error}",
+                    f"⚠️ {t('account.creds_saved')}\n{t('account.switch_error', error=mode_error)}",
                     parse_mode="HTML",
                     reply_markup=Keyboards.account_menu(
                         current_mode=AuthMode.ZAI_API.value,
                         has_credentials=True,
                         current_model=settings.model,
                         show_back=True,
-                        back_to="menu:main"
+                        back_to="menu:main",
+                        lang=lang
                     )
                 )
                 await state.clear()
@@ -1137,11 +1216,11 @@ class AccountHandlers:
             settings = await self.account_service.get_settings(user_id)
 
             await processing_msg.edit_text(
-                f"✅ <b>Авторизация успешна!</b>\n\n"
-                f"Режим: Claude Account\n"
-                f"Подписка: {creds_info.subscription_type or 'unknown'}\n"
-                f"Rate limit: {creds_info.rate_limit_tier or 'default'}\n\n"
-                f"Теперь все запросы идут через вашу подписку Claude.",
+                f"{t('account.oauth_success')}\n\n"
+                f"{t('account.current_mode', mode='Claude Account')}\n"
+                f"{t('account.status_subscription', sub=creds_info.subscription_type or 'unknown')}\n"
+                f"{t('account.status_rate_limit', tier=creds_info.rate_limit_tier or 'default')}\n\n"
+                f"{t('account.confirm_switch_claude_note')}",
                 parse_mode="HTML",
                 reply_markup=Keyboards.account_menu(
                     current_mode=AuthMode.CLAUDE_ACCOUNT.value,
@@ -1149,18 +1228,19 @@ class AccountHandlers:
                     subscription_type=creds_info.subscription_type,
                     current_model=settings.model,
                     show_back=True,
-                    back_to="menu:main"
+                    back_to="menu:main",
+                    lang=lang
                 )
             )
             await state.clear()
             logger.info(f"[{user_id}] OAuth login completed successfully")
         else:
             await processing_msg.edit_text(
-                f"❌ <b>Ошибка авторизации</b>\n\n"
+                f"{t('account.oauth_failed')}\n\n"
                 f"{result_msg}\n\n"
-                f"Попробуйте ещё раз или нажмите Отмена.",
+                f"{t('account.upload_send_or_cancel')}",
                 parse_mode="HTML",
-                reply_markup=Keyboards.account_cancel_login()
+                reply_markup=Keyboards.account_cancel_login(lang=lang)
             )
 
         # Cleanup session
@@ -1169,6 +1249,9 @@ class AccountHandlers:
     async def _cancel_oauth_login(self, callback: CallbackQuery, state: FSMContext):
         """Cancel OAuth login from callback"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Cancel active session
         session = self._oauth_sessions.pop(user_id, None)
@@ -1177,11 +1260,14 @@ class AccountHandlers:
 
         await state.clear()
         await self._show_menu(callback, state)
-        await callback.answer("Авторизация отменена")
+        await callback.answer(t("account.oauth_cancelled"))
 
     async def _cancel_oauth_login_message(self, message: Message, state: FSMContext):
         """Cancel OAuth login from message"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Cancel active session
         session = self._oauth_sessions.pop(user_id, None)
@@ -1189,43 +1275,50 @@ class AccountHandlers:
             await session.cancel()
 
         await state.clear()
-        await message.answer(
-            "Авторизация отменена.\n"
-            "Используйте /account для настроек."
-        )
+        await message.answer(t("account.oauth_cancelled_use"))
 
     # ============== Local Model Setup Handlers ==============
 
     async def _start_local_model_setup(self, callback: CallbackQuery, state: FSMContext):
         """Start local model setup flow - ask for URL"""
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         text = (
-            "🖥️ <b>Настройка локальной модели</b>\n\n"
-            "Введите URL вашего локального сервера.\n\n"
-            "<b>Примеры:</b>\n"
-            "• LMStudio: <code>http://localhost:1234/v1</code>\n"
-            "• Ollama: <code>http://localhost:11434/v1</code>\n"
+            f"{t('account.local_title')}\n\n"
+            f"{t('account.local_enter_url')}\n\n"
+            f"{t('account.local_examples')}\n"
+            f"{t('account.local_example1')}\n"
+            f"{t('account.local_example2')}\n"
             "• vLLM: <code>http://localhost:8000/v1</code>\n\n"
-            "<i>Сервер должен быть совместим с OpenAI API</i>"
+            "<i>OpenAI API compatible</i>"
         )
 
         await state.set_state(AccountStates.waiting_local_url)
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.cancel_only(),
+            reply_markup=Keyboards.cancel_only(lang=lang),
             parse_mode="HTML"
         )
         await callback.answer()
 
     async def handle_local_url_input(self, message: Message, state: FSMContext):
         """Handle local model URL input"""
+        user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         url = message.text.strip()
 
         # Validate URL
         if not url.startswith(("http://", "https://")):
             await message.answer(
-                "❌ URL должен начинаться с http:// или https://\n\n"
-                "Попробуйте ещё раз:",
-                reply_markup=Keyboards.cancel_only(),
+                f"{t('account.local_url_invalid')}\n\n"
+                f"URL: http:// or https://",
+                reply_markup=Keyboards.cancel_only(lang=lang),
                 parse_mode="HTML"
             )
             return
@@ -1235,27 +1328,31 @@ class AccountHandlers:
         await state.set_state(AccountStates.waiting_local_model_name)
 
         await message.answer(
-            "📝 <b>Название модели</b>\n\n"
-            "Введите название модели на вашем сервере.\n\n"
-            "<b>Примеры:</b>\n"
+            f"{t('account.local_model_name')}\n\n"
+            f"{t('account.local_enter_model')}\n\n"
+            "<b>Examples:</b>\n"
             "• <code>llama-3.2-8b</code>\n"
             "• <code>mistral-7b-instruct</code>\n"
             "• <code>codestral-22b</code>\n"
-            "• <code>qwen2.5-coder-32b</code>\n\n"
-            "<i>Проверьте список моделей на вашем сервере</i>",
-            reply_markup=Keyboards.cancel_only(),
+            "• <code>qwen2.5-coder-32b</code>",
+            reply_markup=Keyboards.cancel_only(lang=lang),
             parse_mode="HTML"
         )
 
     async def handle_local_model_name_input(self, message: Message, state: FSMContext):
         """Handle local model name input"""
+        user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         model_name = message.text.strip()
 
         if not model_name:
             await message.answer(
-                "❌ Название модели не может быть пустым.\n\n"
-                "Введите название модели:",
-                reply_markup=Keyboards.cancel_only()
+                f"{t('error.invalid_input')}\n\n"
+                f"{t('account.local_enter_name_prompt')}",
+                reply_markup=Keyboards.cancel_only(lang=lang)
             )
             return
 
@@ -1264,24 +1361,27 @@ class AccountHandlers:
         await state.set_state(AccountStates.waiting_local_display_name)
 
         await message.answer(
-            "🏷️ <b>Имя для отображения</b>\n\n"
-            f"Введите понятное имя для этой модели\n"
-            f"(например: 'Мой LMStudio' или 'Локальная Llama').\n\n"
-            f"Или нажмите кнопку чтобы использовать '{model_name}':",
-            reply_markup=Keyboards.local_model_skip_name(model_name),
+            f"🏷️ <b>{t('account.local_enter_display')}</b>\n\n"
+            f"{t('account.local_display_example')}\n\n"
+            f"{t('account.local_skip_name', name=model_name)}:",
+            reply_markup=Keyboards.local_model_skip_name(model_name, lang=lang),
             parse_mode="HTML"
         )
 
     async def handle_local_display_name_input(self, message: Message, state: FSMContext):
         """Handle local model display name input"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         display_name = message.text.strip()
 
         if not display_name:
             await message.answer(
-                "❌ Имя не может быть пустым.\n\n"
-                "Введите имя для отображения:",
-                reply_markup=Keyboards.cancel_only()
+                f"{t('error.invalid_input')}\n\n"
+                f"{t('account.local_enter_display_prompt')}",
+                reply_markup=Keyboards.cancel_only(lang=lang)
             )
             return
 
@@ -1304,6 +1404,9 @@ class AccountHandlers:
     ):
         """Complete local model setup"""
         user_id = event.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Get stored data
         data = await state.get_data()
@@ -1314,13 +1417,13 @@ class AccountHandlers:
             # Something went wrong, start over
             if isinstance(event, CallbackQuery):
                 await event.message.edit_text(
-                    "❌ Ошибка: данные настройки потеряны. Начните заново.",
-                    reply_markup=Keyboards.cancel_only()
+                    t("account.local_error_data"),
+                    reply_markup=Keyboards.cancel_only(lang=lang)
                 )
             else:
                 await event.answer(
-                    "❌ Ошибка: данные настройки потеряны. Начните заново.",
-                    reply_markup=Keyboards.cancel_only()
+                    t("account.local_error_data"),
+                    reply_markup=Keyboards.cancel_only(lang=lang)
                 )
             await state.clear()
             return
@@ -1337,11 +1440,11 @@ class AccountHandlers:
         await state.clear()
 
         text = (
-            f"✅ <b>Локальная модель настроена!</b>\n\n"
-            f"Имя: {display_name}\n"
-            f"URL: <code>{url}</code>\n"
-            f"Модель: <code>{model_name}</code>\n\n"
-            f"Теперь все запросы идут на локальный сервер."
+            f"{t('account.local_success')}\n\n"
+            f"Name: {display_name}\n"
+            f"{t('account.local_url', url=url)}\n"
+            f"{t('account.local_model', model=model_name)}\n\n"
+            f"{t('account.confirm_switch_claude_note')}"
         )
 
         creds_info = self.account_service.get_credentials_info()
@@ -1354,7 +1457,8 @@ class AccountHandlers:
                     has_credentials=creds_info.exists,
                     current_model=model_name,
                     show_back=True,
-                    back_to="menu:main"
+                    back_to="menu:main",
+                    lang=lang
                 ),
                 parse_mode="HTML"
             )
@@ -1366,7 +1470,8 @@ class AccountHandlers:
                     has_credentials=creds_info.exists,
                     current_model=model_name,
                     show_back=True,
-                    back_to="menu:main"
+                    back_to="menu:main",
+                    lang=lang
                 ),
                 parse_mode="HTML"
             )
@@ -1378,30 +1483,31 @@ class AccountHandlers:
     async def _start_zai_api_key_setup(self, callback: CallbackQuery, state: FSMContext):
         """Start z.ai API key setup flow - ask for API key"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Check if user already has a key
         has_key = await self.account_service.has_zai_api_key(user_id)
 
-        text = (
-            "🔑 <b>Настройка API ключа z.ai</b>\n\n"
-        )
+        text = f"{t('account.zai_setup_title')}\n\n"
 
         if has_key:
-            text += "✅ <i>У вас уже есть сохранённый ключ.</i>\n\n"
+            text += f"✅ <i>{t('account.zai_key_saved')}</i>\n\n"
 
         text += (
-            "Введите ваш API ключ z.ai (ZhipuAI).\n\n"
-            "<b>Как получить ключ:</b>\n"
-            "1. Зарегистрируйтесь на <a href=\"https://open.bigmodel.cn\">open.bigmodel.cn</a>\n"
-            "2. Перейдите в раздел API Keys\n"
-            "3. Создайте новый ключ\n\n"
-            "<i>Ключ будет проверен перед сохранением.</i>"
+            f"{t('account.zai_enter_key')}\n\n"
+            f"<b>Get key:</b>\n"
+            f"1. <a href=\"https://open.bigmodel.cn\">open.bigmodel.cn</a>\n"
+            f"2. API Keys\n"
+            f"3. Create key\n\n"
+            f"{t('account.zai_auth_note')}"
         )
 
         await state.set_state(AccountStates.waiting_zai_api_key)
         await callback.message.edit_text(
             text,
-            reply_markup=Keyboards.zai_api_key_input(has_existing_key=has_key),
+            reply_markup=Keyboards.zai_api_key_input(has_existing_key=has_key, lang=lang),
             parse_mode="HTML",
             disable_web_page_preview=True
         )
@@ -1410,12 +1516,16 @@ class AccountHandlers:
     async def handle_zai_api_key_input(self, message: Message, state: FSMContext):
         """Handle z.ai API key input from user"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         api_key = message.text.strip()
 
         # Check for cancel commands
         if api_key.lower() in ("отмена", "cancel", "/cancel"):
             await state.clear()
-            await message.answer("Настройка отменена. Используйте /account для настроек.")
+            await message.answer(t("account.zai_cancelled"))
             return
 
         # Delete the user's message containing the API key for security
@@ -1425,7 +1535,7 @@ class AccountHandlers:
             pass  # May not have permission
 
         # Show processing message
-        processing_msg = await message.answer("⏳ Проверяю API ключ...")
+        processing_msg = await message.answer(t("status.processing"))
 
         # Validate and save the key
         success, result_msg, settings = await self.account_service.set_zai_api_key(user_id, api_key)
@@ -1439,8 +1549,7 @@ class AccountHandlers:
 
             await processing_msg.edit_text(
                 f"{result_msg}\n\n"
-                f"Теперь вы можете использовать z.ai API.\n"
-                f"Ваш ключ будет использоваться для всех запросов.",
+                f"{t('account.confirm_switch_zai_note')}",
                 reply_markup=Keyboards.account_menu(
                     current_mode=settings.auth_mode.value,
                     has_credentials=creds_info.exists,
@@ -1448,7 +1557,8 @@ class AccountHandlers:
                     current_model=settings.model,
                     has_zai_key=True,
                     show_back=True,
-                    back_to="menu:main"
+                    back_to="menu:main",
+                    lang=lang
                 ),
                 parse_mode="HTML"
             )
@@ -1456,29 +1566,37 @@ class AccountHandlers:
         else:
             # Key is invalid
             await processing_msg.edit_text(
-                f"{result_msg}\n\n"
-                f"Введите другой ключ или нажмите Отмена.",
-                reply_markup=Keyboards.zai_api_key_input(has_existing_key=False),
+                f"{t('account.zai_key_error', error=result_msg)}\n\n"
+                f"{t('account.zai_key_retry')}",
+                reply_markup=Keyboards.zai_api_key_input(has_existing_key=False, lang=lang),
                 parse_mode="HTML"
             )
 
     async def _handle_zai_delete_key(self, callback: CallbackQuery, state: FSMContext):
         """Delete z.ai API key"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         success, message = await self.account_service.delete_zai_api_key(user_id)
 
         if success:
             await self._show_menu(callback, state)
-            await callback.answer("✅ API ключ удалён")
+            await callback.answer(t("account.zai_key_deleted"))
         else:
             await callback.answer(message, show_alert=True)
 
     async def handle_local_cancel_text(self, message: Message, state: FSMContext):
         """Handle cancel text during local model setup"""
+        user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         if message.text and message.text.lower() in ("отмена", "cancel", "/cancel"):
             await state.clear()
-            await message.answer("Настройка отменена. Используйте /account для настроек.")
+            await message.answer(t("account.zai_cancelled"))
         else:
             current_state = await state.get_state()
             if current_state == AccountStates.waiting_local_url:

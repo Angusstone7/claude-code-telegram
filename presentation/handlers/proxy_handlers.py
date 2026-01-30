@@ -34,25 +34,37 @@ def get_proxy_input_step(user_id: int) -> Optional[str]:
 class ProxyHandlers:
     """Handlers for proxy settings management via Telegram"""
 
-    def __init__(self, proxy_service: ProxyService):
+    def __init__(self, proxy_service: ProxyService, account_service=None):
         self.proxy_service = proxy_service
+        self.account_service = account_service
+
+    async def _get_user_lang(self, user_id: int) -> str:
+        """Get user's language preference"""
+        if self.account_service:
+            lang = await self.account_service.get_user_language(user_id)
+            if lang:
+                return lang
+        return "ru"
 
     async def handle_proxy_menu(self, callback: CallbackQuery, **kwargs) -> None:
         """Show proxy settings menu"""
-        user_id = UserId(callback.from_user.id)
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         # Get current proxy
-        proxy_config = await self.proxy_service.get_effective_proxy(user_id)
+        proxy_config = await self.proxy_service.get_effective_proxy(UserId(user_id))
 
         has_proxy = proxy_config is not None and proxy_config.enabled
-        proxy_status = proxy_config.mask_credentials() if has_proxy else "Не настроен"
+        proxy_status = proxy_config.mask_credentials() if has_proxy else t("proxy.no_proxy").replace("📡 ", "")
 
-        keyboard = Keyboards.proxy_settings_menu(has_proxy, proxy_status)
+        keyboard = Keyboards.proxy_settings_menu(has_proxy, proxy_status, lang=lang)
 
         await callback.message.edit_text(
-            "⚙️ <b>Настройки прокси</b>\n\n"
-            f"Текущий статус: {proxy_status}\n\n"
-            "Прокси используется для доступа к claude.ai и внешним API.",
+            f"{t('proxy.title')}\n\n"
+            f"{t('proxy.current', proxy=proxy_status)}\n\n"
+            "Proxy is used for access to claude.ai and external APIs.",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -60,11 +72,16 @@ class ProxyHandlers:
 
     async def handle_proxy_setup(self, callback: CallbackQuery, **kwargs) -> None:
         """Start proxy setup wizard"""
-        keyboard = Keyboards.proxy_type_selection()
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
+        keyboard = Keyboards.proxy_type_selection(lang=lang)
 
         await callback.message.edit_text(
-            "🔧 <b>Настройка прокси</b>\n\n"
-            "Шаг 1: Выберите тип прокси",
+            f"{t('proxy.setup')}\n\n"
+            f"{t('proxy.type_select')}",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -149,26 +166,30 @@ class ProxyHandlers:
             proxy_setup_state[user_id].pop("step", None)  # Clear input step
 
             # If credentials were parsed from URL, save and go directly to scope selection
+            lang = await self._get_user_lang(user_id)
+            from shared.i18n import get_translator
+            t = get_translator(lang)
+
             if username and password:
                 proxy_setup_state[user_id]["username"] = username
                 proxy_setup_state[user_id]["password"] = password
 
-                keyboard = Keyboards.proxy_scope_selection()
+                keyboard = Keyboards.proxy_scope_selection(lang=lang)
                 await message.answer(
-                    f"✅ <b>Прокси настроен из URL</b>\n\n"
-                    f"Тип: {proxy_setup_state[user_id]['type'].upper()}\n"
-                    f"Адрес: <code>{host}:{port}</code>\n"
-                    f"Авторизация: ✓\n\n"
-                    "📍 Для кого настроить прокси?",
+                    f"✅ Proxy configured from URL\n\n"
+                    f"Type: {proxy_setup_state[user_id]['type'].upper()}\n"
+                    f"Address: <code>{host}:{port}</code>\n"
+                    f"Auth: ✓\n\n"
+                    f"{t('proxy.scope_prompt')}",
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
             else:
                 # Ask about auth
-                keyboard = Keyboards.proxy_auth_options()
+                keyboard = Keyboards.proxy_auth_options(lang=lang)
                 await message.answer(
-                    f"✅ Адрес: <code>{host}:{port}</code>\n\n"
-                    "Шаг 3: Требуется ли авторизация?",
+                    f"✅ Address: <code>{host}:{port}</code>\n\n"
+                    f"{t('proxy.auth_prompt')}",
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
@@ -210,13 +231,16 @@ class ProxyHandlers:
             )
         else:
             # No auth, ask for scope
+            lang = await self._get_user_lang(user_id)
+            from shared.i18n import get_translator
+            t = get_translator(lang)
+
             proxy_setup_state[user_id]["username"] = None
             proxy_setup_state[user_id]["password"] = None
 
-            keyboard = Keyboards.proxy_scope_selection()
+            keyboard = Keyboards.proxy_scope_selection(lang=lang)
             await callback.message.edit_text(
-                "📍 <b>Область применения</b>\n\n"
-                "Для кого настроить прокси?",
+                f"{t('proxy.scope_prompt')}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -226,9 +250,12 @@ class ProxyHandlers:
     async def handle_proxy_credentials_input(self, message: Message, **kwargs) -> None:
         """Handle username:password input"""
         user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         if user_id not in proxy_setup_state:
-            await message.answer("❌ Сессия настройки истекла")
+            await message.answer(t("error.session_expired"))
             return
 
         try:
@@ -247,17 +274,16 @@ class ProxyHandlers:
             proxy_setup_state[user_id].pop("step", None)  # Clear input step
 
             # Ask for scope
-            keyboard = Keyboards.proxy_scope_selection()
+            keyboard = Keyboards.proxy_scope_selection(lang=lang)
             await message.answer(
-                "✅ Учетные данные сохранены\n\n"
-                "📍 Для кого настроить прокси?",
+                f"✅ Credentials saved\n\n"
+                f"{t('proxy.scope_prompt')}",
                 reply_markup=keyboard
             )
 
         except ValueError:
             await message.answer(
-                "❌ Неверный формат!\n\n"
-                "Отправьте в формате: <code>username:password</code>",
+                t("proxy.invalid_format"),
                 parse_mode="HTML"
             )
 
@@ -300,25 +326,30 @@ class ProxyHandlers:
             proxy_config = await self.proxy_service.get_effective_proxy(telegram_user_id)
             success, message = await self.proxy_service.test_proxy(proxy_config)
 
-            scope_text = "глобально" if is_global else "для вас"
+            lang = await self._get_user_lang(user_id)
+            from shared.i18n import get_translator
+            t = get_translator(lang)
+
+            scope_text = t("proxy.scope_global").replace("🌍 ", "") if is_global else t("proxy.scope_user").replace("👤 ", "")
 
             if success:
-                keyboard = Keyboards.proxy_confirm_test(True)
+                keyboard = Keyboards.proxy_confirm_test(True, lang=lang)
                 await callback.message.edit_text(
-                    f"✅ <b>Прокси настроен {scope_text}</b>\n\n"
-                    f"Тип: {proxy_type.value.upper()}\n"
-                    f"Адрес: {host}:{port}\n\n"
-                    f"Результат теста:\n{message}",
+                    f"{t('proxy.test_success')}\n\n"
+                    f"Type: {proxy_type.value.upper()}\n"
+                    f"Address: {host}:{port}\n"
+                    f"Scope: {scope_text}\n\n"
+                    f"Test result:\n{message}",
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
             else:
-                keyboard = Keyboards.proxy_confirm_test(False)
+                keyboard = Keyboards.proxy_confirm_test(False, lang=lang)
                 await callback.message.edit_text(
-                    f"⚠️ <b>Прокси настроен, но тест не прошел</b>\n\n"
-                    f"Тип: {proxy_type.value.upper()}\n"
-                    f"Адрес: {host}:{port}\n\n"
-                    f"Ошибка: {message}",
+                    f"{t('proxy.test_failed')}\n\n"
+                    f"Type: {proxy_type.value.upper()}\n"
+                    f"Address: {host}:{port}\n\n"
+                    f"Error: {message}",
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
