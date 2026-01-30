@@ -163,6 +163,10 @@ class MessageCoordinator:
         """Set YOLO mode for user"""
         self._user_state.set_yolo_mode(user_id, enabled)
 
+    async def load_yolo_mode(self, user_id: int) -> bool:
+        """Load YOLO mode from DB if not already loaded"""
+        return await self._user_state.load_yolo_mode(user_id)
+
     # Step Streaming Mode - delegate to user_state
     def is_step_streaming_mode(self, user_id: int) -> bool:
         """Check if step streaming mode is enabled"""

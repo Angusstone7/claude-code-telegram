@@ -61,9 +61,11 @@ class MenuHandlers:
 
     # ============== Helper Methods ==============
 
-    def _get_yolo_enabled(self, user_id: int) -> bool:
-        """Check if YOLO mode is enabled for user"""
+    async def _get_yolo_enabled(self, user_id: int) -> bool:
+        """Check if YOLO mode is enabled for user (loads from DB if needed)"""
         if self.message_handlers:
+            # Load from DB if not already loaded in memory
+            await self.message_handlers.load_yolo_mode(user_id)
             return self.message_handlers.is_yolo_mode(user_id)
         return False
 
@@ -143,7 +145,7 @@ class MenuHandlers:
 
         # Gather state info
         project_name, working_dir = await self._get_project_info(user_id)
-        yolo_enabled = self._get_yolo_enabled(user_id)
+        yolo_enabled = await self._get_yolo_enabled(user_id)
         has_task = self._is_task_running(user_id)
 
         # Build status text
@@ -227,7 +229,7 @@ class MenuHandlers:
         user_id = callback.from_user.id
 
         project_name, working_dir = await self._get_project_info(user_id)
-        yolo_enabled = self._get_yolo_enabled(user_id)
+        yolo_enabled = await self._get_yolo_enabled(user_id)
         has_task = self._is_task_running(user_id)
 
         project_info = f"📂 {project_name}" if project_name else "📂 Нет проекта"
@@ -543,7 +545,7 @@ class MenuHandlers:
 
         if not action:
             # Show settings submenu
-            yolo_enabled = self._get_yolo_enabled(user_id)
+            yolo_enabled = await self._get_yolo_enabled(user_id)
             step_streaming = self._get_step_streaming_enabled(user_id)
             auth_mode, has_creds = await self._get_auth_info(user_id)
 
@@ -608,6 +610,8 @@ class MenuHandlers:
         elif action == "yolo":
             # Toggle YOLO mode
             if self.message_handlers:
+                # Load from DB first to get actual current state
+                await self.message_handlers.load_yolo_mode(user_id)
                 current = self.message_handlers.is_yolo_mode(user_id)
                 new_state = not current
                 self.message_handlers.set_yolo_mode(user_id, new_state)
@@ -657,7 +661,7 @@ class MenuHandlers:
                     )
 
                 auth_mode, has_creds = await self._get_auth_info(user_id)
-                yolo = self._get_yolo_enabled(user_id)
+                yolo = await self._get_yolo_enabled(user_id)
 
                 await callback.message.edit_text(
                     text,

@@ -137,6 +137,10 @@ class MessageHandlersFacade:
         """Check YOLO mode - delegates to coordinator"""
         return self._coordinator.is_yolo_mode(user_id)
 
+    async def load_yolo_mode(self, user_id: int) -> bool:
+        """Load YOLO mode from DB if not already loaded - delegates to coordinator"""
+        return await self._coordinator.load_yolo_mode(user_id)
+
     def set_yolo_mode(self, user_id: int, enabled: bool):
         """Set YOLO mode - delegates to coordinator"""
         return self._coordinator.set_yolo_mode(user_id, enabled)
