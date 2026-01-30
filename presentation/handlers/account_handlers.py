@@ -24,7 +24,6 @@ from application.services.account_service import (
     CredentialsInfo,
     LocalModelConfig,
     CREDENTIALS_PATH,
-    CLAUDE_PROXY,
 )
 from presentation.keyboards.keyboards import Keyboards, CallbackData
 
@@ -44,7 +43,7 @@ class OAuthLoginSession:
     6. Wait for completion
     """
 
-    def __init__(self, user_id: int, proxy_url: str = CLAUDE_PROXY):
+    def __init__(self, user_id: int, proxy_url: Optional[str] = None):
         self.user_id = user_id
         self.proxy_url = proxy_url
         self.process: Optional[asyncio.subprocess.Process] = None
@@ -56,11 +55,12 @@ class OAuthLoginSession:
         """Build environment for OAuth login (proxy, no API keys, headless)"""
         env = os.environ.copy()
 
-        # Set proxy for accessing claude.ai
-        env["HTTP_PROXY"] = self.proxy_url
-        env["HTTPS_PROXY"] = self.proxy_url
-        env["http_proxy"] = self.proxy_url
-        env["https_proxy"] = self.proxy_url
+        # Set proxy for accessing claude.ai (if configured)
+        if self.proxy_url:
+            env["HTTP_PROXY"] = self.proxy_url
+            env["HTTPS_PROXY"] = self.proxy_url
+            env["http_proxy"] = self.proxy_url
+            env["https_proxy"] = self.proxy_url
 
         # Bypass proxy for local network addresses
         env["NO_PROXY"] = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
@@ -541,7 +541,7 @@ class AccountHandlers:
             text = (
                 f"☁️ <b>Переключить на Claude Account?</b>\n\n"
                 f"Подписка: {sub}\n"
-                f"Прокси: {CLAUDE_PROXY[:30]}...\n\n"
+                f"Прокси: Настройки → 🌐 Прокси\n\n"
                 f"Все запросы будут идти через вашу подписку Claude."
             )
         else:
@@ -622,7 +622,7 @@ class AccountHandlers:
             text += f"  Статус: ❌ credentials не найден\n"
             text += f"  Путь: <code>{CREDENTIALS_PATH}</code>\n"
 
-        text += f"\n<b>Прокси:</b> <code>{CLAUDE_PROXY[:40]}...</code>"
+        text += f"\n<b>Прокси:</b> Настройки → 🌐 Прокси"
 
         await callback.message.edit_text(
             text,
