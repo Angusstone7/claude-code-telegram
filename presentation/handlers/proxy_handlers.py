@@ -309,43 +309,55 @@ def register_proxy_handlers(dp, handlers: ProxyHandlers):
 
     # Callback для меню настроек прокси
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_menu(c),
+        handlers.handle_proxy_menu,
         F.data == "menu:proxy"
     )
 
     # Callback для начала настройки
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_setup(c),
+        handlers.handle_proxy_setup,
         F.data == "proxy:setup"
     )
 
-    # Callback для выбора типа прокси
+    # Callback для выбора типа прокси - нужен wrapper для извлечения параметра
+    async def handle_type(c):
+        proxy_type = c.data.split(":")[2]
+        await handlers.handle_proxy_type_selection(c, proxy_type)
+
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_type_selection(c, c.data.split(":")[2]),
+        handle_type,
         F.data.startswith("proxy:type:")
     )
 
     # Callback для выбора авторизации
+    async def handle_auth(c):
+        with_auth = c.data.split(":")[2] == "yes"
+        await handlers.handle_proxy_auth_selection(c, with_auth)
+
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_auth_selection(c, c.data.split(":")[2] == "yes"),
+        handle_auth,
         F.data.startswith("proxy:auth:")
     )
 
     # Callback для выбора области (scope)
+    async def handle_scope(c):
+        is_global = c.data.split(":")[2] == "global"
+        await handlers.handle_proxy_scope_selection(c, is_global)
+
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_scope_selection(c, c.data.split(":")[2] == "global"),
+        handle_scope,
         F.data.startswith("proxy:scope:")
     )
 
     # Callback для теста прокси
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_test(c),
+        handlers.handle_proxy_test,
         F.data == "proxy:test"
     )
 
     # Callback для отключения прокси
     dp.callback_query.register(
-        lambda c: handlers.handle_proxy_disable(c),
+        handlers.handle_proxy_disable,
         F.data == "proxy:disable"
     )
 
