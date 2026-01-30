@@ -24,7 +24,9 @@
       "Bash(git push:*)",
       "Bash(python:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Restore ICommandExecutionService interface removed during refactoring\n\nSSHCommandExecutor depends on this interface but it was removed as \"dead code\".\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(docker-compose logs:*)"
+      "Bash(docker-compose logs:*)",
+      "Skill(ralph-loop:ralph-loop)",
+      "Skill(ralph-loop:ralph-loop:*)"
     ]
   }
 }
