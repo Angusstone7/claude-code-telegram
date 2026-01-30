@@ -118,6 +118,16 @@ class Application:
         self._register_handlers()
 
         # Register middleware
+        # Rate limiting FIRST (before auth to prevent DoS)
+        from presentation.middleware.rate_limit import RateLimitMiddleware
+        admin_ids = self.container.config.admin_ids or []
+        self.dp.message.middleware(RateLimitMiddleware(
+            rate_limit=0.5,  # 2 сообщения в секунду
+            burst=5,  # Максимум 5 сообщений мгновенно
+            admin_ids=admin_ids,  # Admins без ограничений
+        ))
+        logger.info("✓ RateLimitMiddleware registered (0.5s per message, burst=5)")
+
         self.dp.message.middleware(AuthMiddleware(self.container.bot_service()))
         self.dp.callback_query.middleware(CallbackAuthMiddleware(self.container.bot_service()))
 
