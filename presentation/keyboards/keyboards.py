@@ -5,6 +5,136 @@ from typing import List, Optional, Dict
 class Keyboards:
     """Factory class for creating keyboard layouts"""
 
+    # ============== Proxy Settings Keyboards ==============
+    # NOTE: Moved to top to ensure loading (debug for AttributeError)
+
+    @staticmethod
+    def proxy_settings_menu(has_proxy: bool = False, proxy_status: str = "") -> InlineKeyboardMarkup:
+        """
+        Proxy settings main menu.
+
+        Args:
+            has_proxy: Whether proxy is currently configured
+            proxy_status: Current proxy status text
+        """
+        buttons = []
+
+        if has_proxy:
+            buttons.append([
+                InlineKeyboardButton(text=f"📡 Текущий прокси: {proxy_status}", callback_data="proxy:status")
+            ])
+            buttons.append([
+                InlineKeyboardButton(text="🔄 Изменить прокси", callback_data="proxy:change"),
+                InlineKeyboardButton(text="🧪 Тест", callback_data="proxy:test")
+            ])
+            buttons.append([
+                InlineKeyboardButton(text="❌ Отключить прокси", callback_data="proxy:disable")
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="➕ Настроить прокси", callback_data="proxy:setup")
+            ])
+
+        buttons.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:settings")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def proxy_type_selection() -> InlineKeyboardMarkup:
+        """Select proxy type"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="🌐 HTTP", callback_data="proxy:type:http"),
+                InlineKeyboardButton(text="🔒 HTTPS", callback_data="proxy:type:https")
+            ],
+            [
+                InlineKeyboardButton(text="🧦 SOCKS5", callback_data="proxy:type:socks5")
+            ],
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def proxy_auth_options() -> InlineKeyboardMarkup:
+        """Proxy authentication options"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="🔓 Без авторизации", callback_data="proxy:auth:no")
+            ],
+            [
+                InlineKeyboardButton(text="🔐 С логином/паролем", callback_data="proxy:auth:yes")
+            ],
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def proxy_scope_selection() -> InlineKeyboardMarkup:
+        """Select proxy scope (user or global)"""
+        buttons = [
+            [
+                InlineKeyboardButton(text="👤 Только для меня", callback_data="proxy:scope:user")
+            ],
+            [
+                InlineKeyboardButton(text="🌍 Глобально (для всех)", callback_data="proxy:scope:global")
+            ],
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
+            ]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def proxy_confirm_test(success: bool) -> InlineKeyboardMarkup:
+        """Confirm proxy test result"""
+        if success:
+            buttons = [
+                [
+                    InlineKeyboardButton(text="✅ Сохранить", callback_data="proxy:save")
+                ],
+                [
+                    InlineKeyboardButton(text="🔄 Изменить", callback_data="proxy:change")
+                ],
+                [
+                    InlineKeyboardButton(text="❌ Отменить", callback_data="proxy:cancel")
+                ]
+            ]
+        else:
+            buttons = [
+                [
+                    InlineKeyboardButton(text="🔄 Повторить тест", callback_data="proxy:test")
+                ],
+                [
+                    InlineKeyboardButton(text="✏️ Изменить настройки", callback_data="proxy:change")
+                ],
+                [
+                    InlineKeyboardButton(text="❌ Отменить", callback_data="proxy:cancel")
+                ]
+            ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def is_proxy_callback(callback_data: str) -> bool:
+        """Check if this is a proxy settings callback"""
+        return callback_data.startswith("proxy:")
+
+    @staticmethod
+    def parse_proxy_callback(callback_data: str) -> Dict[str, str]:
+        """Parse proxy callback data"""
+        parts = callback_data.split(":")
+        result = {"action": parts[1] if len(parts) > 1 else ""}
+        if len(parts) > 2:
+            result["subaction"] = parts[2]
+        if len(parts) > 3:
+            result["value"] = ":".join(parts[3:])
+        return result
+
     # ============== Main Inline Menu System ==============
 
     @staticmethod
@@ -1744,131 +1874,3 @@ class CallbackData:
             result["value"] = ":".join(parts[2:])
         return result
 
-    # ============== Proxy Settings Keyboards ==============
-
-    @staticmethod
-    def proxy_settings_menu(has_proxy: bool = False, proxy_status: str = "") -> InlineKeyboardMarkup:
-        """
-        Proxy settings main menu.
-
-        Args:
-            has_proxy: Whether proxy is currently configured
-            proxy_status: Current proxy status text
-        """
-        buttons = []
-
-        if has_proxy:
-            buttons.append([
-                InlineKeyboardButton(text=f"📡 Текущий прокси: {proxy_status}", callback_data="proxy:status")
-            ])
-            buttons.append([
-                InlineKeyboardButton(text="🔄 Изменить прокси", callback_data="proxy:change"),
-                InlineKeyboardButton(text="🧪 Тест", callback_data="proxy:test")
-            ])
-            buttons.append([
-                InlineKeyboardButton(text="❌ Отключить прокси", callback_data="proxy:disable")
-            ])
-        else:
-            buttons.append([
-                InlineKeyboardButton(text="➕ Настроить прокси", callback_data="proxy:setup")
-            ])
-
-        buttons.append([
-            InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:settings")
-        ])
-
-        return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    @staticmethod
-    def proxy_type_selection() -> InlineKeyboardMarkup:
-        """Select proxy type"""
-        buttons = [
-            [
-                InlineKeyboardButton(text="🌐 HTTP", callback_data="proxy:type:http"),
-                InlineKeyboardButton(text="🔒 HTTPS", callback_data="proxy:type:https")
-            ],
-            [
-                InlineKeyboardButton(text="🧦 SOCKS5", callback_data="proxy:type:socks5")
-            ],
-            [
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
-            ]
-        ]
-        return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    @staticmethod
-    def proxy_auth_options() -> InlineKeyboardMarkup:
-        """Proxy authentication options"""
-        buttons = [
-            [
-                InlineKeyboardButton(text="🔓 Без авторизации", callback_data="proxy:auth:no")
-            ],
-            [
-                InlineKeyboardButton(text="🔐 С логином/паролем", callback_data="proxy:auth:yes")
-            ],
-            [
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
-            ]
-        ]
-        return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    @staticmethod
-    def proxy_scope_selection() -> InlineKeyboardMarkup:
-        """Select proxy scope (user or global)"""
-        buttons = [
-            [
-                InlineKeyboardButton(text="👤 Только для меня", callback_data="proxy:scope:user")
-            ],
-            [
-                InlineKeyboardButton(text="🌍 Глобально (для всех)", callback_data="proxy:scope:global")
-            ],
-            [
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="proxy:cancel")
-            ]
-        ]
-        return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    @staticmethod
-    def proxy_confirm_test(success: bool) -> InlineKeyboardMarkup:
-        """Confirm proxy test result"""
-        if success:
-            buttons = [
-                [
-                    InlineKeyboardButton(text="✅ Сохранить", callback_data="proxy:save")
-                ],
-                [
-                    InlineKeyboardButton(text="🔄 Изменить", callback_data="proxy:change")
-                ],
-                [
-                    InlineKeyboardButton(text="❌ Отменить", callback_data="proxy:cancel")
-                ]
-            ]
-        else:
-            buttons = [
-                [
-                    InlineKeyboardButton(text="🔄 Повторить тест", callback_data="proxy:test")
-                ],
-                [
-                    InlineKeyboardButton(text="✏️ Изменить настройки", callback_data="proxy:change")
-                ],
-                [
-                    InlineKeyboardButton(text="❌ Отменить", callback_data="proxy:cancel")
-                ]
-            ]
-        return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    @staticmethod
-    def is_proxy_callback(callback_data: str) -> bool:
-        """Check if this is a proxy settings callback"""
-        return callback_data.startswith("proxy:")
-
-    @staticmethod
-    def parse_proxy_callback(callback_data: str) -> Dict[str, str]:
-        """Parse proxy callback data"""
-        parts = callback_data.split(":")
-        result = {"action": parts[1] if len(parts) > 1 else ""}
-        if len(parts) > 2:
-            result["subaction"] = parts[2]
-        if len(parts) > 3:
-            result["value"] = ":".join(parts[3:])
-        return result
