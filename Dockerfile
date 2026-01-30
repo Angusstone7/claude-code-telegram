@@ -32,10 +32,17 @@ RUN git clone --depth 1 https://github.com/anthropics/claude-plugins-official.gi
 
 WORKDIR /app
 
+# Cache bust argument - changes with each commit
+ARG CACHE_BUST=1
+RUN echo "Cache bust: $CACHE_BUST"
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Debug: verify keyboards.py has proxy methods
+RUN grep -n "proxy_settings_menu" presentation/keyboards/keyboards.py || echo "ERROR: proxy_settings_menu not found!"
 
 # Build Telegram MCP server
 WORKDIR /app/telegram-mcp
