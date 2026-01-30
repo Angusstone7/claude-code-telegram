@@ -129,7 +129,8 @@ class CommandHandlers:
                 working_dir=working_dir,
                 project_name=project_name,
                 yolo_enabled=yolo_enabled,
-                has_active_task=has_task
+                has_active_task=has_task,
+                lang=user_lang
             )
         )
 

@@ -67,6 +67,14 @@ class MenuHandlers:
 
     # ============== Helper Methods ==============
 
+    async def _get_user_lang(self, user_id: int) -> str:
+        """Get user's language preference"""
+        if self.account_service:
+            lang = await self.account_service.get_user_language(user_id)
+            if lang:
+                return lang
+        return "ru"
+
     async def _get_yolo_enabled(self, user_id: int) -> bool:
         """Check if YOLO mode is enabled for user (loads from DB if needed)"""
         if self.message_handlers:
@@ -149,16 +157,21 @@ class MenuHandlers:
         """Show main menu"""
         user_id = message.from_user.id
 
+        # Get user's language
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         # Gather state info
         project_name, working_dir = await self._get_project_info(user_id)
         yolo_enabled = await self._get_yolo_enabled(user_id)
         has_task = self._is_task_running(user_id)
 
         # Build status text
-        project_info = f"📂 {project_name}" if project_name else "📂 Нет проекта"
-        path_info = f"📁 `{working_dir}`"
-        yolo_info = "⚡ YOLO: ON" if yolo_enabled else ""
-        task_info = "🔄 Задача выполняется" if has_task else ""
+        project_info = t("start.project", name=project_name) if project_name else t("start.no_project")
+        path_info = f"📁 <code>{working_dir}</code>"
+        yolo_info = t("start.yolo_on") if yolo_enabled else ""
+        task_info = t("start.task_running") if has_task else ""
 
         status_parts = [project_info, path_info]
         if yolo_info:
@@ -169,14 +182,15 @@ class MenuHandlers:
         text = (
             f"🤖 <b>Claude Code Telegram</b>\n\n"
             f"{chr(10).join(status_parts)}\n\n"
-            f"Выберите раздел:"
+            f"<i>{t('start.ready')}</i>"
         )
 
         keyboard = Keyboards.main_menu_inline(
             working_dir=working_dir,
             project_name=project_name,
             yolo_enabled=yolo_enabled,
-            has_active_task=has_task
+            has_active_task=has_task,
+            lang=lang
         )
 
         if edit and hasattr(message, 'edit_text'):
@@ -288,7 +302,8 @@ class MenuHandlers:
                 working_dir=working_dir,
                 project_name=project_name,
                 yolo_enabled=yolo_enabled,
-                has_active_task=has_task
+                has_active_task=has_task,
+                lang=lang_code
             )
         )
 
@@ -297,35 +312,39 @@ class MenuHandlers:
     async def _show_main(self, callback: CallbackQuery):
         """Show main menu via callback"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         project_name, working_dir = await self._get_project_info(user_id)
         yolo_enabled = await self._get_yolo_enabled(user_id)
         has_task = self._is_task_running(user_id)
 
-        project_info = f"📂 {project_name}" if project_name else "📂 Нет проекта"
+        project_info = t("start.project", name=project_name) if project_name else t("start.no_project")
         path_info = f"📁 <code>{working_dir}</code>"
 
         status_parts = [project_info, path_info]
         if yolo_enabled:
-            status_parts.append("⚡ YOLO: ON")
+            status_parts.append(t("start.yolo_on"))
         if has_task:
-            status_parts.append("🔄 Задача выполняется")
+            status_parts.append(t("start.task_running"))
 
         text = (
             f"🤖 <b>Claude Code Telegram</b>\n\n"
             f"{chr(10).join(status_parts)}\n\n"
-            f"Выберите раздел:"
+            f"<i>{t('start.ready')}</i>"
         )
 
         await callback.message.edit_text(
             text,
+            parse_mode="HTML",
             reply_markup=Keyboards.main_menu_inline(
                 working_dir=working_dir,
                 project_name=project_name,
                 yolo_enabled=yolo_enabled,
-                has_active_task=has_task
-            ),
-            parse_mode="HTML"
+                has_active_task=has_task,
+                lang=lang
+            )
         )
         await callback.answer()
 
@@ -334,20 +353,23 @@ class MenuHandlers:
     async def _handle_projects(self, callback: CallbackQuery, action: str, param: str, state: FSMContext):
         """Handle projects submenu"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         if not action:
             # Show projects submenu
             project_name, working_dir = await self._get_project_info(user_id)
 
             text = (
-                f"📂 <b>Проекты</b>\n\n"
-                f"Текущий проект: <b>{project_name or 'не выбран'}</b>\n"
-                f"Путь: <code>{working_dir}</code>"
+                f"{t('projects.title')}\n\n"
+                f"{t('projects.current', name=project_name) if project_name else t('projects.no_current')}\n"
+                f"📁 <code>{working_dir}</code>"
             )
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_projects(working_dir, project_name),
+                reply_markup=Keyboards.menu_projects(working_dir, project_name, lang=lang),
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -422,25 +444,25 @@ class MenuHandlers:
     async def _handle_context(self, callback: CallbackQuery, action: str, param: str, state: FSMContext):
         """Handle context submenu"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         if not action:
             # Show context submenu
             ctx_name, msg_count, has_session = await self._get_context_info(user_id)
             project_name, _ = await self._get_project_info(user_id)
 
-            session_status = "📜 Есть сессия" if has_session else "✨ Чистый"
-
             text = (
-                f"💬 <b>Контекст</b>\n\n"
-                f"📂 Проект: {project_name or 'не выбран'}\n"
-                f"💬 Контекст: {ctx_name or 'не выбран'}\n"
-                f"📝 Сообщений: {msg_count}\n"
-                f"📌 Статус: {session_status}"
+                f"{t('context.title')}\n\n"
+                f"{t('start.project', name=project_name) if project_name else t('start.no_project')}\n"
+                f"{t('context.current', name=ctx_name) if ctx_name else t('context.no_current')}\n"
+                f"{t('context.messages', count=msg_count)}"
             )
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_context(ctx_name, msg_count, has_session),
+                reply_markup=Keyboards.menu_context(ctx_name, msg_count, has_session, lang=lang),
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -612,6 +634,9 @@ class MenuHandlers:
     async def _handle_settings(self, callback: CallbackQuery, action: str, param: str, state: FSMContext):
         """Handle settings submenu"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         if not action:
             # Show settings submenu
@@ -620,15 +645,15 @@ class MenuHandlers:
             auth_mode, has_creds = await self._get_auth_info(user_id)
 
             text = (
-                f"⚙️ <b>Настройки</b>\n\n"
-                f"⚡ YOLO режим: {'✅ Включён' if yolo_enabled else '❌ Выключен'}\n"
-                f"📊 Краткий режим: {'✅ Включён' if step_streaming else '❌ Выключен'}\n"
-                f"👤 Авторизация: {'☁️ Claude Account' if auth_mode == 'claude_account' else '🌐 z.ai API'}"
+                f"{t('settings.title')}\n\n"
+                f"{t('settings.yolo_on') if yolo_enabled else t('settings.yolo_off')}\n"
+                f"{t('settings.streaming_on') if step_streaming else t('settings.streaming_off')}\n"
+                f"👤 {'☁️ Claude Account' if auth_mode == 'claude_account' else '🌐 z.ai API'}"
             )
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_settings(yolo_enabled, step_streaming, auth_mode, has_creds),
+                reply_markup=Keyboards.menu_settings(yolo_enabled, step_streaming, auth_mode, has_creds, lang=lang),
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -686,27 +711,17 @@ class MenuHandlers:
                 new_state = not current
                 self.message_handlers.set_yolo_mode(user_id, new_state)
 
-                if new_state:
-                    text = (
-                        "🚀 <b>YOLO Mode: ON</b>\n\n"
-                        "⚡ Все операции выполняются автоматически!\n"
-                        "⚠️ Будьте осторожны - нет подтверждений!"
-                    )
-                else:
-                    text = (
-                        "🛡️ <b>YOLO Mode: OFF</b>\n\n"
-                        "Операции снова требуют подтверждения."
-                    )
+                text = t("settings.yolo_enabled") if new_state else t("settings.yolo_disabled")
 
                 auth_mode, has_creds = await self._get_auth_info(user_id)
                 step_streaming = self._get_step_streaming_enabled(user_id)
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.menu_settings(new_state, step_streaming, auth_mode, has_creds),
+                    reply_markup=Keyboards.menu_settings(new_state, step_streaming, auth_mode, has_creds, lang=lang),
                     parse_mode="HTML"
                 )
-                await callback.answer(f"YOLO режим {'включён' if new_state else 'выключен'}")
+                await callback.answer(t("settings.yolo_on") if new_state else t("settings.yolo_off"))
 
         elif action == "step_stream":
             # Toggle step streaming mode
@@ -715,30 +730,17 @@ class MenuHandlers:
                 new_state = not current
                 self.message_handlers.set_step_streaming_mode(user_id, new_state)
 
-                if new_state:
-                    text = (
-                        "📊 <b>Краткий режим: ON</b>\n\n"
-                        "Теперь вы видите только:\n"
-                        "• Названия операций и файлы\n"
-                        "• Статус: ✏️ → ✅\n"
-                        "• Сводку изменений (+5 -3 lines)\n\n"
-                        "<i>Код и полный вывод скрыты.</i>"
-                    )
-                else:
-                    text = (
-                        "📊 <b>Краткий режим: OFF</b>\n\n"
-                        "Полный вывод инструментов включён."
-                    )
+                text = t("settings.streaming_enabled") if new_state else t("settings.streaming_disabled")
 
                 auth_mode, has_creds = await self._get_auth_info(user_id)
                 yolo = await self._get_yolo_enabled(user_id)
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.menu_settings(yolo, new_state, auth_mode, has_creds),
+                    reply_markup=Keyboards.menu_settings(yolo, new_state, auth_mode, has_creds, lang=lang),
                     parse_mode="HTML"
                 )
-                await callback.answer(f"Краткий режим {'включён' if new_state else 'выключен'}")
+                await callback.answer(t("settings.streaming_on") if new_state else t("settings.streaming_off"))
 
         elif action == "login":
             # Show login prompt
@@ -917,16 +919,19 @@ class MenuHandlers:
     async def _handle_system(self, callback: CallbackQuery, action: str, param: str, state: FSMContext):
         """Handle system submenu"""
         user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
 
         if not action:
             # Show system submenu
             has_task = self._is_task_running(user_id)
 
-            text = "📊 <b>Система</b>\n\nМониторинг и управление"
+            text = f"{t('system.title')}"
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_system(has_task),
+                reply_markup=Keyboards.menu_system(has_task, lang=lang),
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -1151,13 +1156,18 @@ class MenuHandlers:
 
     async def _handle_help(self, callback: CallbackQuery, action: str, state: FSMContext):
         """Handle help submenu"""
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         if not action:
             # Show help submenu
-            text = "❓ <b>Справка</b>\n\nВыберите тему:"
+            text = f"{t('help.title')}"
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_help(),
+                reply_markup=Keyboards.menu_help(lang=lang),
                 parse_mode="HTML"
             )
             await callback.answer()

@@ -169,35 +169,39 @@ class Keyboards:
         working_dir: str = "/root",
         project_name: str = None,
         yolo_enabled: bool = False,
-        has_active_task: bool = False
+        has_active_task: bool = False,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """
         Main menu with inline buttons.
 
         This is the primary navigation interface, replacing individual commands.
         """
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         yolo_indicator = " ⚡" if yolo_enabled else ""
         task_indicator = " 🔄" if has_active_task else ""
 
         buttons = [
             # Row 1: Projects and Context
             [
-                InlineKeyboardButton(text="📂 Проекты", callback_data="menu:projects"),
-                InlineKeyboardButton(text="💬 Контекст", callback_data="menu:context"),
+                InlineKeyboardButton(text=t("menu.projects"), callback_data="menu:projects"),
+                InlineKeyboardButton(text=t("menu.context"), callback_data="menu:context"),
             ],
             # Row 2: Settings and Plugins
             [
-                InlineKeyboardButton(text=f"⚙️ Настройки{yolo_indicator}", callback_data="menu:settings"),
-                InlineKeyboardButton(text="🔌 Плагины", callback_data="menu:plugins"),
+                InlineKeyboardButton(text=f"{t('menu.settings')}{yolo_indicator}", callback_data="menu:settings"),
+                InlineKeyboardButton(text="🔌 " + t("plugins.title").replace("🔌 ", ""), callback_data="menu:plugins"),
             ],
             # Row 3: System and Help
             [
-                InlineKeyboardButton(text=f"📊 Система{task_indicator}", callback_data="menu:system"),
-                InlineKeyboardButton(text="❓ Справка", callback_data="menu:help"),
+                InlineKeyboardButton(text=f"{t('menu.system')}{task_indicator}", callback_data="menu:system"),
+                InlineKeyboardButton(text=t("menu.help"), callback_data="menu:help"),
             ],
             # Row 4: Close
             [
-                InlineKeyboardButton(text="❌ Закрыть", callback_data="menu:close"),
+                InlineKeyboardButton(text=t("menu.close"), callback_data="menu:close"),
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -205,18 +209,22 @@ class Keyboards:
     @staticmethod
     def menu_projects(
         current_dir: str = "/root",
-        project_name: str = None
+        project_name: str = None,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """Projects submenu - navigation and project management"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="📁 Навигация", callback_data="menu:projects:browse"),
+                InlineKeyboardButton(text=t("projects.browse"), callback_data="menu:projects:browse"),
             ],
             [
-                InlineKeyboardButton(text="🔄 Сменить проект", callback_data="menu:projects:change"),
+                InlineKeyboardButton(text="🔄 " + t("projects.switch").rstrip(":"), callback_data="menu:projects:change"),
             ],
             [
-                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+                InlineKeyboardButton(text=t("menu.back"), callback_data="menu:main"),
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -225,22 +233,26 @@ class Keyboards:
     def menu_context(
         context_name: str = None,
         message_count: int = 0,
-        has_session: bool = False
+        has_session: bool = False,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """Context submenu - session and context management"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="✨ Новый контекст", callback_data="menu:context:fresh"),
+                InlineKeyboardButton(text=t("context.new"), callback_data="menu:context:fresh"),
             ],
             [
-                InlineKeyboardButton(text="💬 Контексты", callback_data="menu:context:list"),
-                InlineKeyboardButton(text="📋 Переменные", callback_data="menu:context:vars"),
+                InlineKeyboardButton(text=t("context.list"), callback_data="menu:context:list"),
+                InlineKeyboardButton(text=t("vars.title"), callback_data="menu:context:vars"),
             ],
             [
-                InlineKeyboardButton(text="🗑 Очистить историю", callback_data="menu:context:clear"),
+                InlineKeyboardButton(text=t("context.clear"), callback_data="menu:context:clear"),
             ],
             [
-                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+                InlineKeyboardButton(text=t("menu.back"), callback_data="menu:main"),
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -250,9 +262,13 @@ class Keyboards:
         yolo_enabled: bool = False,
         step_streaming: bool = False,
         auth_mode: str = "zai_api",
-        has_credentials: bool = False
+        has_credentials: bool = False,
+        lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """Settings submenu - account and preferences"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         yolo_status = "✅" if yolo_enabled else "❌"
         step_status = "✅" if step_streaming else "❌"
         auth_icon = "☁️" if auth_mode == "claude_account" else "🌐"
@@ -260,100 +276,106 @@ class Keyboards:
         buttons = [
             [
                 InlineKeyboardButton(
-                    text=f"👤 Аккаунт ({auth_icon})",
+                    text=f"{t('settings.account')} ({auth_icon})",
                     callback_data="menu:settings:account"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text=f"⚡ YOLO режим: {yolo_status}",
+                    text=f"{t('settings.yolo')}: {yolo_status}",
                     callback_data="menu:settings:yolo"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text=f"📊 Краткий режим: {step_status}",
+                    text=f"{t('settings.streaming')}: {step_status}",
                     callback_data="menu:settings:step_stream"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🌍 Глобальные переменные",
+                    text=t("vars.global"),
                     callback_data="menu:settings:global_vars"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="📊 Лимиты Claude.ai",
+                    text="📊 Claude.ai Limits",
                     callback_data="menu:settings:usage"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🔐 Авторизация Claude",
+                    text="🔐 Claude Auth",
                     callback_data="menu:settings:login"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🌐 Прокси",
+                    text=t("settings.proxy"),
                     callback_data="menu:proxy"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🌍 Язык / Language",
+                    text=t("settings.language"),
                     callback_data="menu:settings:language"
                 ),
             ],
             [
-                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+                InlineKeyboardButton(text=t("menu.back"), callback_data="menu:main"),
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def menu_system(has_active_task: bool = False) -> InlineKeyboardMarkup:
+    def menu_system(has_active_task: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
         """System submenu - monitoring and control"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="📊 Статус Claude", callback_data="menu:system:status"),
+                InlineKeyboardButton(text="📊 Claude Status", callback_data="menu:system:status"),
             ],
             [
-                InlineKeyboardButton(text="💻 Метрики", callback_data="menu:system:metrics"),
-                InlineKeyboardButton(text="🐳 Docker", callback_data="menu:system:docker"),
+                InlineKeyboardButton(text=t("system.metrics"), callback_data="menu:system:metrics"),
+                InlineKeyboardButton(text=t("system.docker"), callback_data="menu:system:docker"),
             ],
             [
-                InlineKeyboardButton(text="🔍 Диагностика", callback_data="menu:system:diagnose"),
+                InlineKeyboardButton(text="🔍 Diagnostics", callback_data="menu:system:diagnose"),
             ],
         ]
 
         if has_active_task:
             buttons.append([
-                InlineKeyboardButton(text="🛑 Отменить задачу", callback_data="menu:system:cancel"),
+                InlineKeyboardButton(text=t("cancel.done").replace("❌ ", "🛑 "), callback_data="menu:system:cancel"),
             ])
 
         buttons.append([
-            InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+            InlineKeyboardButton(text=t("menu.back"), callback_data="menu:main"),
         ])
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod
-    def menu_help() -> InlineKeyboardMarkup:
+    def menu_help(lang: str = "ru") -> InlineKeyboardMarkup:
         """Help submenu"""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
         buttons = [
             [
-                InlineKeyboardButton(text="📖 Как работать с ботом", callback_data="menu:help:usage"),
+                InlineKeyboardButton(text=t("help.commands"), callback_data="menu:help:usage"),
             ],
             [
-                InlineKeyboardButton(text="🔌 О плагинах", callback_data="menu:help:plugins"),
+                InlineKeyboardButton(text=t("plugins.title"), callback_data="menu:help:plugins"),
             ],
             [
-                InlineKeyboardButton(text="⚡ О YOLO режиме", callback_data="menu:help:yolo"),
+                InlineKeyboardButton(text=t("settings.yolo"), callback_data="menu:help:yolo"),
             ],
             [
-                InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main"),
+                InlineKeyboardButton(text=t("menu.back"), callback_data="menu:main"),
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
