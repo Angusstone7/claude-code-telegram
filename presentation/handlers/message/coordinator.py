@@ -97,7 +97,7 @@ class MessageCoordinator:
             file_handler=None,  # Will be set after file_handler is created
         )
 
-        # Create file handler
+        # Create file handler (pass text_handler for task execution)
         self._file_handler = FileMessageHandler(
             bot_service=bot_service,
             user_state=user_state,
@@ -106,7 +106,7 @@ class MessageCoordinator:
             variable_manager=variable_manager,
             plan_manager=plan_manager,
             file_processor_service=file_processor_service,
-            ai_request_handler=self._ai_request_handler,
+            ai_request_handler=self._text_handler,  # Pass text_handler, not ai_request_handler
             project_service=project_service,
             sdk_service=sdk_service,
             claude_proxy=claude_proxy,
