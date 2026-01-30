@@ -4,8 +4,16 @@ services:
     container_name: claude_agent
     restart: always
     env_file: .env
+    environment:
+      # SSH configuration for Docker management on host
+      # These can be overridden in .env file
+      - SSH_HOST=${SSH_HOST:-host.docker.internal}
+      - SSH_PORT=${SSH_PORT:-22}
+      - SSH_KEY_PATH=${SSH_KEY_PATH:-/app/bot_key}
     volumes:
-      # Пробрасываем приватный ключ внутрь контейнера (только для чтения)
+      # SSH private key for host access (read-only)
+      # Generate with: ssh-keygen -t ed25519 -f ./bot_key -N ""
+      # Add public key to host: cat ./bot_key.pub >> ~/.ssh/authorized_keys
       - ./bot_key:/app/bot_key:ro
       # Persistent storage for database and logs
       - ./data:/app/data
@@ -15,4 +23,5 @@ services:
       # Claude Code sessions - preserves conversation history and context compression
       - ./claude_sessions:/root/.claude
     extra_hosts:
+      # Allows container to connect to host machine via SSH
       - "host.docker.internal:host-gateway"
