@@ -14,7 +14,20 @@ logger = logging.getLogger(__name__)
 
 
 # State для хранения промежуточных данных настройки прокси
+# Структура: {user_id: {"type": "http", "host": "...", "port": 123, "step": "host|credentials"}}
 proxy_setup_state: Dict[int, Dict] = {}
+
+
+def is_proxy_input_active(user_id: int) -> bool:
+    """Check if user is in proxy setup input mode"""
+    return user_id in proxy_setup_state and "step" in proxy_setup_state[user_id]
+
+
+def get_proxy_input_step(user_id: int) -> Optional[str]:
+    """Get current proxy input step: 'host' or 'credentials'"""
+    if user_id in proxy_setup_state:
+        return proxy_setup_state[user_id].get("step")
+    return None
 
 
 class ProxyHandlers:
@@ -70,6 +83,7 @@ class ProxyHandlers:
             proxy_setup_state[user_id] = {}
 
         proxy_setup_state[user_id]["type"] = proxy_type
+        proxy_setup_state[user_id]["step"] = "host"  # Expecting host:port input
 
         await callback.message.edit_text(
             f"✅ Выбран тип: <b>{proxy_type.upper()}</b>\n\n"
@@ -81,43 +95,94 @@ class ProxyHandlers:
         await callback.answer()
 
     async def handle_proxy_host_input(self, message: Message, **kwargs) -> None:
-        """Handle proxy host:port input"""
+        """Handle proxy host:port input (also accepts full URL format)"""
         user_id = message.from_user.id
 
         if user_id not in proxy_setup_state:
             await message.answer("❌ Сессия настройки истекла. Начните заново через /settings")
             return
 
+        text = message.text.strip()
+        host = None
+        port = None
+        username = None
+        password = None
+
         try:
-            # Parse host:port
-            parts = message.text.strip().split(":")
-            if len(parts) != 2:
-                raise ValueError("Invalid format")
+            # Try to parse as full URL (http://user:pass@host:port)
+            if "://" in text:
+                from urllib.parse import urlparse
+                parsed = urlparse(text)
 
-            host = parts[0].strip()
-            port = int(parts[1].strip())
+                if parsed.hostname:
+                    host = parsed.hostname
+                if parsed.port:
+                    port = parsed.port
+                if parsed.username:
+                    username = parsed.username
+                if parsed.password:
+                    password = parsed.password
 
-            if not host or not (1 <= port <= 65535):
-                raise ValueError("Invalid host or port")
+                # Update proxy type from URL scheme if provided
+                scheme = parsed.scheme.lower()
+                if scheme in ("http", "https", "socks4", "socks5"):
+                    proxy_setup_state[user_id]["type"] = scheme
+
+            # Try to parse as simple host:port format
+            else:
+                parts = text.split(":")
+                if len(parts) == 2:
+                    host = parts[0].strip()
+                    port = int(parts[1].strip())
+
+            # Validate parsed values
+            if not host or not port:
+                raise ValueError("Could not parse host or port")
+
+            if not (1 <= port <= 65535):
+                raise ValueError("Invalid port number")
 
             # Save to state
             proxy_setup_state[user_id]["host"] = host
             proxy_setup_state[user_id]["port"] = port
+            proxy_setup_state[user_id].pop("step", None)  # Clear input step
 
-            # Ask about auth
-            keyboard = Keyboards.proxy_auth_options()
-            await message.answer(
-                f"✅ Адрес: <code>{host}:{port}</code>\n\n"
-                "Шаг 3: Требуется ли авторизация?",
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+            # If credentials were parsed from URL, save and go directly to scope selection
+            if username and password:
+                proxy_setup_state[user_id]["username"] = username
+                proxy_setup_state[user_id]["password"] = password
 
-        except ValueError:
+                keyboard = Keyboards.proxy_scope_selection()
+                await message.answer(
+                    f"✅ <b>Прокси настроен из URL</b>\n\n"
+                    f"Тип: {proxy_setup_state[user_id]['type'].upper()}\n"
+                    f"Адрес: <code>{host}:{port}</code>\n"
+                    f"Авторизация: ✓\n\n"
+                    "📍 Для кого настроить прокси?",
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+            else:
+                # Ask about auth
+                keyboard = Keyboards.proxy_auth_options()
+                await message.answer(
+                    f"✅ Адрес: <code>{host}:{port}</code>\n\n"
+                    "Шаг 3: Требуется ли авторизация?",
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+
+        except (ValueError, AttributeError) as e:
+            logger.debug(f"Proxy input parse error: {e}")
             await message.answer(
                 "❌ Неверный формат!\n\n"
-                "Отправьте в формате: <code>host:port</code>\n"
-                "Например: <code>148.253.208.124:3128</code>",
+                "Поддерживаемые форматы:\n"
+                "• <code>host:port</code>\n"
+                "• <code>http://host:port</code>\n"
+                "• <code>http://user:pass@host:port</code>\n\n"
+                "Например:\n"
+                "• <code>148.253.208.124:3128</code>\n"
+                "• <code>http://proxyuser:pass@148.253.208.124:3128</code>",
                 parse_mode="HTML"
             )
 
@@ -135,6 +200,7 @@ class ProxyHandlers:
             return
 
         if needs_auth:
+            proxy_setup_state[user_id]["step"] = "credentials"  # Expecting credentials input
             await callback.message.edit_text(
                 "🔐 <b>Авторизация</b>\n\n"
                 "Отправьте логин и пароль в формате:\n"
@@ -177,6 +243,7 @@ class ProxyHandlers:
 
             proxy_setup_state[user_id]["username"] = username
             proxy_setup_state[user_id]["password"] = password
+            proxy_setup_state[user_id].pop("step", None)  # Clear input step
 
             # Ask for scope
             keyboard = Keyboards.proxy_scope_selection()
@@ -303,9 +370,39 @@ class ProxyHandlers:
         await callback.answer()
 
 
+class ProxyInputFilter:
+    """Filter for proxy text input messages"""
+
+    def __init__(self, step: str):
+        self.step = step
+
+    async def __call__(self, message) -> bool:
+        if not message.text:
+            return False
+        user_id = message.from_user.id
+        return get_proxy_input_step(user_id) == self.step
+
+
 def register_proxy_handlers(dp, handlers: ProxyHandlers):
     """Register proxy handlers with dispatcher"""
     from aiogram import F
+
+    # === MESSAGE HANDLERS (must be registered FIRST to intercept proxy input) ===
+    # These handlers catch text input when user is in proxy setup mode
+
+    # Handler for host:port input (step="host")
+    dp.message.register(
+        handlers.handle_proxy_host_input,
+        ProxyInputFilter("host")
+    )
+
+    # Handler for username:password input (step="credentials")
+    dp.message.register(
+        handlers.handle_proxy_credentials_input,
+        ProxyInputFilter("credentials")
+    )
+
+    # === CALLBACK HANDLERS ===
 
     # Callback для меню настроек прокси
     dp.callback_query.register(
