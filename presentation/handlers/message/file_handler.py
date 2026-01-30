@@ -94,7 +94,7 @@ class FileMessageHandler(BaseMessageHandler):
         pass
 
     # Copied from legacy messages.py:468-481
-    async def handle_document(self, message: Message) -> None:
+    async def handle_document(self, message: Message, **kwargs) -> None:
         """Handle document (file) messages"""
         document = message.document
         if not document:
@@ -110,7 +110,7 @@ class FileMessageHandler(BaseMessageHandler):
         )
 
     # Copied from legacy messages.py:483-502
-    async def handle_photo(self, message: Message) -> None:
+    async def handle_photo(self, message: Message, **kwargs) -> None:
         """Handle photo messages"""
         if not message.photo:
             return

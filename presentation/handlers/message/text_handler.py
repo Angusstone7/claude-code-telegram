@@ -72,7 +72,8 @@ class TextMessageHandler(BaseMessageHandler):
         message: Message,
         prompt_override: str = None,
         force_new_session: bool = False,
-        _from_batcher: bool = False
+        _from_batcher: bool = False,
+        **kwargs
     ) -> None:
         """Handle text messages - main entry point"""
         user_id = message.from_user.id

@@ -267,13 +267,13 @@ class MessageCoordinator:
         return self._plan_handler.set_expecting_plan_clarification(user_id, expecting)
 
     # Message Handlers - delegate to appropriate handlers
-    async def handle_document(self, message: Message) -> None:
+    async def handle_document(self, message: Message, **kwargs) -> None:
         """Handle document messages"""
-        return await self._file_handler.handle_document(message)
+        return await self._file_handler.handle_document(message, **kwargs)
 
-    async def handle_photo(self, message: Message) -> None:
+    async def handle_photo(self, message: Message, **kwargs) -> None:
         """Handle photo messages"""
-        return await self._file_handler.handle_photo(message)
+        return await self._file_handler.handle_photo(message, **kwargs)
 
     async def handle_text(self, message: Message, **kwargs) -> None:
         """Handle text messages"""

@@ -125,13 +125,13 @@ class MessageHandlersFacade:
         """Handle text message - delegates to coordinator"""
         return await self._coordinator.handle_text(message, **kwargs)
 
-    async def handle_document(self, message: Message) -> None:
+    async def handle_document(self, message: Message, **kwargs) -> None:
         """Handle document - delegates to coordinator"""
-        return await self._coordinator.handle_document(message)
+        return await self._coordinator.handle_document(message, **kwargs)
 
-    async def handle_photo(self, message: Message) -> None:
+    async def handle_photo(self, message: Message, **kwargs) -> None:
         """Handle photo - delegates to coordinator"""
-        return await self._coordinator.handle_photo(message)
+        return await self._coordinator.handle_photo(message, **kwargs)
 
     def is_yolo_mode(self, user_id: int) -> bool:
         """Check YOLO mode - delegates to coordinator"""
