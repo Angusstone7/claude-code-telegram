@@ -575,7 +575,8 @@ class AccountService:
 
     def get_env_for_mode(
         self, mode: AuthMode, local_config: Optional[LocalModelConfig] = None,
-        zai_api_key: Optional[str] = None
+        zai_api_key: Optional[str] = None,
+        proxy_config: Optional["ProxyConfig"] = None
     ) -> dict[str, str]:
         """
         Build environment variables for the specified auth mode.
@@ -584,6 +585,7 @@ class AccountService:
             mode: Authorization mode
             local_config: Local model configuration (required for LOCAL_MODEL mode)
             zai_api_key: User-provided z.ai API key (overrides env var)
+            proxy_config: Pre-fetched proxy configuration (from async ProxyService)
 
         Returns:
             Dict of environment variables to set
@@ -624,24 +626,19 @@ class AccountService:
             # Setting OAuth token as ANTHROPIC_API_KEY causes "Invalid API key" error
             logger.debug("Claude Account mode: SDK will read OAuth credentials from ~/.claude/.credentials.json")
 
-            # Set proxy for accessing claude.ai (from ProxyService if available)
-            if self.proxy_service:
-                from domain.value_objects.user_id import UserId
-                proxy_config = await self.proxy_service.get_effective_proxy(UserId(user_id))
-                if proxy_config and proxy_config.enabled:
-                    proxy_env = self.proxy_service.get_env_dict(proxy_config)
-                    env.update(proxy_env)
-                    logger.debug(f"Claude Account mode: using proxy {proxy_config.mask_credentials()}")
-                else:
-                    # Bypass proxy for local network addresses
-                    env["NO_PROXY"] = NO_PROXY_VALUE
-                    env["no_proxy"] = NO_PROXY_VALUE
-                    logger.debug("Claude Account mode: no proxy configured")
-            else:
-                # Fallback: no proxy configured
+            # Set proxy for accessing claude.ai (from pre-fetched proxy_config)
+            if proxy_config and proxy_config.enabled:
+                proxy_env = proxy_config.to_env_dict()
+                env.update(proxy_env)
+                # Add NO_PROXY for local networks
                 env["NO_PROXY"] = NO_PROXY_VALUE
                 env["no_proxy"] = NO_PROXY_VALUE
-                logger.debug("Claude Account mode: ProxyService not available, no proxy")
+                logger.debug(f"Claude Account mode: using proxy {proxy_config.mask_credentials()}")
+            else:
+                # Bypass proxy for local network addresses
+                env["NO_PROXY"] = NO_PROXY_VALUE
+                env["no_proxy"] = NO_PROXY_VALUE
+                logger.debug("Claude Account mode: no proxy configured")
 
             # Remove ZhipuAI/model configuration (use official Claude API with SDK defaults)
             env["_REMOVE_ANTHROPIC_MODEL"] = "1"
@@ -674,7 +671,8 @@ class AccountService:
         mode: AuthMode,
         base_env: dict = None,
         local_config: Optional[LocalModelConfig] = None,
-        zai_api_key: Optional[str] = None
+        zai_api_key: Optional[str] = None,
+        proxy_config: Optional["ProxyConfig"] = None
     ) -> dict[str, str]:
         """
         Apply environment variables for the specified auth mode.
@@ -686,6 +684,7 @@ class AccountService:
             base_env: Base environment (defaults to os.environ)
             local_config: Local model configuration (required for LOCAL_MODEL mode)
             zai_api_key: User-provided z.ai API key (overrides env var)
+            proxy_config: Pre-fetched proxy configuration (from async ProxyService)
 
         Returns:
             New environment dict ready for subprocess/SDK
@@ -695,7 +694,7 @@ class AccountService:
         else:
             base_env = dict(base_env)
 
-        mode_env = self.get_env_for_mode(mode, local_config=local_config, zai_api_key=zai_api_key)
+        mode_env = self.get_env_for_mode(mode, local_config=local_config, zai_api_key=zai_api_key, proxy_config=proxy_config)
 
         # Handle removal markers
         if mode_env.pop("_REMOVE_ANTHROPIC_API_KEY", None):

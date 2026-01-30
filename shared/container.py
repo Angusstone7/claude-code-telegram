@@ -235,6 +235,7 @@ class Container:
                     plugins_dir=self.config.claude_plugins_dir,
                     enabled_plugins=enabled_plugins,
                     account_service=self.account_service(),
+                    proxy_service=self.proxy_service(),
                 )
             except ImportError:
                 logger.warning("Claude Agent SDK not available")

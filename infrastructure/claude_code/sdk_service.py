@@ -205,6 +205,7 @@ class ClaudeAgentSDKService:
         enabled_plugins: list[str] = None,  # For custom plugins only
         telegram_mcp_path: str = "/app/telegram-mcp/build/index.js",  # Path to telegram MCP server
         account_service: "AccountService" = None,  # For auth mode switching
+        proxy_service: "ProxyService" = None,  # For proxy configuration
     ):
         if not SDK_AVAILABLE:
             raise RuntimeError(
@@ -219,6 +220,7 @@ class ClaudeAgentSDKService:
         self.enabled_plugins = enabled_plugins or []
         self.telegram_mcp_path = telegram_mcp_path
         self.account_service = account_service  # Optional - for auth mode switching
+        self.proxy_service = proxy_service  # Optional - for proxy configuration
 
         # Active clients by user_id
         self._clients: dict[int, ClaudeSDKClient] = {}
@@ -266,11 +268,22 @@ class ClaudeAgentSDKService:
 
         try:
             settings = await self.account_service.get_settings(user_id)
-            # Pass local_config for LOCAL_MODEL mode and zai_api_key for ZAI_API mode
+
+            # Fetch proxy config from ProxyService (async) if available
+            proxy_config = None
+            if self.proxy_service:
+                try:
+                    from domain.value_objects.user_id import UserId
+                    proxy_config = await self.proxy_service.get_effective_proxy(UserId(user_id))
+                except Exception as e:
+                    logger.warning(f"[{user_id}] Error getting proxy config: {e}")
+
+            # Pass local_config for LOCAL_MODEL mode, zai_api_key for ZAI_API mode, and proxy_config
             env = self.account_service.apply_env_for_mode(
                 settings.auth_mode,
                 local_config=settings.local_model_config,
-                zai_api_key=settings.zai_api_key
+                zai_api_key=settings.zai_api_key,
+                proxy_config=proxy_config
             )
             logger.debug(f"[{user_id}] Using auth mode: {settings.auth_mode.value}")
             return env
