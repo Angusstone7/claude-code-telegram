@@ -94,6 +94,7 @@ class MessageCoordinator:
             use_sdk=True,  # Will be determined from sdk_service availability
             sdk_service=sdk_service,
             claude_proxy=claude_proxy,
+            file_handler=None,  # Will be set after file_handler is created
         )
 
         # Create file handler
@@ -106,7 +107,13 @@ class MessageCoordinator:
             plan_manager=plan_manager,
             file_processor_service=file_processor_service,
             ai_request_handler=self._ai_request_handler,
+            project_service=project_service,
+            sdk_service=sdk_service,
+            claude_proxy=claude_proxy,
         )
+
+        # Wire up file_handler to text_handler for reply file extraction
+        self._text_handler.file_handler = self._file_handler
 
         # Create HITL handler
         self._hitl_handler = HITLHandler(

@@ -47,6 +47,7 @@ class TextMessageHandler(BaseMessageHandler):
         use_sdk: bool = True,
         sdk_service=None,
         claude_proxy=None,
+        file_handler=None,
     ):
         super().__init__(
             bot_service=bot_service,
@@ -65,6 +66,7 @@ class TextMessageHandler(BaseMessageHandler):
         self.use_sdk = use_sdk
         self.sdk_service = sdk_service
         self.claude_proxy = claude_proxy
+        self.file_handler = file_handler
 
     # Copied from legacy messages.py:557-870
     async def handle_text(
@@ -402,8 +404,8 @@ class TextMessageHandler(BaseMessageHandler):
         self, reply_message: Message, bot: Bot
     ) -> Optional[tuple["ProcessedFile", str]]:
         """Extract file from reply message - delegate to file_handler"""
-        # This is implemented in file_handler.py
-        # For now, return None - will be fixed when we wire up file_handler
+        if self.file_handler:
+            return await self.file_handler._extract_reply_file_context(reply_message, bot)
         return None
 
     # === Input Handlers (to be copied) ===

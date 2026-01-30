@@ -12,6 +12,9 @@ from .base import BaseMessageHandler
 if TYPE_CHECKING:
     from application.services.bot_service import BotService
     from application.services.file_processor_service import FileProcessorService, ProcessedFile
+    from application.services.project_service import ProjectService
+    from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
+    from infrastructure.claude_code.sdk_service import ClaudeAgentSDKService
     from presentation.handlers.state.user_state import UserStateManager
     from presentation.handlers.state.hitl_manager import HITLManager
     from presentation.handlers.state.variable_manager import VariableInputManager
@@ -34,6 +37,9 @@ class FileMessageHandler(BaseMessageHandler):
         plan_manager: "PlanApprovalManager",
         file_processor_service: Optional["FileProcessorService"] = None,
         ai_request_handler=None,
+        project_service: Optional["ProjectService"] = None,
+        sdk_service: Optional["ClaudeAgentSDKService"] = None,
+        claude_proxy: Optional["ClaudeCodeProxyService"] = None,
     ):
         super().__init__(
             bot_service=bot_service,
@@ -45,8 +51,10 @@ class FileMessageHandler(BaseMessageHandler):
         )
         self.file_processor_service = file_processor_service
         self.ai_request_handler = ai_request_handler
+        self.project_service = project_service
+        self.sdk_service = sdk_service
+        self.claude_proxy = claude_proxy
 
-    # TODO: Copy from legacy messages.py:331-393
     async def _handle_file_message(
         self,
         message: Message,
@@ -56,10 +64,61 @@ class FileMessageHandler(BaseMessageHandler):
         mime_type: str,
         file_type_label: str = "Файл"
     ) -> None:
-        """Unified handler for document and photo messages"""
-        pass
+        """
+        Unified handler for document and photo messages.
 
-    # TODO: Copy from legacy messages.py:395-437
+        Eliminates code duplication between handle_document and handle_photo.
+        """
+        user_id = message.from_user.id
+        bot = message.bot
+
+        user = await self.bot_service.authorize_user(user_id)
+        if not user:
+            await message.answer("Вы не авторизованы для использования этого бота.")
+            return
+
+        if self._is_task_running(user_id):
+            await message.answer(
+                "Задача уже выполняется.\n\nДождитесь завершения или используйте /cancel",
+                reply_markup=Keyboards.claude_cancel(user_id)
+            )
+            return
+
+        if not self.file_processor_service:
+            await message.answer("Обработка файлов недоступна")
+            return
+
+        # Validate file
+        is_valid, error = self.file_processor_service.validate_file(filename, file_size)
+        if not is_valid:
+            await message.answer(f"{error}")
+            return
+
+        # Download file
+        try:
+            file = await bot.get_file(file_id)
+            file_content = await bot.download_file(file.file_path)
+        except Exception as e:
+            logger.error(f"Error downloading {file_type_label.lower()}: {e}")
+            await message.answer(f"Ошибка скачивания: {e}")
+            return
+
+        # Process file
+        processed = await self.file_processor_service.process_file(
+            file_content, filename, mime_type
+        )
+
+        if processed.error:
+            await message.answer(f"Ошибка обработки: {processed.error}")
+            return
+
+        caption = message.caption or ""
+
+        if caption:
+            await self._process_file_with_caption(message, processed, caption, file_type_label)
+        else:
+            await self._cache_file_for_reply(message, processed, file_type_label, user_id)
+
     async def _process_file_with_caption(
         self,
         message: Message,
@@ -67,10 +126,46 @@ class FileMessageHandler(BaseMessageHandler):
         caption: str,
         file_type_label: str
     ) -> None:
-        """Process file when caption is provided"""
-        pass
+        """Process file when caption is provided."""
+        user_id = message.from_user.id
 
-    # TODO: Copy from legacy messages.py:439-464
+        if caption.startswith("/"):
+            # Plugin command with file
+            self.file_context_manager.cache_file(message.message_id, processed)
+            parts = caption.split(maxsplit=1)
+            command_name = parts[0][1:]
+            command_args = parts[1] if len(parts) > 1 else ""
+            skill_command = f"/{command_name}"
+            if command_args:
+                skill_command += f" {command_args}"
+
+            prompt = f"run {skill_command}"
+            working_dir = await self.get_project_working_dir(user_id)
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed, prompt, working_dir=working_dir
+            )
+
+            file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
+            await message.answer(
+                f"<b>Команда плагина:</b> <code>{skill_command}</code>\n"
+                f"{file_info}\n\nПередаю в Claude Code...",
+                parse_mode="HTML"
+            )
+            if not self.ai_request_handler:
+                await message.answer("⚠️ Обработчик запросов недоступен")
+                return
+            await self.ai_request_handler.handle_text(message, prompt_override=enriched_prompt, force_new_session=True)
+        else:
+            # Regular task with file
+            working_dir = await self.get_project_working_dir(user_id)
+            enriched_prompt = self.file_processor_service.format_for_prompt(
+                processed, caption, working_dir=working_dir
+            )
+            file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
+            task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+            await message.answer(f"Получен {file_type_label.lower()}: {file_info}\nЗадача: {task_preview}")
+            await self._execute_task_with_prompt(message, enriched_prompt)
+
     async def _cache_file_for_reply(
         self,
         message: Message,
@@ -78,20 +173,81 @@ class FileMessageHandler(BaseMessageHandler):
         file_type_label: str,
         user_id: int
     ) -> None:
-        """Cache file and prompt user to reply with task"""
-        pass
+        """Cache file and prompt user to reply with task."""
+        if file_type_label == "Изображение":
+            bot_msg = await message.answer(
+                "<b>Изображение получено</b>\n\n"
+                "Сделайте <b>reply</b> на это сообщение с текстом задачи.",
+                parse_mode="HTML"
+            )
+        else:
+            bot_msg = await message.answer(
+                f"<b>Файл получен:</b> {processed.filename}\n"
+                f"<b>Размер:</b> {processed.size_bytes // 1024} KB\n"
+                f"<b>Тип:</b> {processed.file_type.value}\n\n"
+                f"Сделайте <b>reply</b> на это сообщение с текстом задачи\n"
+                f"или командой плагина (например, <code>/ralph-loop</code>)",
+                parse_mode="HTML"
+            )
 
-    # TODO: Copy from legacy messages.py:504-550
+        self.file_context_manager.cache_file(bot_msg.message_id, processed)
+        logger.info(f"[{user_id}] {file_type_label} cached with bot message ID: {bot_msg.message_id}")
+
     async def _extract_reply_file_context(
         self, reply_message: Message, bot: Bot
     ) -> Optional[tuple["ProcessedFile", str]]:
         """Extract file from reply message"""
-        pass
+        if not self.file_processor_service:
+            return None
 
-    # TODO: Copy from legacy messages.py:552-555
+        if reply_message.document:
+            doc = reply_message.document
+            filename = doc.file_name or "unknown"
+            file_size = doc.file_size or 0
+
+            is_valid, _ = self.file_processor_service.validate_file(filename, file_size)
+            if not is_valid:
+                return None
+
+            try:
+                file = await bot.get_file(doc.file_id)
+                file_content = await bot.download_file(file.file_path)
+                processed = await self.file_processor_service.process_file(
+                    file_content, filename, doc.mime_type
+                )
+                if processed.is_valid:
+                    return (processed, reply_message.caption or "")
+            except Exception as e:
+                logger.error(f"Error extracting document from reply: {e}")
+                return None
+
+        if reply_message.photo:
+            photo = reply_message.photo[-1]
+            max_size = 5 * 1024 * 1024
+            if photo.file_size and photo.file_size > max_size:
+                return None
+
+            try:
+                file = await bot.get_file(photo.file_id)
+                file_content = await bot.download_file(file.file_path)
+                processed = await self.file_processor_service.process_file(
+                    file_content, f"image_{photo.file_unique_id}.jpg", "image/jpeg"
+                )
+                if processed.is_valid:
+                    return (processed, reply_message.caption or "")
+            except Exception as e:
+                logger.error(f"Error extracting photo from reply: {e}")
+                return None
+
+        return None
+
     async def _execute_task_with_prompt(self, message: Message, prompt: str) -> None:
         """Execute Claude task with given prompt"""
-        pass
+        if not self.ai_request_handler:
+            await message.answer("⚠️ Обработчик запросов недоступен")
+            return
+        # Use prompt_override instead of modifying frozen Message object
+        await self.ai_request_handler.handle_text(message, prompt_override=prompt)
 
     # Copied from legacy messages.py:468-481
     async def handle_document(self, message: Message, **kwargs) -> None:
@@ -130,3 +286,26 @@ class FileMessageHandler(BaseMessageHandler):
             mime_type="image/jpeg",
             file_type_label="Изображение"
         )
+
+    def _is_task_running(self, user_id: int) -> bool:
+        """Check if a task is already running for user"""
+        is_running = False
+        if self.sdk_service:
+            is_running = self.sdk_service.is_task_running(user_id)
+        if not is_running and self.claude_proxy:
+            is_running = self.claude_proxy.is_task_running(user_id)
+        return is_running
+
+    async def get_project_working_dir(self, user_id: int) -> str:
+        """Get working directory from current project (async, more accurate)"""
+        if self.project_service:
+            try:
+                from domain.value_objects.user_id import UserId
+                uid = UserId.from_int(user_id)
+                project = await self.project_service.get_current(uid)
+                if project and project.working_dir:
+                    return project.working_dir
+            except Exception as e:
+                logger.warning(f"Error getting project working_dir: {e}")
+        # Fallback to state
+        return self.user_state.get_working_dir(user_id)
