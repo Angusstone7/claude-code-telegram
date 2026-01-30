@@ -133,6 +133,13 @@ class Container:
             self._cache["account_repository"] = SQLiteAccountRepository()
         return self._cache["account_repository"]
 
+    def proxy_repository(self):
+        """Get or create ProxyRepository"""
+        if "proxy_repository" not in self._cache:
+            from infrastructure.persistence.sqlite_proxy_repository import SQLiteProxyRepository
+            self._cache["proxy_repository"] = SQLiteProxyRepository()
+        return self._cache["proxy_repository"]
+
     # === Service Layer ===
 
     def bot_service(self):
@@ -146,11 +153,21 @@ class Container:
             )
         return self._cache["bot_service"]
 
+    def proxy_service(self):
+        """Get or create ProxyService"""
+        if "proxy_service" not in self._cache:
+            from application.services.proxy_service import ProxyService
+            self._cache["proxy_service"] = ProxyService(self.proxy_repository())
+        return self._cache["proxy_service"]
+
     def account_service(self):
         """Get or create AccountService"""
         if "account_service" not in self._cache:
             from application.services.account_service import AccountService
-            self._cache["account_service"] = AccountService(self.account_repository())
+            self._cache["account_service"] = AccountService(
+                self.account_repository(),
+                self.proxy_service()
+            )
         return self._cache["account_service"]
 
     def project_service(self):
@@ -353,6 +370,15 @@ class Container:
             handlers.message_handlers = self.message_handlers()
             self._cache["account_handlers"] = handlers
         return self._cache["account_handlers"]
+
+    def proxy_handlers(self):
+        """Create ProxyHandlers with all dependencies"""
+        if "proxy_handlers" not in self._cache:
+            from presentation.handlers.proxy_handlers import ProxyHandlers
+            self._cache["proxy_handlers"] = ProxyHandlers(
+                proxy_service=self.proxy_service()
+            )
+        return self._cache["proxy_handlers"]
 
     def menu_handlers(self):
         """Create MenuHandlers with all dependencies"""

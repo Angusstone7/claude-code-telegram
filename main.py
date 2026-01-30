@@ -132,6 +132,7 @@ class Application:
         from presentation.handlers.callbacks import register_handlers as register_callback_handlers
         from presentation.handlers.account_handlers import register_account_handlers
         from presentation.handlers.menu_handlers import register_menu_handlers
+        from presentation.handlers.proxy_handlers import register_proxy_handlers
 
         # Account handlers (for /account command and mode switching)
         register_account_handlers(self.dp, self.container.account_handlers())
@@ -141,6 +142,9 @@ class Application:
 
         # Menu handlers - main inline menu system
         register_menu_handlers(self.dp, self.container.menu_handlers())
+
+        # Proxy handlers - proxy settings management
+        register_proxy_handlers(self.dp, self.container.proxy_handlers())
 
         # Message handlers (after commands - commands take priority)
         register_msg_handlers(self.dp, self.container.message_handlers())

@@ -19,9 +19,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Proxy for accessing claude.ai from Russia
-CLAUDE_PROXY = "http://proxyuser:!QAZ1qaz7@148.253.208.124:3128"
-
 # Local addresses that should bypass proxy
 NO_PROXY_VALUE = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,host.docker.internal,.local"
 
@@ -102,7 +99,7 @@ class AccountSettings:
     user_id: int
     auth_mode: AuthMode = AuthMode.ZAI_API
     model: Optional[str] = None  # Preferred model (e.g., "claude-sonnet-4-5" or "glm-4.7")
-    proxy_url: str = CLAUDE_PROXY
+    proxy_url: Optional[str] = None  # Managed via ProxyService
     local_model_config: Optional[LocalModelConfig] = None  # Config for LOCAL_MODEL mode
     yolo_mode: bool = False  # Auto-approve all operations
     zai_api_key: Optional[str] = None  # User-provided z.ai API key
@@ -157,8 +154,9 @@ class AccountService:
     - Building environment variables for each mode
     """
 
-    def __init__(self, repository: "SQLiteAccountRepository"):
+    def __init__(self, repository: "SQLiteAccountRepository", proxy_service: "ProxyService" = None):
         self.repository = repository
+        self.proxy_service = proxy_service
         self._upload_sessions: dict[int, asyncio.Event] = {}
 
     async def get_settings(self, user_id: int) -> AccountSettings:
@@ -626,23 +624,30 @@ class AccountService:
             # Setting OAuth token as ANTHROPIC_API_KEY causes "Invalid API key" error
             logger.debug("Claude Account mode: SDK will read OAuth credentials from ~/.claude/.credentials.json")
 
-            # Set proxy for accessing claude.ai
-            env["HTTP_PROXY"] = CLAUDE_PROXY
-            env["HTTPS_PROXY"] = CLAUDE_PROXY
-            env["http_proxy"] = CLAUDE_PROXY
-            env["https_proxy"] = CLAUDE_PROXY
-
-            # Bypass proxy for local network addresses
-            env["NO_PROXY"] = NO_PROXY_VALUE
-            env["no_proxy"] = NO_PROXY_VALUE
+            # Set proxy for accessing claude.ai (from ProxyService if available)
+            if self.proxy_service:
+                from domain.value_objects.user_id import UserId
+                proxy_config = await self.proxy_service.get_effective_proxy(UserId(user_id))
+                if proxy_config and proxy_config.enabled:
+                    proxy_env = self.proxy_service.get_env_dict(proxy_config)
+                    env.update(proxy_env)
+                    logger.debug(f"Claude Account mode: using proxy {proxy_config.mask_credentials()}")
+                else:
+                    # Bypass proxy for local network addresses
+                    env["NO_PROXY"] = NO_PROXY_VALUE
+                    env["no_proxy"] = NO_PROXY_VALUE
+                    logger.debug("Claude Account mode: no proxy configured")
+            else:
+                # Fallback: no proxy configured
+                env["NO_PROXY"] = NO_PROXY_VALUE
+                env["no_proxy"] = NO_PROXY_VALUE
+                logger.debug("Claude Account mode: ProxyService not available, no proxy")
 
             # Remove ZhipuAI/model configuration (use official Claude API with SDK defaults)
             env["_REMOVE_ANTHROPIC_MODEL"] = "1"
             env["_REMOVE_ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "1"
             env["_REMOVE_ANTHROPIC_DEFAULT_SONNET_MODEL"] = "1"
             env["_REMOVE_ANTHROPIC_DEFAULT_OPUS_MODEL"] = "1"
-
-            logger.debug(f"Claude Account mode: using SDK defaults, proxy={CLAUDE_PROXY[:30]}...")
 
         elif mode == AuthMode.LOCAL_MODEL and local_config:
             # Local model mode - use user-provided URL and model
