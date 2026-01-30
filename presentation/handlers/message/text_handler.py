@@ -94,7 +94,13 @@ class TextMessageHandler(BaseMessageHandler):
 
         # === FILE REPLY HANDLING ===
         reply = message.reply_to_message
-        if reply and self.file_context_manager.has_file(reply.message_id) and self.file_processor_service:
+
+        # Skip processing if this message already has enriched prompt (prevents infinite loop)
+        if kwargs.get('_file_processed'):
+            logger.debug(f"[{user_id}] File already processed, skipping file reply handling")
+            # Continue to normal text processing with the enriched prompt
+            pass
+        elif reply and self.file_context_manager.has_file(reply.message_id) and self.file_processor_service:
             processed_file = self.file_context_manager.pop_file(reply.message_id)
             # Get working directory for saving images (from project)
             working_dir = await self._get_project_working_dir(user_id)
@@ -103,8 +109,8 @@ class TextMessageHandler(BaseMessageHandler):
             )
             task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
             await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
-            # Execute task with file context and return
-            await self.handle_text(message, prompt_override=enriched_prompt)
+            # Execute task with file context and return (mark as processed to prevent re-processing)
+            await self.handle_text(message, prompt_override=enriched_prompt, _file_processed=True)
             return
 
         elif reply and (reply.document or reply.photo) and self.file_processor_service:
@@ -118,8 +124,8 @@ class TextMessageHandler(BaseMessageHandler):
                 )
                 task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
                 await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
-                # Execute task with file context and return
-                await self.handle_text(message, prompt_override=enriched_prompt)
+                # Execute task with file context and return (mark as processed to prevent re-processing)
+                await self.handle_text(message, prompt_override=enriched_prompt, _file_processed=True)
                 return
 
         # === SPECIAL INPUT MODES (не батчатся - обрабатываются сразу) ===

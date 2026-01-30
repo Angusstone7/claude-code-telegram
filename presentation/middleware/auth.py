@@ -26,6 +26,11 @@ class AuthMiddleware(BaseMiddleware):
             logger.warning("Message has no from_user")
             return
 
+        # Ignore messages from bots (including self)
+        if event.from_user.is_bot:
+            logger.debug(f"Ignoring message from bot: {event.from_user.id}")
+            return
+
         user_id = event.from_user.id
 
         # For /start command - allow without auth to create user
