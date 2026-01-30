@@ -34,10 +34,10 @@ class AuthMode(str, Enum):
 
 
 class ClaudeModel(str, Enum):
-    """Available Claude models"""
-    OPUS = "claude-opus-4-5"
-    SONNET = "claude-sonnet-4-5"
-    HAIKU = "claude-haiku-4"
+    """Available Claude models - use full model IDs for SDK compatibility"""
+    OPUS = "claude-opus-4-5-20251101"  # Opus 4.5 (October 2025)
+    SONNET = "claude-sonnet-4-20250514"  # Sonnet 4 (May 2025)
+    HAIKU = "claude-3-5-haiku-20241022"  # Haiku 3.5
 
     @classmethod
     def get_display_name(cls, model: str) -> str:
