@@ -220,13 +220,18 @@ class AccountService:
         """
         settings = await self.get_settings(user_id)
 
+        logger.debug(f"[{user_id}] get_model: auth_mode={settings.auth_mode}, model={settings.model}")
+
         if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
             # For Claude Account, only return model if it's an official Claude model
             # This prevents z.ai models like glm-4.7 from being sent to official API
             if settings.model and self._is_official_claude_model(settings.model):
                 # Normalize legacy "ClaudeModel.OPUS" → "claude-opus-4-5"
-                return self._normalize_model(settings.model)
+                normalized = self._normalize_model(settings.model)
+                logger.info(f"[{user_id}] get_model: returning {normalized} for Claude Account")
+                return normalized
             # No model or non-Claude model: SDK will use its default
+            logger.info(f"[{user_id}] get_model: returning None (model={settings.model}, is_official={self._is_official_claude_model(settings.model) if settings.model else False})")
             return None
 
         elif settings.auth_mode == AuthMode.LOCAL_MODEL:
