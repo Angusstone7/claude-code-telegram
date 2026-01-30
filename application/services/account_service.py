@@ -34,10 +34,10 @@ class AuthMode(str, Enum):
 
 
 class ClaudeModel(str, Enum):
-    """Available Claude models - use full model IDs for SDK compatibility"""
-    OPUS = "claude-opus-4-5-20251101"  # Opus 4.5 (October 2025)
-    SONNET = "claude-sonnet-4-20250514"  # Sonnet 4 (May 2025)
-    HAIKU = "claude-3-5-haiku-20241022"  # Haiku 3.5
+    """Available Claude models - use SDK aliases for proper resolution"""
+    OPUS = "opus"  # Alias → latest Opus (currently 4.5)
+    SONNET = "sonnet"  # Alias → latest Sonnet (currently 4.5)
+    HAIKU = "haiku"  # Alias → latest Haiku
 
     @classmethod
     def get_display_name(cls, model: str) -> str:
@@ -250,25 +250,33 @@ class AccountService:
         return settings.model
 
     def _is_official_claude_model(self, model: str) -> bool:
-        """Check if model is an official Claude model."""
+        """Check if model is an official Claude model (aliases or full IDs)."""
         official_models = {
-            # Actual model IDs
-            ClaudeModel.OPUS.value,
-            ClaudeModel.SONNET.value,
-            ClaudeModel.HAIKU.value,
-            # Legacy: str(Enum) returns "ClaudeModel.OPUS" not value
-            "ClaudeModel.OPUS",
-            "ClaudeModel.SONNET",
-            "ClaudeModel.HAIKU",
+            # Current aliases
+            "opus", "sonnet", "haiku",
+            # Legacy full model IDs (may be saved in DB)
+            "claude-opus-4-5", "claude-opus-4-5-20251101",
+            "claude-sonnet-4-5", "claude-sonnet-4-20250514",
+            "claude-haiku-4", "claude-3-5-haiku-20241022",
+            # Legacy enum string format
+            "ClaudeModel.OPUS", "ClaudeModel.SONNET", "ClaudeModel.HAIKU",
         }
         return model in official_models
 
     def _normalize_model(self, model: str) -> str:
-        """Convert legacy model strings to actual model IDs."""
+        """Convert legacy model strings to SDK aliases."""
         legacy_mapping = {
-            "ClaudeModel.OPUS": ClaudeModel.OPUS.value,
-            "ClaudeModel.SONNET": ClaudeModel.SONNET.value,
-            "ClaudeModel.HAIKU": ClaudeModel.HAIKU.value,
+            # Enum string format
+            "ClaudeModel.OPUS": "opus",
+            "ClaudeModel.SONNET": "sonnet",
+            "ClaudeModel.HAIKU": "haiku",
+            # Full model IDs → aliases
+            "claude-opus-4-5": "opus",
+            "claude-opus-4-5-20251101": "opus",
+            "claude-sonnet-4-5": "sonnet",
+            "claude-sonnet-4-20250514": "sonnet",
+            "claude-haiku-4": "haiku",
+            "claude-3-5-haiku-20241022": "haiku",
         }
         return legacy_mapping.get(model, model)
 
