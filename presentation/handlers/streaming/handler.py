@@ -360,7 +360,11 @@ class StreamingHandler:
             self._current_todo_html = ""
             return
 
-        lines = ["📋 <b>План:</b>"]
+        # Count stats for header
+        completed = sum(1 for t in todos if t.get("status") == "completed")
+        total = len(todos)
+
+        lines = [f"📋 <b>План</b> <i>({completed}/{total})</i>"]
 
         for todo in todos:
             status = todo.get("status", "pending")
@@ -371,18 +375,13 @@ class StreamingHandler:
                 text = todo.get("content", "")
 
             if status == "completed":
-                lines.append(f"✅ <s>{text}</s>")
+                lines.append(f"  ✅ <s>{text}</s>")
             elif status == "in_progress":
-                lines.append(f"⏳ <b>{text}</b>")
+                lines.append(f"  ⏳ <b>{text}</b>")
             else:  # pending
-                lines.append(f"⬜ {text}")
+                lines.append(f"  ⬜ {text}")
 
-        # Count stats
-        completed = sum(1 for t in todos if t.get("status") == "completed")
-        total = len(todos)
-        lines.append(f"<i>({completed}/{total})</i>")
-
-        html_text = " | ".join(lines)  # Compact horizontal layout
+        html_text = "\n".join(lines)  # Vertical layout - each task on new line
 
         # Skip if content unchanged
         if self._last_todo_html == html_text:
@@ -660,12 +659,16 @@ class StreamingHandler:
             logger.debug("_edit_current_message: no html_text and no status, skipping")
             return
 
-        # Add status line and todo plan at the bottom
+        # Add todo plan and status line at the bottom
+        # Order: content → plan → empty line → status with timer
         footer_parts = []
-        if status:
-            footer_parts.append(status)
         if self._current_todo_html:
             footer_parts.append(self._current_todo_html)
+        if status:
+            # Add extra empty line before status to separate from plan
+            if footer_parts:
+                footer_parts.append("")  # Empty line gap
+            footer_parts.append(status)
 
         if footer_parts:
             footer = "\n".join(footer_parts)
