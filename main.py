@@ -127,8 +127,8 @@ class Application:
     def _register_handlers(self):
         """Register all handlers using container"""
         from presentation.handlers.commands import register_handlers as register_cmd_handlers
-        # LEGACY VERSION - refactored has issues, rolled back
-        from presentation.handlers.messages import register_handlers as register_msg_handlers
+        # REFACTORED VERSION - modular architecture
+        from presentation.handlers.message import register_handlers as register_msg_handlers
         from presentation.handlers.callbacks import register_handlers as register_callback_handlers
         from presentation.handlers.account_handlers import register_account_handlers
         from presentation.handlers.menu_handlers import register_menu_handlers
