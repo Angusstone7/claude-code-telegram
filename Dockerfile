@@ -53,4 +53,8 @@ WORKDIR /app
 # Create directories for logs and data
 RUN mkdir -p logs data
 
+# Disable bytecode caching to prevent stale .pyc issues
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 CMD ["python", "main.py"]

@@ -17,11 +17,14 @@ Refactored to use Dependency Injection Container for better testability
 and maintainability (fixes DI violations from code review).
 """
 
+# Disable Python bytecode caching to prevent stale .pyc issues
+import sys
+sys.dont_write_bytecode = True
+
 import asyncio
 import logging
 import os
 import signal
-import sys
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
@@ -126,6 +129,16 @@ class Application:
 
     def _register_handlers(self):
         """Register all handlers using container"""
+        # CRITICAL: Verify Keyboards class has all required methods before proceeding
+        from presentation.keyboards.keyboards import Keyboards
+        required_methods = ['proxy_settings_menu', 'proxy_type_selection', 'proxy_auth_options']
+        missing = [m for m in required_methods if not hasattr(Keyboards, m)]
+        if missing:
+            logger.error(f"FATAL: Keyboards class missing methods: {missing}")
+            logger.error(f"Available methods: {[m for m in dir(Keyboards) if not m.startswith('_')]}")
+            raise RuntimeError(f"Keyboards class missing required methods: {missing}")
+        logger.info(f"✓ Keyboards class verified (has {len([m for m in dir(Keyboards) if not m.startswith('_')])} methods)")
+
         from presentation.handlers.commands import register_handlers as register_cmd_handlers
         # REFACTORED VERSION - modular architecture
         from presentation.handlers.message import register_handlers as register_msg_handlers
