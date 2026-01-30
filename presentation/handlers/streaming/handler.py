@@ -83,6 +83,7 @@ class StreamingHandler:
         self._pending_update: Optional[asyncio.Task] = None
         self.reply_markup = reply_markup  # Cancel button etc.
         self._message_index = 1  # Current message number (for "Part N" indicator)
+        self._just_created_continuation = False  # Flag to prevent immediate overflow after creating continuation
         self._status_line = "🤖 <b>Запускаю...</b> ⠋ (0с)"  # Status line shown at bottom (always visible, HTML formatted)
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
         self._todo_message: Optional[Message] = None  # Separate message for todo list
@@ -618,10 +619,26 @@ class StreamingHandler:
             if status:
                 rendered_html = f"{rendered_html}\n\n{status}" if rendered_html else status
 
-            if len(rendered_html) > self.MAX_MESSAGE_LENGTH:
-                logger.info(f"Streaming: overflow detected ({len(rendered_html)} chars), handling...")
+            # Check for overflow with dynamic threshold for new continuation messages
+            # If we just created a continuation, allow it to grow larger before splitting
+            # This prevents creating nearly-empty "Part N" messages
+            threshold = self.MAX_MESSAGE_LENGTH
+            if self._just_created_continuation:
+                # Allow 50% more space for the first chunk in a continuation message
+                threshold = int(self.MAX_MESSAGE_LENGTH * 1.5)
+                logger.debug(f"Streaming: using relaxed threshold {threshold} for new continuation message")
+
+            is_overflow = len(rendered_html) > self.MAX_MESSAGE_LENGTH  # Still check against actual limit
+            should_split = len(rendered_html) > threshold
+
+            if should_split:
+                logger.info(f"Streaming: overflow detected ({len(rendered_html)} chars > threshold {threshold}), handling...")
                 await self._handle_overflow()
+                self._just_created_continuation = False  # Clear flag after overflow
             else:
+                # Clear the flag after first successful update
+                if self._just_created_continuation:
+                    self._just_created_continuation = False
                 logger.debug(f"Streaming: editing message via coordinator...")
                 await self._edit_current_message(display_text)
 
@@ -817,6 +834,10 @@ class StreamingHandler:
         # Новый контент будет добавляться в новое сообщение.
 
         self.buffer = continuation_header
+
+        # 7. Устанавливаем флаг, чтобы предотвратить немедленный overflow
+        # Если следующий chunk большой, дадим ему место в новом сообщении
+        self._just_created_continuation = True
 
         logger.info(f"Created clean continuation message #{self._message_index}")
 
