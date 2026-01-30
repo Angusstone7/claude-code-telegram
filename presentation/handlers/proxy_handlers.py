@@ -306,7 +306,6 @@ class ProxyHandlers:
 def register_proxy_handlers(dp, handlers: ProxyHandlers):
     """Register proxy handlers with dispatcher"""
     from aiogram import F
-    from presentation.keyboards.keyboards import Keyboards
 
     # Callback для меню настроек прокси
     dp.callback_query.register(
@@ -323,19 +322,19 @@ def register_proxy_handlers(dp, handlers: ProxyHandlers):
     # Callback для выбора типа прокси
     dp.callback_query.register(
         lambda c: handlers.handle_proxy_type_selection(c, c.data.split(":")[2]),
-        lambda c: Keyboards.is_proxy_callback(c.data) and c.data.startswith("proxy:type:")
+        F.data.startswith("proxy:type:")
     )
 
     # Callback для выбора авторизации
     dp.callback_query.register(
         lambda c: handlers.handle_proxy_auth_selection(c, c.data.split(":")[2] == "yes"),
-        lambda c: Keyboards.is_proxy_callback(c.data) and c.data.startswith("proxy:auth:")
+        F.data.startswith("proxy:auth:")
     )
 
     # Callback для выбора области (scope)
     dp.callback_query.register(
         lambda c: handlers.handle_proxy_scope_selection(c, c.data.split(":")[2] == "global"),
-        lambda c: Keyboards.is_proxy_callback(c.data) and c.data.startswith("proxy:scope:")
+        F.data.startswith("proxy:scope:")
     )
 
     # Callback для теста прокси
