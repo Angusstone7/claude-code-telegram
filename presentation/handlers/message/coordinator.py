@@ -1,7 +1,7 @@
 """Message coordinator - routes messages to appropriate handlers"""
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from aiogram.types import Message
 from aiogram import Router
@@ -12,6 +12,7 @@ from .file_handler import FileMessageHandler
 from .hitl_handler import HITLHandler
 from .variable_handler import VariableInputHandler
 from .plan_handler import PlanApprovalHandler
+from presentation.middleware.media_group_batcher import MediaGroupBatcher
 
 if TYPE_CHECKING:
     from application.services.bot_service import BotService
@@ -114,6 +115,9 @@ class MessageCoordinator:
 
         # Wire up file_handler to text_handler for reply file extraction
         self._text_handler.file_handler = self._file_handler
+
+        # Create media group batcher for handling albums
+        self._media_group_batcher = MediaGroupBatcher(batch_delay=0.5)
 
         # Create HITL handler
         self._hitl_handler = HITLHandler(
@@ -280,15 +284,33 @@ class MessageCoordinator:
     # Message Handlers - delegate to appropriate handlers
     async def handle_document(self, message: Message, **kwargs) -> None:
         """Handle document messages"""
+        # Check if this is part of a media group (album)
+        if message.media_group_id:
+            await self._media_group_batcher.add_message(
+                message,
+                self._file_handler.handle_media_group
+            )
+            return
         return await self._file_handler.handle_document(message, **kwargs)
 
     async def handle_photo(self, message: Message, **kwargs) -> None:
         """Handle photo messages"""
+        # Check if this is part of a media group (album)
+        if message.media_group_id:
+            await self._media_group_batcher.add_message(
+                message,
+                self._file_handler.handle_media_group
+            )
+            return
         return await self._file_handler.handle_photo(message, **kwargs)
 
     async def handle_text(self, message: Message, **kwargs) -> None:
         """Handle text messages"""
         return await self._text_handler.handle_text(message, **kwargs)
+
+    async def handle_media_group(self, messages: List[Message], **kwargs) -> None:
+        """Handle media group (album) - multiple photos/documents"""
+        return await self._file_handler.handle_media_group(messages, **kwargs)
 
 
 def register_handlers(router: Router, handlers: MessageCoordinator) -> None:
@@ -296,6 +318,7 @@ def register_handlers(router: Router, handlers: MessageCoordinator) -> None:
     from aiogram import F
     from aiogram.filters import StateFilter
 
+    # Document and photo handlers now check for media_group_id internally
     router.message.register(handlers.handle_document, F.document, StateFilter(None))
     router.message.register(handlers.handle_photo, F.photo, StateFilter(None))
     router.message.register(handlers.handle_text, F.text, StateFilter(None))

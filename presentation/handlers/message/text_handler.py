@@ -100,18 +100,30 @@ class TextMessageHandler(BaseMessageHandler):
             logger.debug(f"[{user_id}] File already processed, skipping file reply handling")
             # Continue to normal text processing with the enriched prompt
             pass
-        elif reply and self.file_context_manager.has_file(reply.message_id) and self.file_processor_service:
-            processed_file = self.file_context_manager.pop_file(reply.message_id)
-            # Get working directory for saving images (from project)
-            working_dir = await self._get_project_working_dir(user_id)
-            enriched_prompt = self.file_processor_service.format_for_prompt(
-                processed_file, message.text, working_dir=working_dir
-            )
-            task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
-            await message.answer(f"📎 Файл: {processed_file.filename}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
-            # Execute task with file context and return (mark as processed to prevent re-processing)
-            await self.handle_text(message, prompt_override=enriched_prompt, _file_processed=True)
-            return
+        elif reply and self.file_context_manager.has_files(reply.message_id) and self.file_processor_service:
+            # Support for both single files and media groups (albums)
+            cached_files = self.file_context_manager.pop_files(reply.message_id)
+            if cached_files:
+                # Get working directory for saving images (from project)
+                working_dir = await self._get_project_working_dir(user_id)
+
+                # Use appropriate method based on number of files
+                if len(cached_files) == 1:
+                    enriched_prompt = self.file_processor_service.format_for_prompt(
+                        cached_files[0], message.text, working_dir=working_dir
+                    )
+                    files_info = cached_files[0].filename
+                else:
+                    enriched_prompt = self.file_processor_service.format_multiple_files_for_prompt(
+                        cached_files, message.text, working_dir=working_dir
+                    )
+                    files_info = self.file_processor_service.get_files_summary(cached_files)
+
+                task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
+                await message.answer(f"📎 Файлы: {files_info}\n📝 Задача: {task_preview}\n\n⏳ Запускаю Claude Code...")
+                # Execute task with file context and return (mark as processed to prevent re-processing)
+                await self.handle_text(message, prompt_override=enriched_prompt, _file_processed=True)
+                return
 
         elif reply and (reply.document or reply.photo) and self.file_processor_service:
             file_context = await self._extract_reply_file_context(reply, bot)

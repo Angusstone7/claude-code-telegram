@@ -1,7 +1,8 @@
 """File and photo message handler"""
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from io import BytesIO
+from typing import TYPE_CHECKING, Optional, List
 
 from aiogram.types import Message
 from aiogram import Bot
@@ -309,3 +310,177 @@ class FileMessageHandler(BaseMessageHandler):
                 logger.warning(f"Error getting project working_dir: {e}")
         # Fallback to state
         return self.user_state.get_working_dir(user_id)
+
+    # === Media Group (Album) Support ===
+
+    async def handle_media_group(self, messages: List[Message], **kwargs) -> None:
+        """
+        Handle media group (album) - multiple photos/documents sent together.
+
+        This is called by MediaGroupBatcher after all messages in the group
+        have been collected.
+
+        Args:
+            messages: List of Message objects from the same media group
+        """
+        if not messages:
+            return
+
+        # Use first message for user info and caption
+        first_message = messages[0]
+        user_id = first_message.from_user.id
+        bot = first_message.bot
+        caption = None
+
+        # Find caption (usually on the first message)
+        for msg in messages:
+            if msg.caption:
+                caption = msg.caption
+                break
+
+        # Authorize user
+        user = await self.bot_service.authorize_user(user_id)
+        if not user:
+            await first_message.answer("Вы не авторизованы для использования этого бота.")
+            return
+
+        # Check if task is already running
+        if self._is_task_running(user_id):
+            await first_message.answer(
+                "⏳ Задача уже выполняется. Дождитесь её завершения или используйте /cancel."
+            )
+            return
+
+        if not self.file_processor_service:
+            await first_message.answer("⚠️ Обработка файлов недоступна")
+            return
+
+        # Process all files in the group
+        processed_files: List["ProcessedFile"] = []
+
+        for msg in messages:
+            try:
+                processed = await self._process_message_file(msg, bot)
+                if processed and processed.is_valid:
+                    processed_files.append(processed)
+            except Exception as e:
+                logger.error(f"Error processing file from media group: {e}")
+
+        if not processed_files:
+            await first_message.answer("❌ Не удалось обработать файлы из альбома")
+            return
+
+        logger.info(
+            f"[{user_id}] Media group processed: {len(processed_files)} files, "
+            f"caption: {bool(caption)}"
+        )
+
+        # Get working directory
+        working_dir = await self.get_project_working_dir(user_id)
+
+        if caption:
+            # Album WITH caption - execute task immediately
+            await self._process_media_group_with_caption(
+                first_message, processed_files, caption, working_dir
+            )
+        else:
+            # Album WITHOUT caption - cache for reply
+            await self._cache_media_group_for_reply(
+                first_message, processed_files, working_dir
+            )
+
+    async def _process_message_file(
+        self, message: Message, bot: Bot
+    ) -> Optional["ProcessedFile"]:
+        """Extract and process file from a single message"""
+        if message.document:
+            doc = message.document
+            file_id = doc.file_id
+            filename = doc.file_name or "unknown"
+            mime_type = doc.mime_type
+        elif message.photo:
+            photo = message.photo[-1]
+            file_id = photo.file_id
+            filename = f"image_{photo.file_unique_id}.jpg"
+            mime_type = "image/jpeg"
+        else:
+            return None
+
+        try:
+            file = await bot.get_file(file_id)
+            file_content = BytesIO()
+            await bot.download_file(file.file_path, file_content)
+            file_content.seek(0)
+
+            processed = await self.file_processor_service.process_file(
+                file_content, filename, mime_type
+            )
+            return processed
+
+        except Exception as e:
+            logger.error(f"Error downloading file {filename}: {e}")
+            return None
+
+    async def _process_media_group_with_caption(
+        self,
+        message: Message,
+        files: List["ProcessedFile"],
+        caption: str,
+        working_dir: str
+    ) -> None:
+        """Process media group with caption - start task immediately"""
+        user_id = message.from_user.id
+
+        # Format prompt with all files
+        enriched_prompt = self.file_processor_service.format_multiple_files_for_prompt(
+            files, caption, working_dir=working_dir
+        )
+
+        # Show summary
+        files_summary = self.file_processor_service.get_files_summary(files)
+        task_preview = caption[:50] + "..." if len(caption) > 50 else caption
+
+        await message.answer(
+            f"📎 Файлы: {files_summary}\n"
+            f"📝 Задача: {task_preview}\n\n"
+            f"⏳ Запускаю Claude Code..."
+        )
+
+        # Execute task
+        await self._execute_task_with_prompt(message, enriched_prompt)
+
+    async def _cache_media_group_for_reply(
+        self,
+        message: Message,
+        files: List["ProcessedFile"],
+        working_dir: str
+    ) -> None:
+        """Cache media group for reply-based workflow"""
+        user_id = message.from_user.id
+
+        # Build file list for display
+        file_list_lines = []
+        total_size = 0
+
+        for pf in files:
+            size_kb = pf.size_bytes // 1024
+            total_size += pf.size_bytes
+            file_list_lines.append(f"  • {pf.filename} ({size_kb} KB)")
+
+        file_list = "\n".join(file_list_lines)
+        total_kb = total_size // 1024
+
+        # Send response with file list
+        bot_msg = await message.answer(
+            f"📎 <b>Получено {len(files)} файлов</b> ({total_kb} KB):\n"
+            f"{file_list}\n\n"
+            f"💡 Сделайте <b>reply</b> на это сообщение с текстом задачи.",
+            parse_mode="HTML"
+        )
+
+        # Cache files for reply
+        self.file_context_manager.cache_files(bot_msg.message_id, files)
+        logger.info(
+            f"[{user_id}] Media group cached ({len(files)} files) "
+            f"with bot message ID: {bot_msg.message_id}"
+        )

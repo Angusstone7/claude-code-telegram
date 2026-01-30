@@ -405,3 +405,93 @@ class FileProcessorService:
             "image": sorted(self.IMAGE_EXTENSIONS),
             "pdf": sorted(self.PDF_EXTENSIONS),
         }
+
+    def format_multiple_files_for_prompt(
+        self,
+        files: list[ProcessedFile],
+        task_text: str = "",
+        working_dir: Optional[str] = None
+    ) -> str:
+        """
+        Форматировать несколько файлов для добавления в prompt.
+
+        Используется для медиагрупп (альбомов) - когда пользователь
+        отправляет несколько файлов одним сообщением.
+
+        Args:
+            files: Список обработанных файлов
+            task_text: Текст задачи пользователя
+            working_dir: Рабочая директория для сохранения изображений
+
+        Returns:
+            Отформатированный prompt со всеми файлами
+        """
+        if not files:
+            return task_text
+
+        if len(files) == 1:
+            # Один файл - используем обычный метод
+            return self.format_for_prompt(files[0], task_text, working_dir)
+
+        # Несколько файлов - формируем комбинированный prompt
+        file_blocks = []
+
+        for i, pf in enumerate(files, 1):
+            if pf.error:
+                file_blocks.append(f"📎 **Файл {i}: {pf.filename}** - Ошибка: {pf.error}")
+                continue
+
+            if pf.file_type == FileType.TEXT:
+                lang = self._detect_language(pf.filename)
+                block = f"📎 **Файл {i}: {pf.filename}** ({pf.size_bytes // 1024} KB)\n```{lang}\n{pf.content}\n```"
+                file_blocks.append(block)
+
+            elif pf.file_type == FileType.IMAGE:
+                if working_dir:
+                    saved_path = self.save_to_working_dir(pf, working_dir)
+                    if saved_path:
+                        block = (
+                            f"📎 **Изображение {i}: {pf.filename}** сохранено в `{saved_path}`\n"
+                            f"Используй Read tool для анализа: {saved_path}"
+                        )
+                        file_blocks.append(block)
+                        continue
+
+                # Fallback
+                file_blocks.append(f"📎 **Изображение {i}: {pf.filename}** - не удалось сохранить")
+
+            elif pf.file_type == FileType.PDF:
+                block = f"📎 **PDF {i}: {pf.filename}** ({pf.size_bytes // 1024} KB)\n```\n{pf.content}\n```"
+                file_blocks.append(block)
+
+        # Объединяем все блоки
+        files_section = "\n\n".join(file_blocks)
+
+        if task_text:
+            return f"{files_section}\n\n---\n\n**Задача пользователя:** {task_text}"
+
+        return files_section
+
+    def get_files_summary(self, files: list[ProcessedFile]) -> str:
+        """
+        Получить краткое описание списка файлов.
+
+        Args:
+            files: Список обработанных файлов
+
+        Returns:
+            Строка вида "3 файла: image1.jpg, image2.jpg, +1"
+        """
+        if not files:
+            return "нет файлов"
+
+        total = len(files)
+        if total == 1:
+            return files[0].filename
+
+        # Показываем первые 2 имени, остальные как "+N"
+        names = [f.filename for f in files[:2]]
+        if total > 2:
+            names.append(f"+{total - 2}")
+
+        return f"{total} файлов: {', '.join(names)}"
