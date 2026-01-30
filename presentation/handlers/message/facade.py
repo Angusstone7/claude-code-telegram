@@ -66,7 +66,7 @@ class MessageHandlersFacade:
             file_context_manager = FileContextManager()
 
         if variable_manager is None:
-            from presentation.handlers.state.variable_manager import VariableInputManager
+            from presentation.handlers.state.variable_input import VariableInputManager
             variable_manager = VariableInputManager()
 
         if plan_manager is None:
