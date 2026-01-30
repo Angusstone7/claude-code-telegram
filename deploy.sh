@@ -2,7 +2,7 @@
 # =============================================================================
 # 🚀 Claude Code Telegram - One-Command Deploy Script
 # =============================================================================
-# Usage: curl -sSL https://raw.githubusercontent.com/your-username/claude-code-telegram/main/deploy.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/Angusstone7/claude-code-telegram/main/deploy.sh | bash
 # Or:    ./deploy.sh
 # =============================================================================
 
@@ -64,7 +64,7 @@ else
 
     if [ "$REPO_DIR" != "." ]; then
         info "Cloning repository..."
-        git clone https://github.com/your-username/claude-code-telegram.git "$REPO_DIR"
+        git clone https://github.com/Angusstone7/claude-code-telegram.git "$REPO_DIR"
         cd "$REPO_DIR"
         success "Repository cloned"
     fi

@@ -145,7 +145,7 @@ Get your token from [open.bigmodel.cn](https://open.bigmodel.cn)
 
 ```bash
 # Download and run the interactive deploy script
-git clone https://github.com/your-username/claude-code-telegram.git && \
+git clone https://github.com/Angusstone7/claude-code-telegram.git && \
 cd claude-code-telegram && \
 chmod +x deploy.sh && \
 ./deploy.sh
@@ -162,7 +162,7 @@ The script will:
 
 ```bash
 # Clone, configure, and run — all in one command!
-git clone https://github.com/your-username/claude-code-telegram.git && \
+git clone https://github.com/Angusstone7/claude-code-telegram.git && \
 cd claude-code-telegram && \
 cp .env.example .env && \
 echo "Now edit .env with your credentials, then run: docker-compose up -d --build"
@@ -171,7 +171,7 @@ echo "Now edit .env with your credentials, then run: docker-compose up -d --buil
 ### Option 3: Full One-Liner (if you know your credentials)
 
 ```bash
-git clone https://github.com/your-username/claude-code-telegram.git && cd claude-code-telegram && \
+git clone https://github.com/Angusstone7/claude-code-telegram.git && cd claude-code-telegram && \
 cat > .env << 'EOF'
 TELEGRAM_TOKEN=your_bot_token_here
 ANTHROPIC_API_KEY=sk-ant-your-key-here
@@ -193,7 +193,7 @@ Just replace:
 #### 1️⃣ Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/claude-code-telegram.git
+git clone https://github.com/Angusstone7/claude-code-telegram.git
 cd claude-code-telegram
 ```
 
@@ -584,6 +584,6 @@ Built with these amazing tools:
 </p>
 
 <p align="center">
-  <a href="https://github.com/your-username/claude-code-telegram/issues">Report Bug</a> •
-  <a href="https://github.com/your-username/claude-code-telegram/issues">Request Feature</a>
+  <a href="https://github.com/Angusstone7/claude-code-telegram/issues">Report Bug</a> •
+  <a href="https://github.com/Angusstone7/claude-code-telegram/issues">Request Feature</a>
 </p>
