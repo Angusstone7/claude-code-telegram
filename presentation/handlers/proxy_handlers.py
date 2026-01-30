@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Optional
 from aiogram.types import CallbackQuery, Message
 from aiogram import Bot
+from aiogram.filters import BaseFilter
 
 from application.services.proxy_service import ProxyService
 from domain.value_objects.proxy_config import ProxyType
@@ -369,14 +370,57 @@ class ProxyHandlers:
         )
         await callback.answer()
 
+    async def handle_proxy_save(self, callback: CallbackQuery, **kwargs) -> None:
+        """Confirm and save proxy (proxy is already saved, just acknowledge)"""
+        user_id = UserId(callback.from_user.id)
 
-class ProxyInputFilter:
+        # Proxy is already saved by handle_proxy_scope_selection
+        # Just show confirmation and return to menu
+        proxy_config = await self.proxy_service.get_effective_proxy(user_id)
+
+        if proxy_config:
+            await callback.message.edit_text(
+                f"✅ <b>Прокси сохранён</b>\n\n"
+                f"Тип: {proxy_config.proxy_type.value.upper()}\n"
+                f"Адрес: {proxy_config.host}:{proxy_config.port}\n"
+                f"Авторизация: {'✓' if proxy_config.username else '✗'}",
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.edit_text("✅ Настройки сохранены")
+
+        await callback.answer("✅ Сохранено")
+
+    async def handle_proxy_change(self, callback: CallbackQuery, **kwargs) -> None:
+        """Go back to proxy setup to change settings"""
+        # Start fresh setup
+        await self.handle_proxy_setup(callback, **kwargs)
+
+    async def handle_proxy_cancel(self, callback: CallbackQuery, **kwargs) -> None:
+        """Cancel proxy setup and remove proxy"""
+        user_id = callback.from_user.id
+        user_id_vo = UserId(user_id)
+
+        # Clear setup state if exists
+        if user_id in proxy_setup_state:
+            del proxy_setup_state[user_id]
+
+        # Disable/remove user proxy
+        await self.proxy_service.disable_user_proxy(user_id_vo)
+
+        await callback.message.edit_text(
+            "❌ Настройка прокси отменена"
+        )
+        await callback.answer()
+
+
+class ProxyInputFilter(BaseFilter):
     """Filter for proxy text input messages"""
 
     def __init__(self, step: str):
         self.step = step
 
-    async def __call__(self, message) -> bool:
+    async def __call__(self, message: Message) -> bool:
         if not message.text:
             return False
         user_id = message.from_user.id
@@ -456,6 +500,24 @@ def register_proxy_handlers(dp, handlers: ProxyHandlers):
     dp.callback_query.register(
         handlers.handle_proxy_disable,
         F.data == "proxy:disable"
+    )
+
+    # Callback для сохранения прокси (подтверждение после теста)
+    dp.callback_query.register(
+        handlers.handle_proxy_save,
+        F.data == "proxy:save"
+    )
+
+    # Callback для изменения настроек прокси
+    dp.callback_query.register(
+        handlers.handle_proxy_change,
+        F.data == "proxy:change"
+    )
+
+    # Callback для отмены настройки прокси
+    dp.callback_query.register(
+        handlers.handle_proxy_cancel,
+        F.data == "proxy:cancel"
     )
 
     logger.info("✓ Proxy handlers registered")
