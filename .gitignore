@@ -3,6 +3,20 @@
 .env.local
 .env.*.local
 
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Uploads and temp files
+.uploads/
+
+# Internal documentation (not for public)
+.ralph-loop/
+.archive/
+АКТУАЛЬНЫЕ_ПРОБЛЕМЫ.md
+FINAL_ANALYSIS_REPORT*.md
+
 # SSH keys
 bot_key
 bot_key.pub
@@ -13,6 +27,8 @@ id_rsa*
 __pycache__/
 *.py[cod]
 *$py.class
+.mypy_cache/
+.pytest_cache/
 *.so
 .Python
 build/
@@ -53,3 +69,10 @@ logs/
 data/
 projects/
 claude_sessions/
+
+# Claude Code local settings
+.claude/settings.local.json
+*.local.json
+
+# Node modules (telegram-mcp)
+telegram-mcp/node_modules/
