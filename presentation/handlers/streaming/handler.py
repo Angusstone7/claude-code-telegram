@@ -86,10 +86,11 @@ class StreamingHandler:
         self._just_created_continuation = False  # Flag to prevent immediate overflow after creating continuation
         self._status_line = "🤖 <b>Запускаю...</b> ⠋ (0с)"  # Status line shown at bottom (always visible, HTML formatted)
         self._formatter = IncrementalFormatter()  # Anti-flicker formatter
-        self._todo_message: Optional[Message] = None  # Separate message for todo list
+        self._todo_message: Optional[Message] = None  # Separate message for todo list (legacy, not used)
         self._plan_mode_message: Optional[Message] = None  # Plan mode indicator message
         self._is_plan_mode: bool = False  # Whether Claude is in plan mode
         self._last_todo_html: str = ""  # Cache last todo HTML to avoid "not modified" errors
+        self._current_todo_html: str = ""  # Current todo HTML to show at bottom of message
 
         # Token tracking for context usage display
         self._estimated_tokens: int = 0  # Accumulated token estimate
@@ -341,12 +342,13 @@ class StreamingHandler:
         await self.append(result_text)
 
     async def show_todo_list(self, todos: list[dict]) -> None:
-        """Show/update todo list in a separate message.
+        """Show/update todo list at the bottom of the current message.
 
-        ВАЖНО: Обновления проходят через координатор!
+        Instead of creating a separate message, the todo list is now shown
+        at the bottom of the main streaming message, so it's always visible
+        as the message grows.
 
-        Creates a dedicated message for the task plan that updates
-        in-place as tasks progress. Shows:
+        Shows:
         - ✅ Completed tasks (strikethrough)
         - ⏳ Current task (bold)
         - ⬜ Pending tasks
@@ -355,9 +357,10 @@ class StreamingHandler:
             todos: List of todo items with content, status, activeForm
         """
         if not todos:
+            self._current_todo_html = ""
             return
 
-        lines = ["📋 <b>План выполнения:</b>\n"]
+        lines = ["📋 <b>План:</b>"]
 
         for todo in todos:
             status = todo.get("status", "pending")
@@ -368,58 +371,27 @@ class StreamingHandler:
                 text = todo.get("content", "")
 
             if status == "completed":
-                lines.append(f"  ✅ <s>{text}</s>")
+                lines.append(f"✅ <s>{text}</s>")
             elif status == "in_progress":
-                lines.append(f"  ⏳ <b>{text}</b>")
+                lines.append(f"⏳ <b>{text}</b>")
             else:  # pending
-                lines.append(f"  ⬜ {text}")
+                lines.append(f"⬜ {text}")
 
         # Count stats
         completed = sum(1 for t in todos if t.get("status") == "completed")
         total = len(todos)
-        lines.append(f"\n<i>Прогресс: {completed}/{total}</i>")
+        lines.append(f"<i>({completed}/{total})</i>")
 
-        html_text = "\n".join(lines)
+        html_text = " | ".join(lines)  # Compact horizontal layout
 
-        # Skip if content unchanged (avoid "message not modified" error)
+        # Skip if content unchanged
         if self._last_todo_html == html_text:
             return
         self._last_todo_html = html_text
+        self._current_todo_html = html_text
 
-        try:
-            if self._todo_message:
-                # Update existing message через координатор
-                if self._coordinator:
-                    await self._coordinator.update(
-                        self._todo_message,
-                        html_text,
-                        parse_mode="HTML"
-                    )
-                else:
-                    # Fallback
-                    try:
-                        await self._todo_message.edit_text(html_text, parse_mode="HTML")
-                    except TelegramBadRequest as e:
-                        if "message is not modified" not in str(e).lower():
-                            logger.warning(f"Error updating todo message: {e}")
-            else:
-                # Create new message через координатор
-                if self._coordinator:
-                    self._todo_message = await self._coordinator.send_new(
-                        self.chat_id,
-                        html_text,
-                        parse_mode="HTML"
-                    )
-                else:
-                    self._todo_message = await self.bot.send_message(
-                        self.chat_id,
-                        html_text,
-                        parse_mode="HTML"
-                    )
-                if self._todo_message:
-                    logger.info(f"Created todo message: {self._todo_message.message_id}")
-        except Exception as e:
-            logger.error(f"Error in show_todo_list: {e}")
+        # Trigger an update to show the new todo status
+        await self._do_update()
 
     async def show_plan_mode_enter(self) -> None:
         """Show that Claude entered plan mode.
@@ -688,12 +660,19 @@ class StreamingHandler:
             logger.debug("_edit_current_message: no html_text and no status, skipping")
             return
 
-        # Add status line
+        # Add status line and todo plan at the bottom
+        footer_parts = []
         if status:
+            footer_parts.append(status)
+        if self._current_todo_html:
+            footer_parts.append(self._current_todo_html)
+
+        if footer_parts:
+            footer = "\n".join(footer_parts)
             if html_text:
-                html_text = f"{html_text}\n\n{status}"
+                html_text = f"{html_text}\n\n{footer}"
             else:
-                html_text = status
+                html_text = footer
 
         if not html_text:
             return
@@ -901,8 +880,9 @@ class StreamingHandler:
         if self._pending_update and not self._pending_update.done():
             self._pending_update.cancel()
 
-        # Clear status line and cancel button
+        # Clear status line, todo plan, and cancel button
         self._status_line = ""
+        self._current_todo_html = ""
         self.reply_markup = None
 
         if final_text:
