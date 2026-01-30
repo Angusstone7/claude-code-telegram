@@ -37,22 +37,49 @@ class BotService:
         self.command_executor = command_executor or SSHCommandExecutor()
 
     # User management
-    async def get_or_create_user(self, user_id: int, username: str, first_name: str, last_name: str = None) -> User:
-        """Get existing user or create new one"""
+    def is_user_allowed(self, user_id: int) -> bool:
+        """Check if user is in the whitelist (ALLOWED_USER_ID)"""
+        allowed_ids = settings.telegram.allowed_user_ids
+        # If whitelist is empty, allow everyone (with warning logged at startup)
+        if not allowed_ids:
+            return True
+        return user_id in allowed_ids
+
+    def is_admin(self, user_id: int) -> bool:
+        """Check if user is an admin (first user in ALLOWED_USER_ID)"""
+        allowed_ids = settings.telegram.allowed_user_ids
+        if not allowed_ids:
+            return False
+        return user_id == allowed_ids[0]
+
+    async def get_or_create_user(self, user_id: int, username: str, first_name: str, last_name: str = None) -> Optional[User]:
+        """Get existing user or create new one.
+
+        Returns None if user is not in the whitelist (ALLOWED_USER_ID).
+        First user in ALLOWED_USER_ID gets admin role.
+        """
+        # Check whitelist first
+        if not self.is_user_allowed(user_id):
+            logger.warning(f"Access denied for user {user_id} (@{username}) - not in ALLOWED_USER_ID whitelist")
+            return None
+
         user_id_vo = UserId.from_int(user_id)
         user = await self.user_repository.find_by_id(user_id_vo)
 
         if user is None:
             from domain.value_objects.role import Role
+            # First user in whitelist gets admin role
+            role = Role.admin() if self.is_admin(user_id) else Role.user()
             user = User(
                 user_id=user_id_vo,
                 username=username,
                 first_name=first_name,
                 last_name=last_name,
-                role=Role.user()  # Default role
+                role=role
             )
             await self.user_repository.save(user)
-            logger.info(f"Created new user: {user_id}")
+            role_name = "admin" if self.is_admin(user_id) else "user"
+            logger.info(f"Created new {role_name}: {user_id} (@{username})")
 
         return user
 

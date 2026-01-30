@@ -22,6 +22,9 @@ services:
       - ./projects:/root/projects
       # Claude Code sessions - preserves conversation history and context compression
       - ./claude_sessions:/root/.claude
+      # Claude Account credentials (optional - for OAuth auth instead of API key)
+      # Get this file by running `claude` locally and authenticating via browser
+      # - ./claude_config.json:/root/.config/claude/config.json:ro
     extra_hosts:
       # Allows container to connect to host machine via SSH
       - "host.docker.internal:host-gateway"

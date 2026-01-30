@@ -1,286 +1,589 @@
-# Claude DevOps Bot
+<p align="center">
+  <img src="https://img.shields.io/badge/Claude-Code-blueviolet?style=for-the-badge&logo=anthropic" alt="Claude Code"/>
+  <img src="https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram" alt="Telegram"/>
+</p>
 
-> Advanced Telegram bot for server management using Claude AI with natural language processing.
+<h1 align="center">📱 Claude Code Telegram</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![DDD](https://img.shields.io/badge/Architecture-DDD-green.svg)](https://martinfowler.com/tags/domain%20driven%20design.html)
-[![SOLID](https://img.shields.io/badge/Principles-SOLID-brightgreen.svg)](https://en.wikipedia.org/wiki/SOLID)
+<p align="center">
+  <b>Control Claude Code AI directly from Telegram — code, review, and deploy from anywhere</b>
+</p>
 
-## Features
+<p align="center">
+  <a href="#-features">Features</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-one-command-deploy">Deploy</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-configuration">Configuration</a>
+</p>
 
-- 🤖 **AI-Powered**: Natural language interface to Claude 3.5 Sonnet
-- 🔧 **Command Execution**: Execute server commands via SSH with approval workflow
-- 📊 **System Monitoring**: Real-time CPU, memory, disk metrics
-- 🐳 **Docker Management**: List, start, stop, restart containers
-- 💬 **Chat Sessions**: Persistent conversation history with context
-- 👥 **Multi-User**: Role-based access control (Admin, DevOps, User, ReadOnly)
-- 🛡️ **Safety Checks**: Dangerous command warnings and approval
-- 📝 **Command History**: Track all executed commands
-- 🔄 **Auto-Deploy**: GitLab CI/CD integration
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker"/>
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
+  <img src="https://img.shields.io/badge/Architecture-DDD-orange" alt="DDD"/>
+  <img src="https://img.shields.io/badge/Tests-143+-success" alt="Tests"/>
+</p>
 
-## Architecture
+---
 
-This project follows **Domain-Driven Design (DDD)** and **SOLID** principles:
+## 🎯 What is This?
 
+**Claude Code Telegram** transforms your Telegram into a powerful AI coding assistant. It's a bridge between [Claude Code](https://github.com/anthropics/claude-code) (Anthropic's official CLI for Claude) and Telegram, allowing you to:
+
+- 💻 **Write code** using natural language from your phone
+- 🔍 **Review and debug** code on the go
+- 📁 **Manage projects** across multiple repositories
+- ✅ **Approve AI actions** with Human-in-the-Loop (HITL) controls
+- 🚀 **Deploy changes** without touching your computer
+
+> Think of it as having Claude Code in your pocket, accessible anywhere via Telegram.
+
+---
+
+## ✨ Features
+
+### 🤖 AI-Powered Coding
+| Feature | Description |
+|---------|-------------|
+| 💬 **Natural Language** | Just describe what you want — Claude writes the code |
+| 🔄 **Streaming Responses** | See AI responses in real-time as they're generated |
+| 📝 **Context Awareness** | Maintains conversation history per project |
+| 🎯 **Multi-Model Support** | Works with Claude Sonnet, Opus, and Haiku |
+
+### 🛡️ Human-in-the-Loop (HITL)
+| Feature | Description |
+|---------|-------------|
+| ✅ **Tool Approval** | Approve or deny file changes, commands before execution |
+| ⚡ **YOLO Mode** | Auto-approve all actions when you trust the AI |
+| 📋 **Plan Review** | Review implementation plans before Claude executes them |
+| 🔐 **Secure by Default** | Nothing happens without your explicit consent |
+
+### 📁 Project Management
+| Feature | Description |
+|---------|-------------|
+| 🗂️ **Multi-Project** | Switch between different codebases seamlessly |
+| 🔍 **File Browser** | Navigate and select projects via Telegram UI |
+| 💾 **Persistent Context** | Each project maintains its own conversation history |
+| 📤 **File Uploads** | Send files directly to your project via Telegram |
+
+### 🔌 Extensibility
+| Feature | Description |
+|---------|-------------|
+| 🧩 **Official Plugins** | Supports Claude Code plugins (commit, review, etc.) |
+| 📡 **MCP Integration** | Telegram MCP server for Claude-initiated messages |
+| 🐳 **Docker Management** | Control containers on your server |
+| 📊 **System Monitoring** | CPU, memory, disk metrics at a glance |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- 🐳 Docker & Docker Compose installed
+- 🤖 Telegram bot token from [@BotFather](https://t.me/BotFather)
+- 🔑 Claude Code credentials (see below)
+- 🆔 Your Telegram user ID (get it from [@userinfobot](https://t.me/userinfobot))
+
+### 🔐 Claude Code Authentication
+
+Claude Code supports two authentication methods:
+
+#### Option A: Claude Account (Recommended)
+
+Uses your claude.ai subscription. **No API costs** — uses your existing Claude Pro/Team plan.
+
+1. Install Claude Code CLI locally:
+   ```bash
+   npm install -g @anthropic-ai/claude-code
+   ```
+
+2. Run and authenticate via browser:
+   ```bash
+   claude
+   # Opens browser for OAuth login to claude.ai
+   ```
+
+3. Copy the credentials file to your project:
+   ```bash
+   cp ~/.config/claude/config.json ./claude_config.json
+   ```
+
+4. Mount it in `docker-compose.yml`:
+   ```yaml
+   volumes:
+     - ./claude_config.json:/root/.config/claude/config.json:ro
+   ```
+
+#### Option B: API Key
+
+Uses Anthropic API directly. **Pay-per-use** pricing.
+
+```ini
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxx
 ```
-ubuntu_claude/
-├── domain/               # Business logic (DDD)
-│   ├── entities/        # User, Session, Command, Message
-│   ├── value_objects/   # UserId, Role, Permission
-│   ├── repositories/    # Repository interfaces
-│   └── services/        # Domain service interfaces
-├── application/          # Use cases
-│   └── services/        # BotService (orchestration)
-├── infrastructure/       # External dependencies
-│   ├── persistence/     # SQLite repositories
-│   ├── ssh/            # SSH command executor
-│   ├── messaging/      # Claude AI service
-│   └── monitoring/     # System metrics
-├── presentation/         # Telegram interface
-│   ├── handlers/       # Commands, messages, callbacks
-│   ├── keyboards/      # Inline keyboards
-│   └── middleware/     # Auth middleware
-└── shared/              # Common utilities
-    └── config/         # Settings
+
+Get your API key from [console.anthropic.com](https://console.anthropic.com)
+
+#### Option C: ZhipuAI (China)
+
+Claude-compatible API with no regional restrictions.
+
+```ini
+ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic
+ANTHROPIC_AUTH_TOKEN=your_zhipuai_token
 ```
 
-### SOLID Principles
+Get your token from [open.bigmodel.cn](https://open.bigmodel.cn)
 
-- **S**ingle Responsibility: Each class has one reason to change
-- **O**pen/Closed: Extended through interfaces, not modification
-- **L**iskov Substitution: Interfaces are properly implemented
-- **I**nterface Segregation: Focused, minimal interfaces
-- **D**ependency Inversion: Depends on abstractions, not concretions
+---
 
-### DDD Layers
+## ⚡ One-Command Deploy
 
-| Layer | Responsibility |
-|-------|----------------|
-| **Domain** | Core business logic, entities, value objects |
-| **Application** | Use case orchestration (BotService) |
-| **Infrastructure** | External integrations (SSH, AI, DB) |
-| **Presentation** | Telegram bot interface |
-
-## Quick Start
-
-### 1. Clone and Configure
+### Option 1: Interactive Deploy Script (Recommended)
 
 ```bash
-git clone http://192.168.0.116:8088/root/ubuntu_claude.git
-cd ubuntu_claude
+# Download and run the interactive deploy script
+git clone https://github.com/your-username/claude-code-telegram.git && \
+cd claude-code-telegram && \
+chmod +x deploy.sh && \
+./deploy.sh
+```
+
+The script will:
+- ✅ Check Docker installation
+- ✅ Prompt for your credentials interactively
+- ✅ Create the `.env` file automatically
+- ✅ Build and start the container
+- ✅ Show you next steps
+
+### Option 2: Quick Deploy (Manual Config)
+
+```bash
+# Clone, configure, and run — all in one command!
+git clone https://github.com/your-username/claude-code-telegram.git && \
+cd claude-code-telegram && \
+cp .env.example .env && \
+echo "Now edit .env with your credentials, then run: docker-compose up -d --build"
+```
+
+### Option 3: Full One-Liner (if you know your credentials)
+
+```bash
+git clone https://github.com/your-username/claude-code-telegram.git && cd claude-code-telegram && \
+cat > .env << 'EOF'
+TELEGRAM_TOKEN=your_bot_token_here
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+ALLOWED_USER_ID=your_telegram_id_here
+EOF
+docker-compose up -d --build
+```
+
+Just replace:
+- `your_bot_token_here` → Your Telegram bot token
+- `sk-ant-your-key-here` → Your Anthropic API key
+- `your_telegram_id_here` → Your Telegram user ID
+
+### Option 4: Step-by-Step Deploy
+
+<details>
+<summary>📖 Click to expand detailed instructions</summary>
+
+#### 1️⃣ Clone the Repository
+
+```bash
+git clone https://github.com/your-username/claude-code-telegram.git
+cd claude-code-telegram
+```
+
+#### 2️⃣ Create Configuration
+
+```bash
 cp .env.example .env
 ```
 
-### 2. Edit `.env`
+#### 3️⃣ Edit `.env` File
 
 ```ini
-TELEGRAM_TOKEN=your_bot_token_from_botfather
-ANTHROPIC_API_KEY=sk-ant-your-key
-ALLOWED_USER_ID=664382290
-HOST_USER=root
+# Required settings
+TELEGRAM_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxx
+ALLOWED_USER_ID=123456789
+
+# Optional: Multiple users (comma-separated)
+# ALLOWED_USER_ID=123456789,987654321
+
+# Optional: Use Claude Sonnet 4 (default) or other models
+# ANTHROPIC_MODEL=claude-sonnet-4-20250514
 ```
 
-### 3. Generate SSH Keys
-
-```bash
-ssh-keygen -t ed25519 -f ./bot_key -N ""
-cat ./bot_key.pub >> ~/.ssh/authorized_keys
-```
-
-### 4. Run with Docker
+#### 4️⃣ Launch with Docker
 
 ```bash
 docker-compose up -d --build
 ```
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Initialize bot |
-| `/help` | Show help |
-| `/clear` | Clear chat history |
-| `/stats` | User statistics |
-
-## Menu Buttons
-
-| Button | Action |
-|--------|--------|
-| 💬 Chat | Talk with Claude AI |
-| 📊 Metrics | System metrics |
-| 🐳 Docker | Container list |
-| 📝 Commands | Command history |
-| 🗑️ Clear | Clear history |
-
-## Usage Examples
-
-### Natural Language Commands
-
-```
-User: Check disk usage
-Bot: [Shows disk usage]
-User: Restart nginx container
-Bot: [Proposes docker restart command]
-User: [Approves]
-Bot: [Executes and shows result]
-```
-
-### Direct Commands
-
-```
-User: Install htop
-Bot: [Proposes: apt install htop]
-User: [Approves]
-Bot: [Executes installation]
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TELEGRAM_TOKEN` | Bot token from @BotFather | *required* |
-| `ANTHROPIC_API_KEY` | Claude API key | *required* |
-| `ALLOWED_USER_ID` | Allowed Telegram user ID | *required* |
-| `HOST_USER` | SSH user | `root` |
-| `SSH_HOST` | SSH host | `host.docker.internal` |
-| `SSH_PORT` | SSH port | `22` |
-| `DATABASE_URL` | Database path | `sqlite:///./data/bot.db` |
-| `LOG_LEVEL` | Logging level | `INFO` |
-
-### User Roles
-
-| Role | Permissions |
-|------|-------------|
-| **admin** | All permissions |
-| **devops** | Execute commands, Docker, GitLab, Metrics, Schedule tasks |
-| **user** | Execute commands, View logs, Manage sessions, View metrics |
-| **readonly** | View logs, View metrics |
-
-## CI/CD
-
-The project includes GitLab CI/CD pipeline for automatic deployment:
-
-```yaml
-# .gitlab-ci.yml
-stages:
-  - build
-  - deploy
-```
-
-Push to `main` branch triggers:
-1. Build Docker image
-2. Transfer to server via SSH
-3. Deploy with docker-compose
-
-## Development
-
-### Setup
+#### 5️⃣ Check Logs
 
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+docker-compose logs -f claude-bot
 ```
 
-### Run Locally
+#### 6️⃣ Open Telegram
 
-```bash
-python main.py
-```
+Find your bot and send `/start` 🎉
 
-### Run Tests
-
-```bash
-pytest tests/
-```
-
-### Code Style
-
-```bash
-black application/ domain/ infrastructure/ presentation/ shared/
-mypy application/ domain/ infrastructure/ presentation/ shared/
-```
-
-## API Reference
-
-### BotService
-
-Main application service orchestrating all operations.
-
-```python
-async def chat(user_id: int, message: str) -> tuple[str, List[Dict]]
-async def execute_command(command_id: str) -> CommandExecutionResult
-async def get_system_info() -> Dict
-async def get_user_stats(user_id: int) -> Dict
-```
-
-### Repositories
-
-```python
-class UserRepository(ABC):
-    async def find_by_id(self, user_id: UserId) -> Optional[User]
-    async def save(self, user: User) -> None
-
-class SessionRepository(ABC):
-    async def find_active_by_user(self, user_id: UserId) -> Optional[Session]
-    async def save(self, session: Session) -> None
-
-class CommandRepository(ABC):
-    async def save(self, command: Command) -> None
-    async def find_by_user(self, user_id: int) -> List[Command]
-```
-
-## Security
-
-- ✅ SSH key-based authentication
-- ✅ User authorization via ALLOWED_USER_ID
-- ✅ Dangerous command warnings
-- ✅ Command approval workflow
-- ✅ Role-based access control
-- ✅ Audit logging
-
-## Troubleshooting
-
-### Bot doesn't respond
-
-1. Check `logs/bot.log`
-2. Verify environment variables
-3. Ensure SSH key is valid
-
-### SSH connection fails
-
-1. Verify host accessibility
-2. Check SSH key permissions
-3. Ensure public key is in `authorized_keys`
-
-### Database errors
-
-1. Check `data/` directory permissions
-2. Ensure SQLite is available
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-Built with:
-- [Aiogram](https://aiogram.dev/) - Telegram bot framework
-- [Anthropic](https://www.anthropic.com/) - Claude AI API
-- [psutil](https://psutil.readthedocs.io/) - System monitoring
+</details>
 
 ---
 
-**Made with ❤️ for DevOps automation**
+## 📱 Usage
+
+### Basic Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | 📱 Open main menu |
+| `/yolo` | ⚡ Toggle auto-approve mode |
+| `/cancel` | 🛑 Cancel current AI task |
+
+### Main Menu
+
+After `/start`, you'll see an inline keyboard with options:
+
+```
+┌─────────────────────────────────┐
+│  💬 Chat with Claude Code       │  ← Start coding session
+├─────────────────────────────────┤
+│  📁 Projects                    │  ← Browse & switch projects
+├─────────────────────────────────┤
+│  👤 Account                     │  ← Manage API credentials
+├─────────────────────────────────┤
+│  ⚙️ Settings                    │  ← Configure bot behavior
+└─────────────────────────────────┘
+```
+
+### Workflow Example
+
+```
+You: Create a Python function that validates email addresses
+
+Claude: I'll create an email validation function for you.
+
+📄 Creating file: utils/validators.py
+┌────────────────────────────────────┐
+│ [✅ Approve] [❌ Deny] [👁️ View]  │
+└────────────────────────────────────┘
+
+You: [Clicks ✅ Approve]
+
+Claude: ✅ Created utils/validators.py with email validation function.
+        The function uses regex pattern matching and handles edge cases...
+```
+
+### HITL (Human-in-the-Loop) Controls
+
+When Claude wants to perform an action, you'll see approval buttons:
+
+| Button | Action |
+|--------|--------|
+| ✅ **Approve** | Allow Claude to proceed |
+| ❌ **Deny** | Block the action |
+| 👁️ **View** | See what Claude wants to do |
+| ⚡ **YOLO** | Approve all future actions |
+
+---
+
+## 🏗️ Architecture
+
+This project follows **Domain-Driven Design (DDD)** with clean architecture:
+
+```
+claude-code-telegram/
+├── 🎯 domain/                    # Core business logic
+│   ├── entities/                 # User, Session, Project, Message
+│   ├── value_objects/            # UserId, Role, AIProviderConfig
+│   ├── repositories/             # Repository interfaces
+│   └── services/                 # Domain service contracts
+│
+├── 📦 application/               # Use cases & orchestration
+│   └── services/
+│       ├── bot_service.py        # Main orchestration
+│       ├── project_service.py    # Project management
+│       ├── context_service.py    # Conversation context
+│       └── account_service.py    # Auth mode switching
+│
+├── 🔧 infrastructure/            # External integrations
+│   ├── claude_code/
+│   │   ├── sdk_service.py        # Claude SDK (preferred)
+│   │   └── proxy_service.py      # CLI fallback
+│   ├── persistence/              # SQLite repositories
+│   └── messaging/                # AI service adapters
+│
+├── 🎨 presentation/              # Telegram interface
+│   ├── handlers/                 # Message, callback, command handlers
+│   ├── keyboards/                # Inline keyboard builders
+│   └── middleware/               # Auth middleware
+│
+├── 🔌 telegram-mcp/              # MCP server (TypeScript)
+│   └── src/index.ts              # Telegram tools for Claude
+│
+└── 🧪 tests/                     # Test suite (143+ tests)
+```
+
+### Backend Modes
+
+| Mode | Description | When Used |
+|------|-------------|-----------|
+| **SDK** | Direct Python integration via `claude-agent-sdk` | Primary (preferred) |
+| **CLI** | Subprocess calls to `claude` CLI | Fallback |
+
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+<details>
+<summary>🔧 Click to see all configuration options</summary>
+
+#### Required
+
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_TOKEN` | Bot token from @BotFather |
+| `ANTHROPIC_API_KEY` | API key (Anthropic or ZhipuAI) |
+| `ALLOWED_USER_ID` | Telegram user ID(s), comma-separated |
+
+#### AI Provider
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | Default model |
+| `ANTHROPIC_BASE_URL` | — | Custom API endpoint |
+
+#### Claude Code
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAUDE_WORKING_DIR` | `/root/projects` | Default working directory |
+| `CLAUDE_MAX_TURNS` | `50` | Max conversation turns |
+| `CLAUDE_TIMEOUT` | `600` | Command timeout (seconds) |
+| `CLAUDE_PERMISSION_MODE` | `default` | `default`, `auto`, or `never` |
+
+#### Optional Features
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSH_HOST` | `host.docker.internal` | Host for SSH commands |
+| `SSH_PORT` | `22` | SSH port |
+| `LOG_LEVEL` | `INFO` | Logging verbosity |
+| `DEBUG` | `false` | Enable debug mode |
+
+</details>
+
+---
+
+## 🐳 Docker Details
+
+### Volumes
+
+| Host Path | Container Path | Purpose |
+|-----------|----------------|---------|
+| `./data` | `/app/data` | SQLite database |
+| `./logs` | `/app/logs` | Application logs |
+| `./projects` | `/root/projects` | Your code projects |
+| `./claude_sessions` | `/root/.claude` | Claude Code sessions |
+| `./claude_config.json` | `/root/.config/claude/config.json` | Claude Account credentials (optional) |
+
+### Useful Commands
+
+```bash
+# Start the bot
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f claude-bot
+
+# Restart
+docker-compose restart
+
+# Stop
+docker-compose down
+
+# Update to latest version
+git pull && docker-compose up -d --build
+```
+
+---
+
+## 🔌 MCP Integration
+
+The bot includes a Telegram MCP server that allows Claude to proactively send messages:
+
+| Tool | Description |
+|------|-------------|
+| `send_message` | Send text notifications to Telegram |
+| `send_file` | Send files with optional captions |
+| `send_plan` | Create and send plan documents |
+
+To rebuild after changes:
+
+```bash
+cd telegram-mcp && npm install && npm run build
+```
+
+---
+
+## 🧪 Development
+
+### Local Setup
+
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or: venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run locally
+python main.py
+```
+
+### Running Tests
+
+```bash
+# All tests
+pytest tests/
+
+# With coverage
+pytest tests/ --cov=. --cov-report=html
+
+# Specific test file
+pytest tests/unit/domain/test_ai_provider_config.py -v
+```
+
+### Code Quality
+
+```bash
+# Format code
+black application/ domain/ infrastructure/ presentation/ shared/
+
+# Type checking
+mypy application/ domain/ infrastructure/ presentation/ shared/
+```
+
+---
+
+## 📊 Project Stats
+
+| Metric | Value |
+|--------|-------|
+| 📝 Python LOC | ~28,100 |
+| 📄 Python Files | 112 |
+| 🧪 Unit Tests | 143+ |
+| 🎛️ Handlers LOC | ~9,000 |
+| 🔌 MCP Server LOC | ~10,000 |
+
+---
+
+## 🛡️ Security
+
+### User Authorization (Whitelist)
+
+Access to the bot is controlled via `ALLOWED_USER_ID` environment variable:
+
+```ini
+# Single user (this user becomes admin)
+ALLOWED_USER_ID=123456789
+
+# Multiple users (first user is admin, others are regular users)
+ALLOWED_USER_ID=123456789,987654321,555555555
+```
+
+| Feature | Description |
+|---------|-------------|
+| 🔐 **Whitelist** | Only users in `ALLOWED_USER_ID` can access the bot |
+| 👑 **Auto Admin** | First user in the list automatically gets admin role |
+| 🚫 **Access Denied** | Unauthorized users see their Telegram ID (for requesting access) |
+| ⚠️ **Open Mode** | If `ALLOWED_USER_ID` is empty, bot is open to everyone (warning logged) |
+
+### Other Security Features
+
+- ✅ **HITL Controls** — Every AI action requires explicit approval
+- ✅ **No Credentials in Code** — All secrets via environment variables
+- ✅ **SSH Key Auth** — Secure server access (optional feature)
+- ✅ **Role-Based Access** — Admin, DevOps, User, ReadOnly roles
+
+---
+
+## 🐛 Troubleshooting
+
+<details>
+<summary>Bot doesn't respond</summary>
+
+1. Check logs: `docker-compose logs -f claude-bot`
+2. Verify `TELEGRAM_TOKEN` is correct
+3. Ensure your user ID is in `ALLOWED_USER_ID`
+
+</details>
+
+<details>
+<summary>Claude Code not working</summary>
+
+1. Check if API key is valid
+2. Verify `ANTHROPIC_API_KEY` is set
+3. Look for SDK/CLI status in startup logs
+
+</details>
+
+<details>
+<summary>Permission denied errors</summary>
+
+```bash
+chmod -R 755 ./data ./logs ./projects
+```
+
+</details>
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+
+1. 🍴 Fork the repository
+2. 🌿 Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. 💾 Commit your changes (`git commit -m 'Add amazing feature'`)
+4. 📤 Push to the branch (`git push origin feature/amazing-feature`)
+5. 🔃 Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+Built with these amazing tools:
+
+- [Aiogram](https://aiogram.dev/) — Modern Telegram bot framework
+- [Claude Code](https://github.com/anthropics/claude-code) — Anthropic's AI coding CLI
+- [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) — Claude API client
+
+---
+
+<p align="center">
+  <b>Made with ❤️ for developers who code on the go</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/your-username/claude-code-telegram/issues">Report Bug</a> •
+  <a href="https://github.com/your-username/claude-code-telegram/issues">Request Feature</a>
+</p>
