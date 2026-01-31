@@ -117,7 +117,24 @@ class MessageHandlersFacade:
         self._files = file_context_manager
 
         # Callback handlers (bidirectional link from container)
-        self.callback_handlers = None
+        self._callback_handlers = None
+
+    @property
+    def callback_handlers(self):
+        """Get callback handlers"""
+        return self._callback_handlers
+
+    @callback_handlers.setter
+    def callback_handlers(self, value):
+        """Set callback handlers and propagate to coordinator and text_handler"""
+        self._callback_handlers = value
+        # Propagate to coordinator
+        if hasattr(self._coordinator, '_callback_handlers'):
+            self._coordinator._callback_handlers = value
+        # Propagate to text_handler inside coordinator
+        if hasattr(self._coordinator, '_text_handler') and self._coordinator._text_handler:
+            self._coordinator._text_handler.callback_handlers = value
+        logger.debug(f"callback_handlers set and propagated: {value is not None}")
 
     # === Delegate ALL methods from legacy MessageHandlers ===
 
