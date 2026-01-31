@@ -1,0 +1,138 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  COMPOSE_PROJECT_NAME: ubuntu_claude
+  BOT_IMAGE_NAME: ubuntu-claude-bot
+  BOT_CONTAINER_NAME: claude_agent
+
+  SERVER_HOST: "192.168.0.116"
+  SERVER_USER: "root"
+  SERVER_APP_PATH: "/opt/ubuntu_claude"
+
+  GIT_HTTP_URL: "http://192.168.0.116:8088"
+  PROJECT_PATH: "root/ubuntu_claude"
+
+  # Нестандартные порты (чтобы не конфликтовать с другими сервисами)
+  HOST_SSH_PORT: "2222"
+
+build-image:
+  stage: build
+  before_script:
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - |
+      if [ -n "${SSH_PRIVATE_KEY:-}" ]; then
+        echo "$SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_rsa
+      elif [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
+        echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_rsa
+      else
+        echo "ERROR: Neither SSH_PRIVATE_KEY nor SSH_PRIVATE_KEY_B64 is set"
+        exit 1
+      fi
+    - chmod 600 ~/.ssh/id_rsa
+    - 'ssh-keygen -y -f ~/.ssh/id_rsa > /dev/null 2>&1 || (echo "ERROR: Invalid SSH private key format" && exit 1)'
+    - ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - echo "Building bot image on runner..."
+    - docker build --no-cache --build-arg CACHE_BUST="$CI_COMMIT_SHA" -t "$BOT_IMAGE_NAME:$CI_COMMIT_SHA" .
+    - docker tag "$BOT_IMAGE_NAME:$CI_COMMIT_SHA" "$BOT_IMAGE_NAME:latest"
+    - docker save "$BOT_IMAGE_NAME:latest" | gzip -c > /tmp/ubuntu-claude-bot-image.tar.gz
+    - ssh -o StrictHostKeyChecking=no -p "$HOST_SSH_PORT" "$SERVER_USER@$SERVER_HOST" "mkdir -p /tmp/ubuntu-claude-ci"
+    - scp -o StrictHostKeyChecking=no -P "$HOST_SSH_PORT" /tmp/ubuntu-claude-bot-image.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/ubuntu-claude-ci/ubuntu-claude-bot-image.tar.gz"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+
+deploy:
+  stage: deploy
+  needs:
+    - job: build-image
+  before_script:
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - |
+      if [ -n "${SSH_PRIVATE_KEY:-}" ]; then
+        echo "$SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_rsa
+      elif [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
+        echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_rsa
+      else
+        echo "ERROR: Neither SSH_PRIVATE_KEY nor SSH_PRIVATE_KEY_B64 is set"
+        exit 1
+      fi
+    - chmod 600 ~/.ssh/id_rsa
+    - 'ssh-keygen -y -f ~/.ssh/id_rsa > /dev/null 2>&1 || (echo "ERROR: Invalid SSH private key format" && exit 1)'
+    - ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - |
+      cat > /tmp/deploy_remote.sh <<'DEPLOY_REMOTE'
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      if docker compose version >/dev/null 2>&1; then
+        DC="docker compose"
+      elif command -v docker-compose >/dev/null 2>&1; then
+        DC="docker-compose"
+      else
+        echo "ERROR: neither 'docker compose' nor 'docker-compose' found"
+        exit 1
+      fi
+
+      echo "--> Load image"
+      gunzip -c /tmp/ubuntu-claude-ci/ubuntu-claude-bot-image.tar.gz | docker load
+
+      echo "--> Ensure dirs"
+      mkdir -p "$SERVER_APP_PATH"
+
+      echo "--> Ensure repo exists"
+      if [ -d "$SERVER_APP_PATH/.git" ]; then
+        echo "--> Repo already present"
+      else
+        if [ -d "$SERVER_APP_PATH" ] && [ -n "$(ls -A "$SERVER_APP_PATH" 2>/dev/null)" ]; then
+          BACKUP_PATH="${SERVER_APP_PATH}.bak.$(date +%Y%m%d%H%M%S)"
+          echo "WARN: $SERVER_APP_PATH exists but is not a git repo; moving to $BACKUP_PATH"
+          mv "$SERVER_APP_PATH" "$BACKUP_PATH"
+        else
+          rm -rf "$SERVER_APP_PATH"
+        fi
+        git clone "http://oauth2:${GIT_TOKEN}@192.168.0.116:8088/${PROJECT_PATH}.git" "$SERVER_APP_PATH"
+      fi
+      cd "$SERVER_APP_PATH"
+      git fetch origin
+      git checkout "$CI_COMMIT_BRANCH"
+      git reset --hard "origin/$CI_COMMIT_BRANCH"
+
+      echo "--> Ensure data directories exist"
+      mkdir -p "$SERVER_APP_PATH/data"
+      mkdir -p "$SERVER_APP_PATH/logs"
+      mkdir -p "$SERVER_APP_PATH/projects"
+      mkdir -p "$SERVER_APP_PATH/claude_sessions"
+
+      echo "--> Generate SSH key for bot if not exists"
+      if [ ! -f "$SERVER_APP_PATH/bot_key" ]; then
+        ssh-keygen -t ed25519 -f "$SERVER_APP_PATH/bot_key" -N "" -C "claude-bot"
+        echo "--> New SSH key generated. Add this public key to ~/.ssh/authorized_keys:"
+        cat "$SERVER_APP_PATH/bot_key.pub"
+        echo "--> Then run: cat $SERVER_APP_PATH/bot_key.pub >> ~/.ssh/authorized_keys"
+      fi
+
+      echo "--> Compose down (previous project state)"
+      $DC -p "$COMPOSE_PROJECT_NAME" -f docker-compose.prod.yml down --remove-orphans || true
+
+      echo "--> Compose up"
+      $DC -p "$COMPOSE_PROJECT_NAME" -f docker-compose.prod.yml up -d --no-build --force-recreate --remove-orphans
+
+      echo "--> Status"
+      $DC -p "$COMPOSE_PROJECT_NAME" -f docker-compose.prod.yml ps
+
+      rm -f /tmp/ubuntu-claude-ci/ubuntu-claude-bot-image.tar.gz || true
+      DEPLOY_REMOTE
+      chmod +x /tmp/deploy_remote.sh
+
+      ssh -o StrictHostKeyChecking=no -p "$HOST_SSH_PORT" "$SERVER_USER@$SERVER_HOST" \
+        "CI_COMMIT_BRANCH='$CI_COMMIT_BRANCH' SERVER_APP_PATH='$SERVER_APP_PATH' COMPOSE_PROJECT_NAME='$COMPOSE_PROJECT_NAME' BOT_IMAGE_NAME='$BOT_IMAGE_NAME' BOT_CONTAINER_NAME='$BOT_CONTAINER_NAME' PROJECT_PATH='$PROJECT_PATH' GIT_TOKEN='$GIT_TOKEN' TELEGRAM_TOKEN='$TELEGRAM_TOKEN' ANTHROPIC_API_KEY='$ANTHROPIC_API_KEY' ANTHROPIC_AUTH_TOKEN='$ANTHROPIC_AUTH_TOKEN' ANTHROPIC_BASE_URL='$ANTHROPIC_BASE_URL' ANTHROPIC_DEFAULT_HAIKU_MODEL='$ANTHROPIC_DEFAULT_HAIKU_MODEL' ANTHROPIC_DEFAULT_SONNET_MODEL='$ANTHROPIC_DEFAULT_SONNET_MODEL' ANTHROPIC_DEFAULT_OPUS_MODEL='$ANTHROPIC_DEFAULT_OPUS_MODEL' ANTHROPIC_MODEL='$ANTHROPIC_MODEL' ALLOWED_USER_ID='$ALLOWED_USER_ID' HOST_USER='$HOST_USER' bash -s" < /tmp/deploy_remote.sh
+  environment:
+    name: production
+    url: http://$SERVER_HOST
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"

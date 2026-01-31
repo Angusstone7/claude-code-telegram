@@ -1,0 +1,27 @@
+# Docker Logs API
+#
+# Простой HTTP API для чтения логов Docker контейнеров.
+# Доступен всем контейнерам без дополнительной настройки.
+#
+# УСТАНОВКА:
+#   cd docker-logs-api && docker compose up -d --build
+#
+# ИСПОЛЬЗОВАНИЕ из любого контейнера:
+#   curl http://host.docker.internal:9999/containers
+#   curl http://host.docker.internal:9999/logs/container_name
+#   curl http://host.docker.internal:9999/logs/container_name?tail=100
+#   curl http://host.docker.internal:9999/logs/container_name?since=1h
+
+services:
+  docker-logs-api:
+    build: .
+    container_name: docker_logs_api
+    restart: always
+    ports:
+      # Доступен на хосте, а значит через host.docker.internal для всех контейнеров
+      - "9999:9999"
+    volumes:
+      # Только чтение Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PYTHONUNBUFFERED=1

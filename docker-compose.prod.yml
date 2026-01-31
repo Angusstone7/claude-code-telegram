@@ -1,0 +1,44 @@
+services:
+  claude-bot:
+    image: ${BOT_IMAGE_NAME:-ubuntu-claude-bot:latest}
+    container_name: ${BOT_CONTAINER_NAME:-claude_agent}
+    restart: always
+    environment:
+      # Telegram
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - ALLOWED_USER_ID=${ALLOWED_USER_ID}
+      # AI Provider
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+      - ANTHROPIC_DEFAULT_HAIKU_MODEL=${ANTHROPIC_DEFAULT_HAIKU_MODEL}
+      - ANTHROPIC_DEFAULT_SONNET_MODEL=${ANTHROPIC_DEFAULT_SONNET_MODEL}
+      - ANTHROPIC_DEFAULT_OPUS_MODEL=${ANTHROPIC_DEFAULT_OPUS_MODEL}
+      # SSH configuration for Docker management on host
+      - HOST_USER=${HOST_USER:-root}
+      - SSH_HOST=${SSH_HOST:-host.docker.internal}
+      - SSH_PORT=${SSH_PORT:-22}
+      - SSH_KEY_PATH=${SSH_KEY_PATH:-/app/bot_key}
+      # Database and logging
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/bot.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
+    volumes:
+      # SSH private key for host access (read-only)
+      # Generate with: ssh-keygen -t ed25519 -f ./bot_key -N ""
+      # Add public key to host: cat ./bot_key.pub >> ~/.ssh/authorized_keys
+      - ./bot_key:/app/bot_key:ro
+      # Persistent data
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Projects directory - persists across container rebuilds
+      - ./projects:/root/projects
+      # Claude Code sessions - preserves conversation history and context compression
+      - ./claude_sessions:/root/.claude
+      # Claude Account credentials (optional - for OAuth auth instead of API key)
+      # Get this file by running `claude` locally and authenticating via browser
+      # - ./claude_config.json:/root/.config/claude/config.json:ro
+    extra_hosts:
+      # Allows container to connect to host machine via SSH
+      - "host.docker.internal:host-gateway"
