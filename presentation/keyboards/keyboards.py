@@ -1730,7 +1730,9 @@ class Keyboards:
         models: list = None,
         auth_mode: str = "zai_api",
         current_model: str = None,
-        lang: str = "ru"
+        lang: str = "ru",
+        is_loading: bool = False,
+        from_api: bool = False
     ) -> InlineKeyboardMarkup:
         """
         Dynamic model selection keyboard based on auth mode.
@@ -1740,13 +1742,23 @@ class Keyboards:
             auth_mode: Current auth mode
             current_model: Currently selected model
             lang: User language code
+            is_loading: Show loading state
+            from_api: Whether models were fetched from API
         """
         from shared.i18n import get_translator
         t = get_translator(lang)
 
         buttons = []
 
-        if models:
+        if is_loading:
+            # Loading state
+            buttons.append([
+                InlineKeyboardButton(
+                    text="⏳ " + t("status.loading"),
+                    callback_data="account:noop"
+                )
+            ])
+        elif models:
             # Dynamic buttons from provided models list
             for m in models:
                 emoji = "✅" if m.get("is_selected") else "🔘"
@@ -1777,6 +1789,18 @@ class Keyboards:
                 callback_data="account:model:default"
             )
         ])
+
+        # Refresh button - only for non-local modes that support API fetch
+        if auth_mode != "local_model" and not is_loading:
+            refresh_text = "🔄 " + t("menu.refresh")
+            if from_api:
+                refresh_text = "✨ API | 🔄"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=refresh_text,
+                    callback_data="account:refresh_models"
+                )
+            ])
 
         # For local model mode, add "Change settings" button
         if auth_mode == "local_model":

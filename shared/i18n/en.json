@@ -144,6 +144,8 @@
   "account.model_subtitle_local": "LMStudio / Ollama / LLama",
   "account.model_no_local": "Local model not configured. Click '⚙️ Change settings' to add.",
   "account.model_empty": "No available models",
+  "account.models_from_api": "Fetched from API",
+  "account.models_refresh": "🔄 Refresh list",
 
   "account.upload_creds_title": "📤 <b>Upload credentials</b>",
   "account.upload_creds_desc": "Send the <code>.credentials.json</code> file",

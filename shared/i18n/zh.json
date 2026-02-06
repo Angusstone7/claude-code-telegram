@@ -144,6 +144,8 @@
   "account.model_subtitle_local": "LMStudio / Ollama / LLama",
   "account.model_no_local": "本地模型未配置。点击'⚙️ 更改设置'添加。",
   "account.model_empty": "没有可用的模型",
+  "account.models_from_api": "从 API 获取",
+  "account.models_refresh": "🔄 刷新列表",
 
   "account.upload_creds_title": "📤 <b>上传凭证</b>",
   "account.upload_creds_desc": "发送 <code>.credentials.json</code> 文件",

@@ -469,6 +469,15 @@ class AccountHandlers:
             # Delete z.ai API key
             await self._handle_zai_delete_key(callback, state)
 
+        elif action == "refresh_models":
+            # Force refresh models from API
+            await callback.answer(t("status.loading"))
+            await self._show_model_selection(callback, state, force_refresh=True)
+
+        elif action == "noop":
+            # No-op for loading state
+            await callback.answer()
+
         else:
             await callback.answer(f"Неизвестное действие: {action}")
 
@@ -795,16 +804,15 @@ class AccountHandlers:
         )
         await callback.answer()
 
-    async def _show_model_selection(self, callback: CallbackQuery, state: FSMContext):
+    async def _show_model_selection(self, callback: CallbackQuery, state: FSMContext, force_refresh: bool = False):
         """Show model selection menu based on current auth mode"""
         user_id = callback.from_user.id
         lang = await self._get_user_lang(user_id)
         from shared.i18n import get_translator
         t = get_translator(lang)
 
-        # Get settings and available models for current auth mode
+        # Get settings
         settings = await self.account_service.get_settings(user_id)
-        models = await self.account_service.get_available_models(user_id)
 
         # Build title based on auth mode
         titles = {
@@ -813,6 +821,22 @@ class AccountHandlers:
             AuthMode.LOCAL_MODEL: (t("account.local_model"), t("account.model_subtitle_local")),
         }
         title, subtitle = titles.get(settings.auth_mode, (t("account.model"), ""))
+
+        # If force refresh, clear cache first
+        if force_refresh:
+            from application.services.account_service import _models_cache
+            if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
+                _models_cache["claude"] = None
+                _models_cache["claude_time"] = 0
+            elif settings.auth_mode == AuthMode.ZAI_API:
+                _models_cache["zai"] = None
+                _models_cache["zai_time"] = 0
+
+        # Get available models (may fetch from API)
+        models = await self.account_service.get_available_models(user_id)
+
+        # Check if models came from API (have more than basic info)
+        from_api = len(models) > 3 if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT else False
 
         text = f"{t('account.model_title', title=title)}\n"
         if subtitle:
@@ -831,13 +855,17 @@ class AccountHandlers:
             else:
                 text += f"\n<i>{t('account.model_empty')}</i>"
 
+        if from_api:
+            text += f"\n<i>✨ {t('account.models_from_api')}</i>"
+
         await callback.message.edit_text(
             text,
             reply_markup=Keyboards.model_select(
                 models=models,
                 auth_mode=settings.auth_mode.value,
                 current_model=settings.model,
-                lang=lang
+                lang=lang,
+                from_api=from_api
             ),
             parse_mode="HTML"
         )

@@ -144,6 +144,8 @@
   "account.model_subtitle_local": "LMStudio / Ollama / LLama",
   "account.model_no_local": "Локальная модель не настроена. Нажмите '⚙️ Изменить настройки' чтобы добавить.",
   "account.model_empty": "Нет доступных моделей",
+  "account.models_from_api": "Получено из API",
+  "account.models_refresh": "🔄 Обновить список",
 
   "account.upload_creds_title": "📤 <b>Загрузка credentials</b>",
   "account.upload_creds_desc": "Отправьте файл <code>.credentials.json</code>",

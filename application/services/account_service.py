@@ -60,6 +60,11 @@ class ClaudeModel(str, Enum):
         return descriptions.get(model, "")
 
 
+# Cache for API-fetched models (TTL: 5 minutes)
+_models_cache: dict = {"claude": None, "claude_time": 0, "zai": None, "zai_time": 0}
+MODELS_CACHE_TTL = 300  # 5 minutes
+
+
 @dataclass
 class LocalModelConfig:
     """Configuration for a local model endpoint (LMStudio, Ollama, etc.)"""
@@ -327,6 +332,7 @@ class AccountService:
     async def get_available_models(self, user_id: int) -> list[dict]:
         """
         Get available models based on current auth mode.
+        Fetches from API when possible, falls back to hardcoded list.
 
         Returns:
             List of model dicts with: id, name, desc, is_selected
@@ -334,17 +340,25 @@ class AccountService:
         settings = await self.get_settings(user_id)
 
         if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
-            models = [
-                {"id": ClaudeModel.OPUS.value, "name": "Opus 4.5", "desc": "Самая мощная модель"},
-                {"id": ClaudeModel.SONNET.value, "name": "Sonnet 4.5", "desc": "Баланс скорости и качества (рекомендуется)"},
-                {"id": ClaudeModel.HAIKU.value, "name": "Haiku 4", "desc": "Быстрая модель"},
-            ]
+            # Try to fetch from Anthropic API
+            models = await self._fetch_claude_models_from_api()
+            if not models:
+                # Fallback to hardcoded list
+                models = [
+                    {"id": ClaudeModel.OPUS.value, "name": "Opus 4.5", "desc": "Самая мощная модель"},
+                    {"id": ClaudeModel.SONNET.value, "name": "Sonnet 4.5", "desc": "Баланс скорости и качества (рекомендуется)"},
+                    {"id": ClaudeModel.HAIKU.value, "name": "Haiku 4", "desc": "Быстрая модель"},
+                ]
             for m in models:
                 m["is_selected"] = settings.model == m["id"]
             return models
 
         elif settings.auth_mode == AuthMode.ZAI_API:
-            models = self._get_zai_models_from_env()
+            # Try to fetch from z.ai API (if supported)
+            models = await self._fetch_zai_models_from_api(settings.zai_api_key)
+            if not models:
+                # Fallback to env-based or hardcoded list
+                models = self._get_zai_models_from_env()
             for m in models:
                 m["is_selected"] = settings.model == m["id"]
             return models
@@ -360,6 +374,207 @@ class AccountService:
             return []
 
         return []
+
+    async def _fetch_claude_models_from_api(self) -> list[dict]:
+        """
+        Fetch available models from Anthropic API.
+        Uses caching to avoid frequent API calls.
+
+        API Endpoint: GET https://api.anthropic.com/v1/models
+
+        Returns:
+            List of model dicts with: id, name, desc
+            Empty list if API call fails
+        """
+        import time
+        import httpx
+
+        # Check cache
+        cache_key = "claude"
+        if _models_cache[cache_key] and (time.time() - _models_cache[f"{cache_key}_time"]) < MODELS_CACHE_TTL:
+            logger.debug("Returning cached Claude models")
+            return _models_cache[cache_key].copy()
+
+        # Get access token from credentials
+        access_token = self.get_access_token_from_credentials()
+        if not access_token:
+            logger.debug("No access token for Claude API models fetch")
+            return []
+
+        try:
+            headers = {
+                "x-api-key": access_token,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            }
+
+            # Get proxy config for API call
+            proxy_url = None
+            if self.proxy_service:
+                try:
+                    proxy_config = await self.proxy_service.get_effective_proxy(0)  # system-wide
+                    if proxy_config and proxy_config.enabled:
+                        proxy_url = proxy_config.to_url()
+                except Exception:
+                    pass
+
+            async with httpx.AsyncClient(timeout=10.0, proxy=proxy_url) as client:
+                response = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers=headers,
+                )
+
+                if response.status_code != 200:
+                    logger.warning(f"Failed to fetch Claude models: {response.status_code}")
+                    return []
+
+                data = response.json()
+                models_data = data.get("data", [])
+
+                # Parse and format models
+                models = []
+                for m in models_data:
+                    model_id = m.get("id", "")
+                    display_name = m.get("display_name", model_id)
+
+                    # Filter to only include main Claude models (not snapshots)
+                    # Skip dated versions like "claude-3-5-sonnet-20241022"
+                    if self._is_main_claude_model(model_id):
+                        models.append({
+                            "id": model_id,
+                            "name": display_name,
+                            "desc": self._get_model_description(model_id),
+                        })
+
+                # Sort by preference: opus first, then sonnet, then haiku
+                models.sort(key=lambda x: self._model_sort_key(x["id"]))
+
+                # Cache the result
+                _models_cache[cache_key] = models
+                _models_cache[f"{cache_key}_time"] = time.time()
+
+                logger.info(f"Fetched {len(models)} Claude models from API")
+                return models.copy()
+
+        except httpx.TimeoutException:
+            logger.warning("Timeout fetching Claude models from API")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching Claude models from API: {e}")
+            return []
+
+    def _is_main_claude_model(self, model_id: str) -> bool:
+        """Check if model is a main Claude model (not a dated snapshot)."""
+        # Include main model IDs and aliases
+        main_patterns = [
+            "claude-opus-4",
+            "claude-sonnet-4",
+            "claude-haiku-4",
+            "opus",
+            "sonnet",
+            "haiku",
+        ]
+
+        # Exclude dated versions (e.g., "claude-3-5-sonnet-20241022")
+        if any(char.isdigit() and len(model_id) > 20 for char in model_id[-8:]):
+            # Likely a dated version
+            return False
+
+        return any(pattern in model_id.lower() for pattern in main_patterns)
+
+    def _get_model_description(self, model_id: str) -> str:
+        """Get description for model based on its ID."""
+        model_lower = model_id.lower()
+        if "opus" in model_lower:
+            return "Самая мощная модель для сложных задач"
+        elif "sonnet" in model_lower:
+            return "Баланс скорости и качества (рекомендуется)"
+        elif "haiku" in model_lower:
+            return "Быстрая модель для простых задач"
+        return ""
+
+    def _model_sort_key(self, model_id: str) -> tuple:
+        """Sort key for models: opus=0, sonnet=1, haiku=2, others=9"""
+        model_lower = model_id.lower()
+        if "opus" in model_lower:
+            return (0, model_id)
+        elif "sonnet" in model_lower:
+            return (1, model_id)
+        elif "haiku" in model_lower:
+            return (2, model_id)
+        return (9, model_id)
+
+    async def _fetch_zai_models_from_api(self, api_key: str = None) -> list[dict]:
+        """
+        Fetch available models from z.ai API.
+        Uses caching to avoid frequent API calls.
+
+        Returns:
+            List of model dicts with: id, name, desc
+            Empty list if API call fails or not supported
+        """
+        import time
+        import httpx
+
+        # Check cache
+        cache_key = "zai"
+        if _models_cache[cache_key] and (time.time() - _models_cache[f"{cache_key}_time"]) < MODELS_CACHE_TTL:
+            logger.debug("Returning cached z.ai models")
+            return _models_cache[cache_key].copy()
+
+        # Get API key
+        if not api_key:
+            api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            logger.debug("No API key for z.ai models fetch")
+            return []
+
+        base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://open.bigmodel.cn/api/anthropic")
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{base_url}/v1/models",
+                    headers=headers,
+                )
+
+                if response.status_code != 200:
+                    logger.debug(f"z.ai models API returned {response.status_code}, using fallback")
+                    return []
+
+                data = response.json()
+                models_data = data.get("data", [])
+
+                # Parse and format models
+                models = []
+                for m in models_data:
+                    model_id = m.get("id", "")
+                    display_name = m.get("display_name", self._format_model_name(model_id))
+
+                    models.append({
+                        "id": model_id,
+                        "name": display_name,
+                        "desc": "",
+                    })
+
+                if models:
+                    # Cache the result
+                    _models_cache[cache_key] = models
+                    _models_cache[f"{cache_key}_time"] = time.time()
+
+                    logger.info(f"Fetched {len(models)} z.ai models from API")
+                    return models.copy()
+
+                return []
+
+        except Exception as e:
+            logger.debug(f"z.ai models API not available: {e}")
+            return []
 
     def _get_zai_models_from_env(self) -> list[dict]:
         """Get z.ai models from environment variables or use defaults."""
