@@ -35,7 +35,7 @@ class AuthMode(str, Enum):
 
 class ClaudeModel(str, Enum):
     """Available Claude models - use SDK aliases for proper resolution"""
-    OPUS_46 = "claude-opus-4-6-20250616"  # Opus 4.6 — newest, most powerful
+    OPUS_46 = "claude-opus-4-6"  # Opus 4.6 — newest, most powerful
     OPUS = "opus"  # Alias → latest Opus (currently 4.5)
     SONNET = "sonnet"  # Alias → latest Sonnet (currently 4.5)
     HAIKU = "haiku"  # Alias → latest Haiku
@@ -264,7 +264,7 @@ class AccountService:
             # Current aliases
             "opus", "sonnet", "haiku",
             # Full model IDs
-            "claude-opus-4-6-20250616",
+            "claude-opus-4-6",
             "claude-opus-4-5", "claude-opus-4-5-20251101",
             "claude-sonnet-4-5", "claude-sonnet-4-20250514",
             "claude-haiku-4", "claude-3-5-haiku-20241022",
