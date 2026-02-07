@@ -35,6 +35,7 @@ class AuthMode(str, Enum):
 
 class ClaudeModel(str, Enum):
     """Available Claude models - use SDK aliases for proper resolution"""
+    OPUS_46 = "claude-opus-4-6-20250616"  # Opus 4.6 — newest, most powerful
     OPUS = "opus"  # Alias → latest Opus (currently 4.5)
     SONNET = "sonnet"  # Alias → latest Sonnet (currently 4.5)
     HAIKU = "haiku"  # Alias → latest Haiku
@@ -43,6 +44,7 @@ class ClaudeModel(str, Enum):
     def get_display_name(cls, model: str) -> str:
         """Get user-friendly display name for model"""
         mapping = {
+            cls.OPUS_46: "Opus 4.6",
             cls.OPUS: "Opus 4.5",
             cls.SONNET: "Sonnet 4.5",
             cls.HAIKU: "Haiku 4",
@@ -53,7 +55,8 @@ class ClaudeModel(str, Enum):
     def get_description(cls, model: str) -> str:
         """Get model description"""
         descriptions = {
-            cls.OPUS: "Самая мощная модель, лучшая для сложных задач",
+            cls.OPUS_46: "Новейшая и самая мощная модель",
+            cls.OPUS: "Мощная модель для сложных задач",
             cls.SONNET: "Баланс между скоростью и качеством (рекомендуется)",
             cls.HAIKU: "Быстрая модель для простых задач",
         }
@@ -260,7 +263,8 @@ class AccountService:
         official_models = {
             # Current aliases
             "opus", "sonnet", "haiku",
-            # Legacy full model IDs (may be saved in DB)
+            # Full model IDs
+            "claude-opus-4-6-20250616",
             "claude-opus-4-5", "claude-opus-4-5-20251101",
             "claude-sonnet-4-5", "claude-sonnet-4-20250514",
             "claude-haiku-4", "claude-3-5-haiku-20241022",
@@ -340,15 +344,14 @@ class AccountService:
         settings = await self.get_settings(user_id)
 
         if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT:
-            # Try to fetch from Anthropic API
-            models = await self._fetch_claude_models_from_api()
-            if not models:
-                # Fallback to hardcoded list
-                models = [
-                    {"id": ClaudeModel.OPUS.value, "name": "Opus 4.5", "desc": "Самая мощная модель"},
-                    {"id": ClaudeModel.SONNET.value, "name": "Sonnet 4.5", "desc": "Баланс скорости и качества (рекомендуется)"},
-                    {"id": ClaudeModel.HAIKU.value, "name": "Haiku 4", "desc": "Быстрая модель"},
-                ]
+            # Claude Account uses OAuth token which doesn't have access to /v1/models API
+            # Use hardcoded list of available models
+            models = [
+                {"id": ClaudeModel.OPUS_46.value, "name": "Opus 4.6", "desc": "Новейшая и самая мощная модель"},
+                {"id": ClaudeModel.OPUS.value, "name": "Opus 4.5", "desc": "Мощная модель для сложных задач"},
+                {"id": ClaudeModel.SONNET.value, "name": "Sonnet 4.5", "desc": "Баланс скорости и качества (рекомендуется)"},
+                {"id": ClaudeModel.HAIKU.value, "name": "Haiku 4", "desc": "Быстрая модель"},
+            ]
             for m in models:
                 m["is_selected"] = settings.model == m["id"]
             return models

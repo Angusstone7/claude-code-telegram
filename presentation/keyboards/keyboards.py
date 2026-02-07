@@ -1790,8 +1790,8 @@ class Keyboards:
             )
         ])
 
-        # Refresh button - only for non-local modes that support API fetch
-        if auth_mode != "local_model" and not is_loading:
+        # Refresh button - only for z.ai mode (Claude Account uses hardcoded list, API doesn't support OAuth tokens)
+        if auth_mode == "zai_api" and not is_loading:
             refresh_text = "🔄 " + t("menu.refresh")
             if from_api:
                 refresh_text = "✨ API | 🔄"

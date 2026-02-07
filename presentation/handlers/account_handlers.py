@@ -835,8 +835,8 @@ class AccountHandlers:
         # Get available models (may fetch from API)
         models = await self.account_service.get_available_models(user_id)
 
-        # Check if models came from API (have more than basic info)
-        from_api = len(models) > 3 if settings.auth_mode == AuthMode.CLAUDE_ACCOUNT else False
+        # Check if models came from API (for z.ai mode)
+        from_api = False  # Claude Account uses hardcoded list; z.ai may fetch from API
 
         text = f"{t('account.model_title', title=title)}\n"
         if subtitle:
