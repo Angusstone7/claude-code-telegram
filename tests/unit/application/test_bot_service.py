@@ -384,22 +384,27 @@ class TestBotServiceStatistics:
         assert result == {}
 
     @pytest.mark.asyncio
-    async def test_get_system_info(self, bot_service):
+    async def test_get_system_info(self, mock_user_repository, mock_session_repository, mock_command_repository):
         """Test getting system information."""
-        with patch("infrastructure.monitoring.system_monitor.SystemMonitor") as mock_monitor_class:
-            mock_monitor = Mock()
-            mock_metrics = Mock()
-            mock_metrics.to_dict.return_value = {"cpu": 25.5, "memory": 60.0}
-            mock_monitor.get_metrics = AsyncMock(return_value=mock_metrics)
-            mock_monitor.get_top_processes = AsyncMock(return_value=[{"name": "python", "cpu": 10}])
-            mock_monitor.check_alerts = AsyncMock(return_value=[])
-            mock_monitor_class.return_value = mock_monitor
+        mock_monitor = Mock()
+        mock_metrics = Mock()
+        mock_metrics.to_dict.return_value = {"cpu": 25.5, "memory": 60.0}
+        mock_monitor.get_metrics = AsyncMock(return_value=mock_metrics)
+        mock_monitor.get_top_processes = AsyncMock(return_value=[{"name": "python", "cpu": 10}])
+        mock_monitor.check_alerts = AsyncMock(return_value=[])
 
-            result = await bot_service.get_system_info()
+        service = BotService(
+            user_repository=mock_user_repository,
+            session_repository=mock_session_repository,
+            command_repository=mock_command_repository,
+            system_monitor=mock_monitor,
+        )
 
-            assert result["metrics"] == {"cpu": 25.5, "memory": 60.0}
-            assert len(result["top_processes"]) == 1
-            assert result["alerts"] == []
+        result = await service.get_system_info()
+
+        assert result["metrics"] == {"cpu": 25.5, "memory": 60.0}
+        assert len(result["top_processes"]) == 1
+        assert result["alerts"] == []
 
 
 class TestBotServiceCleanup:
