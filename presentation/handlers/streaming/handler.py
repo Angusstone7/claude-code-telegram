@@ -912,11 +912,47 @@ class StreamingHandler:
         self.ui.set_completion_info(info)
 
     async def send_completion(self, success: bool = True):
-        """Send a completion indicator - rendered at the BOTTOM after tools"""
+        """Send a completion indicator - rendered at the BOTTOM after tools.
+
+        If the current continuation message has very little content (just a header),
+        delete the empty continuation and send completion as a compact standalone message
+        instead of showing a nearly-empty "Часть N" with just status info.
+        """
         if success:
             self.ui.set_completion_status("✅ <b>Готово</b>")
         else:
             self.ui.set_completion_status("⚠️ <b>Завершено с проблемами</b>")
+
+        # Check if current message is a nearly-empty continuation (only header + completion)
+        if (self._message_index > 1
+                and self.current_message
+                and not self.ui.elements
+                and not self.ui._content_buffer):
+            # Current continuation has no real content — just "📨 Часть N" header
+            try:
+                await self.current_message.delete()
+                logger.info(
+                    f"Deleted empty continuation #{self._message_index}, "
+                    f"sending compact completion instead"
+                )
+            except Exception as e:
+                logger.debug(f"Could not delete empty continuation: {e}")
+
+            # Send completion as a compact standalone message
+            parts = []
+            if self.ui.completion_info:
+                parts.append(self.ui.completion_info)
+            if self.ui.completion_status:
+                parts.append(self.ui.completion_status)
+            completion_text = "\n\n".join(parts) or "✅ <b>Готово</b>"
+
+            try:
+                self.current_message = await self._send_new_message(completion_text)
+            except Exception as e:
+                logger.error(f"Error sending compact completion: {e}")
+            self.is_finalized = True
+            return
+
         await self.finalize()
 
     async def move_to_bottom(self, header: str = ""):
