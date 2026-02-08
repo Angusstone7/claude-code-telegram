@@ -9,7 +9,7 @@ from aiogram import Bot
 from presentation.keyboards.keyboards import Keyboards
 from presentation.handlers.streaming import StreamingHandler, HeartbeatTracker
 from domain.entities.claude_code_session import ClaudeCodeSession
-from infrastructure.claude_code.proxy_service import TaskResult
+from domain.services.claude_code_service import TaskResult
 
 from .base import BaseMessageHandler
 

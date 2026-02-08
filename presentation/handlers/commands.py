@@ -1,14 +1,16 @@
 import asyncio
 import logging
 import os
+from typing import TYPE_CHECKING
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from aiogram.enums import ParseMode
 from application.services.bot_service import BotService
-from infrastructure.claude_code.proxy_service import ClaudeCodeProxyService
-from infrastructure.claude_code.diagnostics import run_diagnostics, format_diagnostics_for_telegram
 from presentation.keyboards.keyboards import Keyboards
+
+if TYPE_CHECKING:
+    from domain.services.claude_code_service import IClaudeCodeProxyService
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +33,13 @@ class CommandHandlers:
     def __init__(
         self,
         bot_service: BotService,
-        claude_proxy: ClaudeCodeProxyService,
+        claude_proxy,  # IClaudeCodeProxyService
         message_handlers=None,  # Optional, set after initialization
         project_service=None,   # ProjectService for /change
         context_service=None,   # ContextService for /context
         file_browser_service=None,  # FileBrowserService for /cd
-        account_service=None  # AccountService for language
+        account_service=None,  # AccountService for language
+        system_monitor=None,  # ISystemMonitor for docker/metrics
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy
@@ -45,6 +48,7 @@ class CommandHandlers:
         self.context_service = context_service
         self.file_browser_service = file_browser_service
         self.account_service = account_service
+        self.system_monitor = system_monitor
 
     async def start(self, message: Message) -> None:
         """Handle /start command - show main inline menu"""
@@ -256,8 +260,10 @@ class CommandHandlers:
     async def docker(self, message: Message) -> None:
         """Handle /docker command and 🐳 Docker button"""
         try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
+            monitor = self.system_monitor
+            if not monitor:
+                await message.answer("System monitor not configured", parse_mode=None)
+                return
             containers = await monitor.get_docker_containers()
 
             if not containers:
@@ -634,6 +640,8 @@ class CommandHandlers:
         await message.answer("🔍 Запуск диагностики... (может занять до 30 секунд)")
 
         try:
+            # Lazy import: diagnostics is infra-level utility, only used in this one method
+            from infrastructure.claude_code.diagnostics import run_diagnostics, format_diagnostics_for_telegram
             results = await run_diagnostics(self.claude_proxy.claude_path)
             text = format_diagnostics_for_telegram(results)
             await message.answer(text, parse_mode=None)

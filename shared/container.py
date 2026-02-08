@@ -150,6 +150,7 @@ class Container:
                 user_repository=self.user_repository(),
                 session_repository=self.session_repository(),
                 command_repository=self.command_repository(),
+                system_monitor=self.system_monitor(),
             )
         return self._cache["bot_service"]
 
@@ -344,6 +345,7 @@ class Container:
                 context_service=self.context_service(),
                 file_browser_service=self.file_browser_service(),
                 account_service=self.account_service(),
+                system_monitor=self.system_monitor(),
             )
             handlers.message_handlers = self.message_handlers()
             self._cache["command_handlers"] = handlers

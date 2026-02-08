@@ -10,10 +10,10 @@ from domain.value_objects.user_id import UserId
 from domain.repositories.user_repository import UserRepository
 from domain.repositories.session_repository import SessionRepository
 from domain.repositories.command_repository import CommandRepository
-from domain.services.command_execution_service import CommandExecutionResult
-from domain.services.ai_service import AIResponse
-from infrastructure.ssh.ssh_executor import SSHCommandExecutor
-from infrastructure.messaging.claude_service import ClaudeAIService, SystemPrompts
+from domain.services.command_execution_service import ICommandExecutionService, CommandExecutionResult
+from domain.services.ai_service import IAIService, AIResponse
+from domain.services.system_monitor_service import ISystemMonitor
+from domain.services.system_prompts import SystemPrompts
 from shared.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -27,14 +27,16 @@ class BotService:
         user_repository: UserRepository,
         session_repository: SessionRepository,
         command_repository: CommandRepository,
-        ai_service: ClaudeAIService = None,
-        command_executor: SSHCommandExecutor = None
+        ai_service: IAIService = None,
+        command_executor: ICommandExecutionService = None,
+        system_monitor: ISystemMonitor = None,
     ):
         self.user_repository = user_repository
         self.session_repository = session_repository
         self.command_repository = command_repository
         self.ai_service = ai_service  # Now optional - Claude Code proxy handles main AI interactions
-        self.command_executor = command_executor or SSHCommandExecutor()
+        self.command_executor = command_executor
+        self._system_monitor = system_monitor
 
     # User management
     def is_user_allowed(self, user_id: int) -> bool:
@@ -257,14 +259,14 @@ class BotService:
     # System info
     async def get_system_info(self) -> Dict:
         """Get system information"""
-        from infrastructure.monitoring.system_monitor import create_system_monitor
-        monitor = create_system_monitor()
+        if not self._system_monitor:
+            raise RuntimeError("System monitor not configured")
 
-        metrics = await monitor.get_metrics()
+        metrics = await self._system_monitor.get_metrics()
         return {
             "metrics": metrics.to_dict(),
-            "top_processes": await monitor.get_top_processes(limit=5),
-            "alerts": await monitor.check_alerts(metrics)
+            "top_processes": await self._system_monitor.get_top_processes(limit=5),
+            "alerts": await self._system_monitor.check_alerts(metrics)
         }
 
     async def get_user_stats(self, user_id: int) -> Dict:
