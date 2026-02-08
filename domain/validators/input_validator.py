@@ -8,7 +8,7 @@ import re
 import logging
 from pathlib import Path
 from typing import Optional, List
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, field_validator, Field
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,9 @@ class ValidatedCommand(BaseModel):
     """Валидированная команда от пользователя"""
     command: str = Field(..., min_length=1, max_length=1000)
 
-    @validator('command')
-    def validate_command(cls, v):
+    @field_validator('command')
+    @classmethod
+    def validate_command(cls, v: str) -> str:
         """Валидация команды на опасные символы"""
         # Длина
         if len(v) > 1000:
@@ -47,8 +48,9 @@ class ValidatedPath(BaseModel):
     """Валидированный путь"""
     path: str = Field(..., min_length=1, max_length=500)
 
-    @validator('path')
-    def validate_path(cls, v):
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
         """Валидация пути"""
         # Длина
         if len(v) > 500:
@@ -76,8 +78,9 @@ class ValidatedProxyUrl(BaseModel):
     """Валидированный proxy URL"""
     url: str = Field(..., min_length=1, max_length=200)
 
-    @validator('url')
-    def validate_proxy_url(cls, v):
+    @field_validator('url')
+    @classmethod
+    def validate_proxy_url(cls, v: str) -> str:
         """Валидация proxy URL"""
         from urllib.parse import urlparse
 
@@ -104,6 +107,8 @@ class ValidatedProxyUrl(BaseModel):
 
             return v.strip()
 
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f'Invalid proxy URL: {e}')
 
@@ -112,8 +117,9 @@ class ValidatedProjectName(BaseModel):
     """Валидированное название проекта"""
     name: str = Field(..., min_length=1, max_length=100)
 
-    @validator('name')
-    def validate_project_name(cls, v):
+    @field_validator('name')
+    @classmethod
+    def validate_project_name(cls, v: str) -> str:
         """Валидация названия проекта"""
         # Длина
         if len(v) > 100:
@@ -138,8 +144,9 @@ class ValidatedGitHubUrl(BaseModel):
     """Валидированный GitHub URL"""
     url: str = Field(..., min_length=1, max_length=200)
 
-    @validator('url')
-    def validate_github_url(cls, v):
+    @field_validator('url')
+    @classmethod
+    def validate_github_url(cls, v: str) -> str:
         """Валидация GitHub URL"""
         from urllib.parse import urlparse
 
@@ -164,6 +171,8 @@ class ValidatedGitHubUrl(BaseModel):
 
             return v.strip()
 
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f'Invalid GitHub URL: {e}')
 
@@ -172,8 +181,9 @@ class ValidatedText(BaseModel):
     """Валидированный текст (общий случай)"""
     text: str = Field(..., min_length=1, max_length=5000)
 
-    @validator('text')
-    def validate_text(cls, v):
+    @field_validator('text')
+    @classmethod
+    def validate_text(cls, v: str) -> str:
         """Базовая валидация текста"""
         # Длина
         if len(v) > 5000:
@@ -195,8 +205,9 @@ class ValidatedApiKey(BaseModel):
     """Валидированный API key"""
     key: str = Field(..., min_length=1, max_length=200)
 
-    @validator('key')
-    def validate_api_key(cls, v):
+    @field_validator('key')
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
         """Валидация API key"""
         # Длина
         if len(v) > 200:
@@ -227,7 +238,7 @@ def validate_user_input(input_type: str, value: str) -> tuple[bool, str, any]:
         (success, error_message, validated_value)
     """
     validators = {
-        'command': ValidatedCommand,
+'command': ValidatedCommand,
         'path': ValidatedPath,
         'proxy_url': ValidatedProxyUrl,
         'project_name': ValidatedProjectName,
@@ -275,24 +286,3 @@ async def validate_and_sanitize(user_input: str, input_type: str = 'text') -> tu
         return False, error, ""
 
     return True, "", value
-
-
-# === Usage Examples ===
-
-# Example 1: Validate command
-# success, error, validated = validate_user_input('command', 'ls -la')
-# if not success:
-#     await message.answer(f"❌ {error}")
-#     return
-
-# Example 2: Validate proxy URL
-# success, error, validated = validate_user_input('proxy_url', 'http://proxy.example.com:8080')
-# if not success:
-#     await callback.answer(f"❌ {error}")
-#     return
-
-# Example 3: Validate path
-# success, error, validated = validate_user_input('path', '/root/projects')
-# if not success:
-#     await message.answer(f"❌ {error}")
-#     return
