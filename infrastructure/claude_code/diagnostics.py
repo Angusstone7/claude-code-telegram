@@ -7,7 +7,6 @@ Run comprehensive tests to diagnose why Claude Code CLI isn't working.
 import asyncio
 import os
 import logging
-import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -62,29 +61,29 @@ async def _test_binary_exists(claude_path: str) -> dict:
     }
 
     try:
-        result = subprocess.run(
-            ["which", claude_path],
-            capture_output=True,
-            text=True,
-            timeout=5
+        proc = await asyncio.create_subprocess_exec(
+            "which", claude_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        if result.returncode == 0:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+        if proc.returncode == 0:
             test["passed"] = True
-            test["output"] = result.stdout.strip()
+            test["output"] = stdout.decode().strip()
         else:
-            test["error"] = f"Binary not found: {result.stderr}"
+            test["error"] = f"Binary not found: {stderr.decode()}"
     except FileNotFoundError:
         # Windows doesn't have 'which', try 'where' or just run --version
         try:
-            result = subprocess.run(
-                [claude_path, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
+            proc = await asyncio.create_subprocess_exec(
+                claude_path, "--version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            test["passed"] = result.returncode == 0
-            test["output"] = result.stdout.strip() if result.returncode == 0 else ""
-            test["error"] = result.stderr.strip() if result.returncode != 0 else ""
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+            test["passed"] = proc.returncode == 0
+            test["output"] = stdout.decode().strip() if proc.returncode == 0 else ""
+            test["error"] = stderr.decode().strip() if proc.returncode != 0 else ""
         except Exception as e:
             test["error"] = str(e)
     except Exception as e:
