@@ -2,16 +2,17 @@
 File Processor Service
 
 Обрабатывает загруженные файлы для добавления в контекст Claude.
-Поддерживает текстовые файлы, изображения и PDF.
+Поддерживает текстовые файлы, изображения, PDF и ZIP-архивы.
 """
 
 import base64
 import logging
 import os
+import zipfile
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class FileType(Enum):
     TEXT = "text"
     IMAGE = "image"
     PDF = "pdf"
+    ZIP = "zip"
     UNSUPPORTED = "unsupported"
 
 
@@ -48,12 +50,16 @@ class FileProcessorService:
     - Текстовые: .md, .txt, .py, .js, .ts, .json, .yaml, .yml, .toml, .xml, .html, .css, .go, .rs, .java, .kt
     - Изображения: .png, .jpg, .jpeg, .gif, .webp
     - PDF: .pdf (конвертация в текст)
+    - ZIP: .zip (распаковка и обработка содержимого)
     """
 
     # Ограничения размера
     MAX_TEXT_SIZE = 1 * 1024 * 1024  # 1 MB
     MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
     MAX_PDF_SIZE = 2 * 1024 * 1024    # 2 MB
+    MAX_ZIP_SIZE = 20 * 1024 * 1024   # 20 MB
+    MAX_ZIP_EXTRACTED_SIZE = 10 * 1024 * 1024  # 10 MB total extracted text
+    MAX_ZIP_FILES = 100  # Max files to process from archive
 
     # Поддерживаемые расширения
     TEXT_EXTENSIONS = {
@@ -71,6 +77,7 @@ class FileProcessorService:
 
     IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
     PDF_EXTENSIONS = {".pdf"}
+    ZIP_EXTENSIONS = {".zip"}
 
     IMAGE_MIME_TYPES = {
         ".png": "image/png",
@@ -135,6 +142,8 @@ class FileProcessorService:
             return FileType.IMAGE
         elif ext in self.PDF_EXTENSIONS:
             return FileType.PDF
+        elif ext in self.ZIP_EXTENSIONS:
+            return FileType.ZIP
         else:
             # Проверка на файлы без расширения (Dockerfile, Makefile, etc.)
             basename = os.path.basename(filename).lower()
@@ -164,6 +173,7 @@ class FileProcessorService:
             FileType.TEXT: self.MAX_TEXT_SIZE,
             FileType.IMAGE: self.MAX_IMAGE_SIZE,
             FileType.PDF: self.MAX_PDF_SIZE,
+            FileType.ZIP: self.MAX_ZIP_SIZE,
         }.get(file_type, self.MAX_TEXT_SIZE)
 
         if size > max_size:
@@ -216,6 +226,9 @@ class FileProcessorService:
             elif file_type == FileType.PDF:
                 content = await self._process_pdf(content_bytes)
                 mime = mime_type or "application/pdf"
+            elif file_type == FileType.ZIP:
+                content = await self._process_zip(content_bytes, filename)
+                mime = mime_type or "application/zip"
             else:
                 return ProcessedFile(
                     file_type=file_type,
@@ -290,6 +303,135 @@ class FileProcessorService:
         except Exception as e:
             logger.error(f"PDF extraction error: {e}")
             return f"[PDF: ошибка извлечения текста - {str(e)}]"
+
+    async def _process_zip(self, content_bytes: bytes, archive_name: str) -> str:
+        """
+        Обработать ZIP-архив — извлечь текстовое содержимое файлов.
+
+        Рекурсивно обрабатывает файлы внутри архива:
+        - Текстовые файлы: читает содержимое
+        - Изображения/PDF/бинарные: только перечисляет
+        - Вложенные ZIP: не распаковывает (только перечисляет)
+
+        Returns:
+            Отформатированный текст со всем содержимым архива
+        """
+        try:
+            zip_buffer = BytesIO(content_bytes)
+
+            if not zipfile.is_zipfile(zip_buffer):
+                return "[ZIP: файл повреждён или не является ZIP-архивом]"
+
+            zip_buffer.seek(0)
+
+            with zipfile.ZipFile(zip_buffer, 'r') as zf:
+                # Security: check for zip bombs
+                total_uncompressed = sum(info.file_size for info in zf.infolist() if not info.is_dir())
+                if total_uncompressed > self.MAX_ZIP_EXTRACTED_SIZE * 5:
+                    return (
+                        f"[ZIP: архив слишком большой после распаковки "
+                        f"({total_uncompressed / (1024*1024):.1f} MB). "
+                        f"Максимум: {self.MAX_ZIP_EXTRACTED_SIZE * 5 / (1024*1024):.0f} MB]"
+                    )
+
+                file_entries = [
+                    info for info in zf.infolist()
+                    if not info.is_dir() and not info.filename.startswith('__MACOSX/')
+                ]
+
+                if not file_entries:
+                    return "[ZIP: архив пуст]"
+
+                # Sort by path for readability
+                file_entries.sort(key=lambda x: x.filename)
+
+                text_parts: List[str] = []
+                skipped_files: List[str] = []
+                total_extracted_size = 0
+                processed_count = 0
+
+                # Header
+                text_parts.append(
+                    f"📦 **ZIP-архив: {archive_name}** "
+                    f"({len(file_entries)} файлов)\n"
+                )
+
+                for info in file_entries:
+                    if processed_count >= self.MAX_ZIP_FILES:
+                        remaining = len(file_entries) - processed_count
+                        text_parts.append(
+                            f"\n⚠️ Показано {processed_count} из {len(file_entries)} файлов "
+                            f"(ещё {remaining} пропущено из-за лимита)"
+                        )
+                        break
+
+                    fname = info.filename
+                    fsize = info.file_size
+
+                    # Determine file type by extension
+                    ftype = self.detect_file_type(fname)
+
+                    if ftype == FileType.TEXT:
+                        # Check cumulative size limit
+                        if total_extracted_size + fsize > self.MAX_ZIP_EXTRACTED_SIZE:
+                            skipped_files.append(f"{fname} ({fsize // 1024} KB) — превышен лимит")
+                            processed_count += 1
+                            continue
+
+                        try:
+                            raw = zf.read(info.filename)
+                            text_content = self._process_text(raw)
+                            lang = self._detect_language(fname)
+
+                            text_parts.append(
+                                f"\n--- 📄 {fname} ({fsize // 1024} KB) ---\n"
+                                f"```{lang}\n{text_content}\n```"
+                            )
+                            total_extracted_size += fsize
+                        except Exception as e:
+                            skipped_files.append(f"{fname} — ошибка чтения: {e}")
+
+                    elif ftype == FileType.IMAGE:
+                        skipped_files.append(f"🖼 {fname} ({fsize // 1024} KB) — изображение")
+
+                    elif ftype == FileType.PDF:
+                        # Try to extract text from PDF inside ZIP
+                        if fsize <= self.MAX_PDF_SIZE:
+                            try:
+                                raw = zf.read(info.filename)
+                                pdf_text = await self._process_pdf(raw)
+                                text_parts.append(
+                                    f"\n--- 📑 {fname} ({fsize // 1024} KB) ---\n"
+                                    f"```\n{pdf_text}\n```"
+                                )
+                                total_extracted_size += len(pdf_text)
+                            except Exception as e:
+                                skipped_files.append(f"📑 {fname} — ошибка PDF: {e}")
+                        else:
+                            skipped_files.append(f"📑 {fname} ({fsize // 1024} KB) — PDF слишком большой")
+
+                    elif ftype == FileType.ZIP:
+                        skipped_files.append(f"📦 {fname} ({fsize // 1024} KB) — вложенный архив")
+
+                    else:
+                        skipped_files.append(f"❓ {fname} ({fsize // 1024} KB) — неподдерживаемый тип")
+
+                    processed_count += 1
+
+                # Add skipped files summary
+                if skipped_files:
+                    text_parts.append(
+                        f"\n\n📋 **Пропущенные/бинарные файлы** ({len(skipped_files)}):\n"
+                        + "\n".join(f"  • {s}" for s in skipped_files)
+                    )
+
+                return "\n".join(text_parts)
+
+        except zipfile.BadZipFile:
+            return "[ZIP: файл повреждён или не является ZIP-архивом]"
+        except Exception as e:
+            logger.error(f"ZIP extraction error: {e}")
+            return f"[ZIP: ошибка обработки — {str(e)}]"
 
     def save_to_working_dir(
         self,
@@ -391,6 +533,14 @@ class FileProcessorService:
                 return f"{file_block}\n\n---\n\n{task_text}"
             return file_block
 
+        elif processed_file.file_type == FileType.ZIP:
+            # ZIP - уже отформатированное содержимое архива
+            file_block = processed_file.content
+
+            if task_text:
+                return f"{file_block}\n\n---\n\n{task_text}"
+            return file_block
+
         return task_text
 
     def _detect_language(self, filename: str) -> str:
@@ -404,6 +554,7 @@ class FileProcessorService:
             "text": sorted(self.TEXT_EXTENSIONS),
             "image": sorted(self.IMAGE_EXTENSIONS),
             "pdf": sorted(self.PDF_EXTENSIONS),
+            "zip": sorted(self.ZIP_EXTENSIONS),
         }
 
     def format_multiple_files_for_prompt(
@@ -463,6 +614,10 @@ class FileProcessorService:
             elif pf.file_type == FileType.PDF:
                 block = f"📎 **PDF {i}: {pf.filename}** ({pf.size_bytes // 1024} KB)\n```\n{pf.content}\n```"
                 file_blocks.append(block)
+
+            elif pf.file_type == FileType.ZIP:
+                # ZIP - уже отформатированное содержимое
+                file_blocks.append(pf.content)
 
         # Объединяем все блоки
         files_section = "\n\n".join(file_blocks)
