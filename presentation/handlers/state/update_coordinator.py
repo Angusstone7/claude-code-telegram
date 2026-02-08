@@ -40,6 +40,8 @@ class MessageState:
     pending_update: Optional[PendingUpdate] = None
     update_task: Optional[asyncio.Task] = None
     is_finalized: bool = False
+    parse_error_count: int = 0  # Count of consecutive HTML parse errors
+    force_plain_text: bool = False  # If True, always use parse_mode=None
 
 
 class MessageUpdateCoordinator:
@@ -187,6 +189,17 @@ class MessageUpdateCoordinator:
         if pending.is_final:
             state.is_finalized = True
 
+        # If forced plain text mode due to repeated parse errors, strip HTML
+        if state.force_plain_text and pending.parse_mode == "HTML":
+            import re
+            pending = PendingUpdate(
+                text=re.sub(r'<[^>]+>', '', pending.text),
+                parse_mode=None,
+                reply_markup=pending.reply_markup,
+                priority=pending.priority,
+                is_final=pending.is_final,
+            )
+
         # КРИТИЧЕСКОЕ ЛОГИРОВАНИЕ - момент отправки в Telegram
         logger.info(
             f">>> TELEGRAM EDIT: msg={state.message.message_id}, "
@@ -201,6 +214,7 @@ class MessageUpdateCoordinator:
             )
             state.last_update_time = time.time()
             state.last_sent_text = pending.text
+            state.parse_error_count = 0  # Reset on success
             logger.info(f">>> TELEGRAM EDIT SUCCESS: msg={state.message.message_id}, {len(pending.text)}ch")
             return True
 
@@ -236,7 +250,19 @@ class MessageUpdateCoordinator:
                 self._messages.pop(state.message.message_id, None)
                 return False
             else:
-                logger.error(f"Message {state.message.message_id}: Telegram error: {e}")
+                state.parse_error_count += 1
+                logger.error(
+                    f"Message {state.message.message_id}: Telegram error (count={state.parse_error_count}): {e}"
+                )
+
+                # After 2 consecutive parse errors, switch to permanent plain text mode
+                if state.parse_error_count >= 2:
+                    state.force_plain_text = True
+                    logger.warning(
+                        f"Message {state.message.message_id}: switching to permanent plain text mode "
+                        f"after {state.parse_error_count} parse errors"
+                    )
+
                 # Пробуем без форматирования
                 try:
                     import re
@@ -247,9 +273,15 @@ class MessageUpdateCoordinator:
                         reply_markup=pending.reply_markup
                     )
                     state.last_update_time = time.time()
-                    state.last_sent_text = plain_text
+                    # CRITICAL: save original HTML text to prevent re-sending the same broken HTML
+                    state.last_sent_text = pending.text
                     return True
-                except Exception:
+                except Exception as fallback_err:
+                    logger.error(
+                        f"Message {state.message.message_id}: plain text fallback also failed: {fallback_err}"
+                    )
+                    # Still save the text to prevent infinite retry loop
+                    state.last_sent_text = pending.text
                     return False
 
         except Exception as e:

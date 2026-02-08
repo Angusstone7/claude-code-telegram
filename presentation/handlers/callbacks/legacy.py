@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -111,7 +112,7 @@ class CallbackHandlers:
             # Update message with result
             await callback.message.edit_text(
                 f"🚀 <b>Command executed</b>\n\n"
-                f"<pre>{display_output}</pre>\n\n"
+                f"<pre><code>{html.escape(display_output)}</code></pre>\n\n"
                 f"⏱️ Time: {result.execution_time:.2f}s | Exit code: {result.exit_code}",
                 parse_mode="HTML"
             )

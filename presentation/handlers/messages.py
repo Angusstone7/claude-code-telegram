@@ -1039,7 +1039,7 @@ class MessageHandlers:
         if details:
             display_details = details if len(details) < 500 else details[:500] + "..."
             # Escape HTML entities to prevent parse errors (e.g., <<'EOF' -> &lt;&lt;'EOF')
-            text += f"<b>Детали:</b>\n<pre>{html.escape(display_details)}</pre>"
+            text += f"<b>Детали:</b>\n<pre><code>{html.escape(display_details)}</code></pre>"
 
         await message.answer(
             text,
@@ -1179,7 +1179,7 @@ class MessageHandlers:
         if details:
             display_details = details if len(details) < 500 else details[:500] + "..."
             # Escape HTML entities to prevent parse errors (e.g., <<'EOF' -> &lt;&lt;'EOF')
-            text += f"<b>Детали:</b>\n<pre>{html.escape(display_details)}</pre>"
+            text += f"<b>Детали:</b>\n<pre><code>{html.escape(display_details)}</code></pre>"
 
         perm_msg = await message.answer(
             text,
@@ -1235,28 +1235,65 @@ class MessageHandlers:
         request_id = str(uuid.uuid4())[:8]
 
         plan_content = ""
-        if plan_file:
-            try:
-                working_dir = self.get_working_dir(user_id)
-                plan_path = os.path.join(working_dir, plan_file)
 
-                if os.path.exists(plan_path):
-                    with open(plan_path, 'r', encoding='utf-8') as f:
-                        plan_content = f.read()
-            except Exception as e:
-                logger.error(f"[{user_id}] Error reading plan file: {e}")
-
+        # 1. Try planContent from tool_input (auto-detected plans pass it directly)
         if not plan_content:
             plan_content = tool_input.get("planContent", "")
+
+        # 2. Try reading plan_file as-is (absolute path or relative to working dir)
+        if not plan_content and plan_file:
+            try:
+                # Try absolute path first
+                if os.path.isabs(plan_file) and os.path.exists(plan_file):
+                    with open(plan_file, 'r', encoding='utf-8') as f:
+                        plan_content = f.read()
+                else:
+                    # Try relative to working dir
+                    working_dir = self.get_working_dir(user_id)
+                    plan_path = os.path.join(working_dir, plan_file)
+                    if os.path.exists(plan_path):
+                        with open(plan_path, 'r', encoding='utf-8') as f:
+                            plan_content = f.read()
+            except Exception as e:
+                logger.error(f"[{user_id}] Error reading plan file '{plan_file}': {e}")
+
+        # 3. Fallback: find the most recent plan file in .claude/plans/
+        if not plan_content:
+            try:
+                working_dir = self.get_working_dir(user_id)
+                plans_dirs = [
+                    os.path.join(working_dir, ".claude", "plans"),
+                    os.path.expanduser("~/.claude/plans"),
+                ]
+                latest_plan = None
+                latest_mtime = 0
+                for plans_dir in plans_dirs:
+                    if os.path.isdir(plans_dir):
+                        for fname in os.listdir(plans_dir):
+                            if fname.endswith(".md"):
+                                fpath = os.path.join(plans_dir, fname)
+                                mtime = os.path.getmtime(fpath)
+                                if mtime > latest_mtime:
+                                    latest_mtime = mtime
+                                    latest_plan = fpath
+                # Only use if modified within last 5 minutes (likely current plan)
+                import time
+                if latest_plan and (time.time() - latest_mtime) < 300:
+                    logger.info(f"[{user_id}] Found recent plan file: {latest_plan}")
+                    with open(latest_plan, 'r', encoding='utf-8') as f:
+                        plan_content = f.read()
+            except Exception as e:
+                logger.error(f"[{user_id}] Error scanning for plan files: {e}")
 
         if plan_content:
             if len(plan_content) > 3500:
                 plan_content = plan_content[:3500] + "\n\n... (план сокращён)"
             # Escape HTML entities in plan content to prevent parse errors
             escaped_content = html.escape(plan_content)
-            text = f"<b>📋 План готов к выполнению</b>\n\n<pre>{escaped_content}</pre>"
+            text = f"<b>📋 План готов к выполнению</b>\n\n<pre><code>{escaped_content}</code></pre>"
         else:
             text = "<b>📋 План готов к выполнению</b>\n\n<i>Содержимое плана недоступно</i>"
+            logger.warning(f"[{user_id}] Plan content is empty! plan_file={plan_file}, tool_input keys={list(tool_input.keys())}")
 
         plan_msg = await message.answer(
             text,
@@ -1384,7 +1421,7 @@ class MessageHandlers:
 
             if result.error and not result.cancelled:
                 await message.answer(
-                    f"<b>Завершено с ошибкой:</b>\n<pre>{html.escape(result.error[:1000])}</pre>",
+                    f"<b>Завершено с ошибкой:</b>\n<pre><code>{html.escape(result.error[:1000])}</code></pre>",
                     parse_mode="HTML"
                 )
 

@@ -10,6 +10,8 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from presentation.handlers.callbacks.base import BaseCallbackHandler
 from shared.constants import DOCKER_LOGS_PAGE_SIZE, DOCKER_LOGS_MAX_LINES, TEXT_TRUNCATE_LIMIT
 
+import html
+
 logger = logging.getLogger(__name__)
 
 
@@ -171,7 +173,7 @@ class DockerCallbackHandler(BaseCallbackHandler):
             if len(logs_text) > TEXT_TRUNCATE_LIMIT:
                 logs_text = logs_text[-TEXT_TRUNCATE_LIMIT:]
 
-            text = f"📋 <b>Логи</b> ({container_id}) — {current_page}/{total_pages}\n\n<pre>{logs_text}</pre>"
+            text = f"📋 <b>Логи</b> ({container_id}) — {current_page}/{total_pages}\n\n<pre><code>{html.escape(logs_text)}</code></pre>"
 
             # Navigation buttons
             buttons = []

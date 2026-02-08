@@ -1139,7 +1139,7 @@ class AccountHandlers:
             output = "\n".join(session._output_lines[-3:]) if session._output_lines else "No output"
             await loading_msg.edit_text(
                 f"{t('account.oauth_failed')}\n\n"
-                f"Claude CLI:\n<pre>{output[:200]}</pre>",
+                f"Claude CLI:\n<pre><code>{output[:200]}</code></pre>",
                 parse_mode="HTML",
                 reply_markup=Keyboards.menu_back_only("account:menu", lang=lang)
             )
@@ -1185,7 +1185,7 @@ class AccountHandlers:
             output = "\n".join(session._output_lines[-3:]) if session._output_lines else "No output"
             await callback.message.edit_text(
                 f"{t('account.oauth_failed')}\n\n"
-                f"Claude CLI:\n<pre>{output[:200]}</pre>",
+                f"Claude CLI:\n<pre><code>{output[:200]}</code></pre>",
                 parse_mode="HTML",
                 reply_markup=Keyboards.menu_back_only("account:menu", lang=lang)
             )

@@ -122,7 +122,7 @@ class ToolState:
             escaped_output = html_module.escape(self.output[:500])
             if len(self.output) > 500:
                 escaped_output += "..."
-            line += f"\n<pre>{escaped_output}</pre>"
+            line += f"\n<pre><code>{escaped_output}</code></pre>"
 
         return line
 

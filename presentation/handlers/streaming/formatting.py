@@ -179,6 +179,14 @@ def _markdown_to_html_impl(text: str, is_streaming: bool = False) -> str:
     else:
         text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
 
+    # Links: [text](url) → <a href="url">text</a>
+    # Note: text and url are already HTML-escaped at this point
+    text = re.sub(
+        r'\[([^\]]+)\]\(([^)]+)\)',
+        r'<a href="\2">\1</a>',
+        text
+    )
+
     # 6. Add unclosed block at the end
     if unclosed_code_placeholder:
         text += unclosed_code_placeholder
