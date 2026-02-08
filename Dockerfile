@@ -57,4 +57,7 @@ RUN mkdir -p logs data
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Prometheus metrics endpoint
+EXPOSE 9090
+
 CMD ["python", "main.py"]

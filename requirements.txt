@@ -23,6 +23,9 @@ psutil>=6.0.0
 # Docker (for container management)
 docker>=7.0.0
 
+# Prometheus metrics
+prometheus-client>=0.21.0
+
 # Structured logging
 python-json-logger>=2.0.0
 

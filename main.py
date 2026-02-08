@@ -234,6 +234,17 @@ class Application:
         info = await self.bot.get_me()
         logger.info(f"Bot: @{info.username} (ID: {info.id})")
 
+        # Start Prometheus metrics server if monitoring is enabled
+        if settings.monitoring.enabled:
+            from infrastructure.monitoring.prometheus_exporter import (
+                start_metrics_server, update_system_metrics, bot_info
+            )
+            start_metrics_server(settings.monitoring.metrics_port)
+            bot_info.info({'username': info.username, 'id': str(info.id)})
+            # Background task: update system metrics every 15s
+            monitor = self.container.system_monitor()
+            asyncio.create_task(update_system_metrics(monitor))
+
         # Notify admins that bot started
         await self._notify_admins_startup(info)
 

@@ -39,6 +39,9 @@ services:
       # Claude Account credentials (optional - for OAuth auth instead of API key)
       # Get this file by running `claude` locally and authenticating via browser
       # - ./claude_config.json:/root/.config/claude/config.json:ro
+    ports:
+      # Prometheus metrics endpoint
+      - "${METRICS_PORT:-9090}:9090"
     extra_hosts:
       # Allows container to connect to host machine via SSH
       - "host.docker.internal:host-gateway"

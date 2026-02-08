@@ -1248,6 +1248,16 @@ class ClaudeAgentSDKService:
             logger.info(f"[{user_id}] Starting SDK task in {work_dir} ({resume_info})")
             logger.info(f"[{user_id}] Prompt: {prompt[:200]}")
 
+            # Prometheus metrics
+            try:
+                from infrastructure.monitoring.prometheus_exporter import (
+                    claude_requests_total, active_tasks
+                )
+                claude_requests_total.inc()
+                active_tasks.inc()
+            except Exception:
+                pass
+
             # Use context manager for proper cleanup
             async with ClaudeSDKClient(options=options) as client:
                 self._clients[user_id] = client
@@ -1309,6 +1319,16 @@ class ClaudeAgentSDKService:
                             f"duration={result_duration_ms}ms, "
                             f"{session_info}"
                         )
+                        # Prometheus: track cost and decrement active tasks
+                        try:
+                            from infrastructure.monitoring.prometheus_exporter import (
+                                claude_cost_usd_total, active_tasks as _at
+                            )
+                            if message.total_cost_usd:
+                                claude_cost_usd_total.inc(message.total_cost_usd)
+                            _at.dec()
+                        except Exception:
+                            pass
                         # Log usage details for debugging
                         if result_usage:
                             logger.info(f"[{user_id}] Usage stats: {result_usage}")
