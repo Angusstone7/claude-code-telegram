@@ -148,6 +148,13 @@ class Container:
             self._cache["config_repository"] = SQLiteConfigRepository(db_path)
         return self._cache["config_repository"]
 
+    def command_executor(self):
+        """Get or create CommandExecutor (SSH)"""
+        if "command_executor" not in self._cache:
+            from infrastructure.ssh.ssh_executor import SSHCommandExecutor
+            self._cache["command_executor"] = SSHCommandExecutor()
+        return self._cache["command_executor"]
+
     # === Service Layer ===
 
     def bot_service(self):
@@ -158,6 +165,7 @@ class Container:
                 user_repository=self.user_repository(),
                 session_repository=self.session_repository(),
                 command_repository=self.command_repository(),
+                command_executor=self.command_executor(),
                 system_monitor=self.system_monitor(),
             )
         return self._cache["bot_service"]
