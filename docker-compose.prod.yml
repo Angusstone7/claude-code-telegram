@@ -44,7 +44,7 @@ services:
       # - ./claude_config.json:/root/.config/claude/config.json:ro
     ports:
       # REST API endpoint (Swagger at /docs)
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT:-8090}:8000"
       # Prometheus metrics endpoint
       - "${METRICS_PORT:-9094}:9090"
     extra_hosts:
