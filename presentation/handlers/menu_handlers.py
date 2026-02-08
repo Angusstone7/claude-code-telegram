@@ -39,6 +39,7 @@ class MenuHandlers:
         file_browser_service=None,
         account_service=None,
         message_handlers=None,  # Reference to MessageHandlers for YOLO state
+        system_monitor=None,  # ISystemMonitor for docker/metrics
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy
@@ -48,6 +49,7 @@ class MenuHandlers:
         self.file_browser_service = file_browser_service
         self.account_service = account_service
         self.message_handlers = message_handlers
+        self.system_monitor = system_monitor
         self.router = Router(name="menu")
         self._register_handlers()
 
@@ -1020,10 +1022,11 @@ class MenuHandlers:
     async def _show_docker(self, callback: CallbackQuery, page: int = 0):
         """Show Docker containers via SSH with pagination"""
         try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-            monitor = create_system_monitor()
+            if not self.system_monitor:
+                raise RuntimeError("System monitor not configured")
+            monitor = self.system_monitor
             containers = await monitor.get_docker_containers()
 
             if not containers:

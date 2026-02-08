@@ -278,7 +278,10 @@ class Container:
         """Get or create UserStateManager"""
         if "user_state_manager" not in self._cache:
             from presentation.handlers.state.user_state import UserStateManager
-            self._cache["user_state_manager"] = UserStateManager()
+            self._cache["user_state_manager"] = UserStateManager(
+                default_working_dir=self.config.claude_working_dir,
+                account_repo=self.account_repository(),
+            )
         return self._cache["user_state_manager"]
 
     def hitl_manager(self):
@@ -364,6 +367,7 @@ class Container:
                 project_service=self.project_service(),
                 context_service=self.context_service(),
                 file_browser_service=self.file_browser_service(),
+                system_monitor=self.system_monitor(),
             )
             # Establish bidirectional link for gvar input handling
             msg_handlers.callback_handlers = self._cache["callback_handlers"]
@@ -404,5 +408,6 @@ class Container:
                 file_browser_service=self.file_browser_service(),
                 account_service=self.account_service(),
                 message_handlers=self.message_handlers(),
+                system_monitor=self.system_monitor(),
             )
         return self._cache["menu_handlers"]

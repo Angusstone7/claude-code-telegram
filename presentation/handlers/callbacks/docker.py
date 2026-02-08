@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 class DockerCallbackHandler(BaseCallbackHandler):
     """Handles Docker container management callbacks."""
 
+    def _get_monitor(self):
+        """Get system monitor from injected dependency."""
+        if not self.system_monitor:
+            raise RuntimeError("System monitor not configured")
+        return self.system_monitor
+
     async def handle_metrics_refresh(self, callback: CallbackQuery) -> None:
         """Handle metrics refresh callback"""
         try:
@@ -51,10 +57,9 @@ class DockerCallbackHandler(BaseCallbackHandler):
     async def handle_docker_list(self, callback: CallbackQuery) -> None:
         """Handle docker list callback"""
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
             from presentation.keyboards.keyboards import Keyboards
 
-            monitor = SystemMonitor()
+            monitor = self._get_monitor()
             containers = await monitor.get_docker_containers()
 
             if not containers:
@@ -94,8 +99,7 @@ class DockerCallbackHandler(BaseCallbackHandler):
         """
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
+            monitor = self._get_monitor()
 
             method = getattr(monitor, action_method)
             if action_method == "docker_remove":
@@ -137,8 +141,7 @@ class DockerCallbackHandler(BaseCallbackHandler):
         offset = int(parts[3]) if len(parts) > 3 and parts[3].lstrip('-').isdigit() else 0
 
         try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
+            monitor = self._get_monitor()
 
             success, all_logs = await monitor.docker_logs(container_id, lines=DOCKER_LOGS_MAX_LINES)
 
@@ -183,7 +186,7 @@ class DockerCallbackHandler(BaseCallbackHandler):
                 nav_row.append(InlineKeyboardButton(
                     text="⬅️ Старше",
                     callback_data=f"docker:logs:{container_id}:{offset + DOCKER_LOGS_PAGE_SIZE}"
-                ))
+))
 
             if offset > 0:
                 new_offset = max(0, offset - DOCKER_LOGS_PAGE_SIZE)
@@ -213,10 +216,9 @@ class DockerCallbackHandler(BaseCallbackHandler):
         """Handle docker container info - show detailed view with actions"""
         container_id = callback.data.split(":")[-1]
         try:
-            from infrastructure.monitoring.system_monitor import SystemMonitor
             from presentation.keyboards.keyboards import Keyboards
 
-            monitor = SystemMonitor()
+            monitor = self._get_monitor()
             containers = await monitor.get_docker_containers()
 
             container = next((c for c in containers if c["id"] == container_id), None)
@@ -248,8 +250,7 @@ class DockerCallbackHandler(BaseCallbackHandler):
     async def handle_metrics_top(self, callback: CallbackQuery) -> None:
         """Handle metrics top callback - show top processes"""
         try:
-            from infrastructure.monitoring.system_monitor import create_system_monitor
-            monitor = create_system_monitor()
+            monitor = self._get_monitor()
 
             processes = await monitor.get_top_processes(limit=10)
 

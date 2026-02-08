@@ -38,7 +38,8 @@ class CallbackHandlers:
         sdk_service=None,
         project_service=None,
         context_service=None,
-        file_browser_service=None
+        file_browser_service=None,
+        system_monitor=None,
     ):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
@@ -47,21 +48,28 @@ class CallbackHandlers:
         self.project_service = project_service
         self.context_service = context_service
         self.file_browser_service = file_browser_service
+        self.system_monitor = system_monitor
         self._user_states = {}  # For tracking user input states (e.g., waiting for folder name)
 
-        # Initialize specialized handlers
-        handler_args = (
-            bot_service, message_handlers, claude_proxy, sdk_service,
-            project_service, context_service, file_browser_service
+        # Initialize specialized handlers (use keyword args for clarity)
+        handler_kwargs = dict(
+            bot_service=bot_service,
+            message_handlers=message_handlers,
+            claude_proxy=claude_proxy,
+            sdk_service=sdk_service,
+            project_service=project_service,
+            context_service=context_service,
+            file_browser_service=file_browser_service,
+            system_monitor=system_monitor,
         )
-        self._docker = DockerCallbackHandler(*handler_args)
-        self._claude = ClaudeCallbackHandler(*handler_args)
-        self._project = ProjectCallbackHandler(*handler_args)
-        self._context = ContextCallbackHandler(*handler_args)
-        self._variables = VariableCallbackHandler(*handler_args)
+        self._docker = DockerCallbackHandler(**handler_kwargs)
+        self._claude = ClaudeCallbackHandler(**handler_kwargs)
+        self._project = ProjectCallbackHandler(**handler_kwargs)
+        self._context = ContextCallbackHandler(**handler_kwargs)
+        self._variables = VariableCallbackHandler(**handler_kwargs)
 
         from presentation.handlers.callbacks.plugins import PluginCallbackHandler
-        self._plugins = PluginCallbackHandler(*handler_args)
+        self._plugins = PluginCallbackHandler(**handler_kwargs)
 
     def get_user_state(self, user_id: int) -> dict | None:
         """Get current user state if any."""

@@ -393,18 +393,24 @@ class TestBotServiceStatistics:
         mock_monitor.get_top_processes = AsyncMock(return_value=[{"name": "python", "cpu": 10}])
         mock_monitor.check_alerts = AsyncMock(return_value=[])
 
-        service = BotService(
+        bot_service = BotService(
             user_repository=mock_user_repository,
             session_repository=mock_session_repository,
             command_repository=mock_command_repository,
             system_monitor=mock_monitor,
         )
 
-        result = await service.get_system_info()
+        result = await bot_service.get_system_info()
 
         assert result["metrics"] == {"cpu": 25.5, "memory": 60.0}
         assert len(result["top_processes"]) == 1
         assert result["alerts"] == []
+
+    @pytest.mark.asyncio
+    async def test_get_system_info_not_configured(self, bot_service):
+        """Test that get_system_info raises error when monitor not configured."""
+        with pytest.raises(RuntimeError, match="System monitor not configured"):
+            await bot_service.get_system_info()
 
 
 class TestBotServiceCleanup:

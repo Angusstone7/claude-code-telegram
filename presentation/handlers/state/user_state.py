@@ -75,17 +75,17 @@ class UserStateManager:
     with a single consolidated state per user.
     """
 
-    def __init__(self, default_working_dir: str = "/root"):
+    def __init__(self, default_working_dir: str = "/root", account_repo=None):
         self._default_working_dir = default_working_dir
         self._sessions: Dict[int, UserSession] = {}
         self._streaming_handlers: Dict[int, StreamingHandler] = {}
         self._heartbeat_trackers: Dict[int, HeartbeatTracker] = {}
-        # Lazy-loaded repository for persistent settings
-        self._account_repo = None
+        self._account_repo = account_repo
 
     def _get_account_repo(self):
-        """Get or create account repository (lazy init)"""
+        """Get account repository (injected via DI or lazy fallback)"""
         if self._account_repo is None:
+            # Fallback for backward compat when not injected via container
             from infrastructure.persistence.sqlite_account_repository import SQLiteAccountRepository
             self._account_repo = SQLiteAccountRepository()
         return self._account_repo

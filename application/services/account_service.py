@@ -1016,5 +1016,3 @@ class AccountService:
             return False, f"❌ Ошибка удаления: {str(e)}"
 
 
-# Import repository here to avoid circular imports
-from infrastructure.persistence.sqlite_account_repository import SQLiteAccountRepository

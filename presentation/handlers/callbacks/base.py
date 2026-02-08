@@ -22,7 +22,8 @@ class BaseCallbackHandler:
         project_service=None,
         context_service=None,
         file_browser_service=None,
-        account_service=None
+        account_service=None,
+        system_monitor=None,
     ):
         self.bot_service = bot_service
         self.message_handlers = message_handlers
@@ -32,6 +33,7 @@ class BaseCallbackHandler:
         self.context_service = context_service
         self.file_browser_service = file_browser_service
         self.account_service = account_service
+        self.system_monitor = system_monitor
 
     async def _get_user_lang(self, user_id: int) -> str:
         """Get user's language preference."""
