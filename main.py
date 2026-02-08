@@ -113,7 +113,14 @@ class Application:
         self._register_handlers()
 
         # Register middleware
-        # Rate limiting FIRST (before auth to prevent DoS)
+        # 1. Correlation ID FIRST — so all subsequent middleware/handlers have a trace ID
+        from presentation.middleware.correlation import CorrelationIdMiddleware
+        correlation_mw = CorrelationIdMiddleware()
+        self.dp.message.middleware(correlation_mw)
+        self.dp.callback_query.middleware(correlation_mw)
+        logger.info("✓ CorrelationIdMiddleware registered (message + callback)")
+
+        # 2. Rate limiting (before auth to prevent DoS)
         from presentation.middleware.rate_limit import RateLimitMiddleware
         admin_ids = self.container.config.admin_ids or []
         self.dp.message.middleware(RateLimitMiddleware(
@@ -123,6 +130,7 @@ class Application:
         ))
         logger.info("✓ RateLimitMiddleware registered (0.5s per message, burst=5)")
 
+        # 3. Auth
         self.dp.message.middleware(AuthMiddleware(self.container.bot_service()))
         self.dp.callback_query.middleware(CallbackAuthMiddleware(self.container.bot_service()))
 

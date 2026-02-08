@@ -13,7 +13,7 @@ from pythonjsonlogger import jsonlogger
 
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
-    """JSON formatter with standardized field names."""
+    """JSON formatter with standardized field names and correlation_id."""
 
     def add_fields(self, log_record, record, message_dict):
         super().add_fields(log_record, record, message_dict)
@@ -22,6 +22,13 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
         log_record['logger'] = record.name
         if record.exc_info and not log_record.get('exc_info'):
             log_record['exception'] = self.formatException(record.exc_info)
+
+        # Inject correlation_id from contextvars (if present)
+        from shared.logging.correlation import get_correlation_id
+        cid = get_correlation_id()
+        if cid:
+            log_record['correlation_id'] = cid
+
         # Remove redundant fields (already mapped above)
         log_record.pop('levelname', None)
         log_record.pop('name', None)

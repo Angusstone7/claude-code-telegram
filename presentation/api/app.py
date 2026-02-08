@@ -8,10 +8,12 @@ middleware, and dependency injection from the shared Container.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from shared.container import Container
+from shared.logging.correlation import set_correlation_id, generate_correlation_id
 from presentation.api.dependencies import set_container
 from presentation.api.routes import health, projects, sessions, claude, system
 
@@ -44,6 +46,16 @@ def create_app(container: Container) -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
     )
+
+    # Correlation ID middleware for request tracing
+    @app.middleware("http")
+    async def correlation_id_middleware(request: Request, call_next):
+        # Accept correlation_id from header or generate new one
+        cid = request.headers.get("X-Correlation-ID") or generate_correlation_id("api-")
+        set_correlation_id(cid)
+        response: Response = await call_next(request)
+        response.headers["X-Correlation-ID"] = cid
+        return response
 
     # CORS middleware for browser access to Swagger UI
     app.add_middleware(
