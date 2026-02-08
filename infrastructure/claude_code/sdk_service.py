@@ -1090,6 +1090,40 @@ class ClaudeAgentSDKService:
             # Default: allow
             return PermissionResultAllow(updated_input=tool_input)
 
+        # Tools that are UI-only notifications (should not propagate from subagents)
+        _UI_ONLY_TOOLS = {"todowrite", "enterplanmode", "exitplanmode"}
+
+        # Track subagent depth to filter out internal tool notifications
+        _subagent_depth = 0
+
+        async def subagent_start_hook(
+            input_data: dict,
+            tool_use_id: str | None,
+            context: HookContext
+        ) -> dict:
+            """Track when a subagent starts (Task tool spawns a child agent)"""
+            nonlocal _subagent_depth
+            _subagent_depth += 1
+            agent_type = input_data.get("agent_type", "unknown")
+            logger.info(f"[{user_id}] Subagent started: type={agent_type}, depth={_subagent_depth}")
+            return {}
+
+        async def subagent_stop_hook(
+            input_data: dict,
+            tool_use_id: str | None,
+            context: HookContext
+        ) -> dict:
+            """Track when a subagent stops"""
+            nonlocal _subagent_depth
+            _subagent_depth = max(0, _subagent_depth - 1)
+            agent_type = input_data.get("agent_type", "unknown")
+            logger.info(f"[{user_id}] Subagent stopped: type={agent_type}, depth={_subagent_depth}")
+            return {}
+
+        def _is_subagent_context() -> bool:
+            """Check if we are currently inside a subagent execution"""
+            return _subagent_depth > 0
+
         # Create hooks for tool use notifications
         async def pre_tool_hook(
             input_data: dict,
@@ -1099,6 +1133,12 @@ class ClaudeAgentSDKService:
             """Hook called before tool execution - for UI notifications"""
             tool_name = input_data.get("tool_name", "")
             tool_input = input_data.get("tool_input", {})
+
+            # Skip UI notifications from subagent internal tools
+            # (e.g. TodoWrite from Task subagents should not flood user's chat)
+            if _is_subagent_context() and tool_name.lower() in _UI_ONLY_TOOLS:
+                logger.debug(f"[{user_id}] Skipping subagent UI tool: {tool_name} (depth={_subagent_depth})")
+                return {}
 
             if on_tool_use:
                 await on_tool_use(tool_name, tool_input)
@@ -1113,6 +1153,10 @@ class ClaudeAgentSDKService:
             """Hook called after tool execution"""
             tool_name = input_data.get("tool_name", "")
             tool_response = input_data.get("tool_response", "")
+
+            # Skip UI notifications from subagent internal tools
+            if _is_subagent_context() and tool_name.lower() in _UI_ONLY_TOOLS:
+                return {}
 
             if on_tool_result:
                 # Format response nicely instead of raw dict
@@ -1190,6 +1234,8 @@ class ClaudeAgentSDKService:
                 hooks={
                     "PreToolUse": [HookMatcher(hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(hooks=[post_tool_hook])],
+                    "SubagentStart": [HookMatcher(hooks=[subagent_start_hook])],
+                    "SubagentStop": [HookMatcher(hooks=[subagent_stop_hook])],
                 },
                 # Enable session continuity for context memory (disable on retry)
                 resume=None if _retry_without_resume else session_id,
