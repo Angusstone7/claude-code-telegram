@@ -476,7 +476,7 @@ class FileProcessorService:
             logger.error(f"Error saving file to working dir: {e}")
             return None
 
-    def format_for_prompt(
+    async def format_for_prompt(
         self,
         processed_file: ProcessedFile,
         task_text: str = "",
@@ -560,7 +560,7 @@ class FileProcessorService:
             "zip": sorted(self.ZIP_EXTENSIONS),
         }
 
-    def format_multiple_files_for_prompt(
+    async def format_multiple_files_for_prompt(
         self,
         files: list[ProcessedFile],
         task_text: str = "",
@@ -585,7 +585,7 @@ class FileProcessorService:
 
         if len(files) == 1:
             # Один файл - используем обычный метод
-            return self.format_for_prompt(files[0], task_text, working_dir)
+            return await self.format_for_prompt(files[0], task_text, working_dir)
 
         # Несколько файлов - формируем комбинированный prompt
         file_blocks = []

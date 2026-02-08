@@ -385,7 +385,7 @@ class MessageHandlers:
 
             prompt = f"run {skill_command}"
             working_dir = await self.get_project_working_dir(user_id)
-            enriched_prompt = self.file_processor_service.format_for_prompt(
+            enriched_prompt = await self.file_processor_service.format_for_prompt(
                 processed, prompt, working_dir=working_dir
             )
 
@@ -399,7 +399,7 @@ class MessageHandlers:
         else:
             # Regular task with file
             working_dir = await self.get_project_working_dir(user_id)
-            enriched_prompt = self.file_processor_service.format_for_prompt(
+            enriched_prompt = await self.file_processor_service.format_for_prompt(
                 processed, caption, working_dir=working_dir
             )
             file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
@@ -553,7 +553,7 @@ class MessageHandlers:
             processed_file = self._files.pop_file(reply.message_id)
             # Get working directory for saving images (from project)
             working_dir = await self.get_project_working_dir(user_id)
-            enriched_prompt = self.file_processor_service.format_for_prompt(
+            enriched_prompt = await self.file_processor_service.format_for_prompt(
                 processed_file, message.text, working_dir=working_dir
             )
             task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
@@ -568,7 +568,7 @@ class MessageHandlers:
                 processed_file, _ = file_context
                 # Get working directory for saving images (from project)
                 working_dir = await self.get_project_working_dir(user_id)
-                enriched_prompt = self.file_processor_service.format_for_prompt(
+                enriched_prompt = await self.file_processor_service.format_for_prompt(
                     processed_file, message.text, working_dir=working_dir
                 )
                 task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text

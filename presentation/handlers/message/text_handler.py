@@ -109,12 +109,12 @@ class TextMessageHandler(BaseMessageHandler):
 
                 # Use appropriate method based on number of files
                 if len(cached_files) == 1:
-                    enriched_prompt = self.file_processor_service.format_for_prompt(
+                    enriched_prompt = await self.file_processor_service.format_for_prompt(
                         cached_files[0], message.text, working_dir=working_dir
                     )
                     files_info = cached_files[0].filename
                 else:
-                    enriched_prompt = self.file_processor_service.format_multiple_files_for_prompt(
+                    enriched_prompt = await self.file_processor_service.format_multiple_files_for_prompt(
                         cached_files, message.text, working_dir=working_dir
                     )
                     files_info = self.file_processor_service.get_files_summary(cached_files)
@@ -131,7 +131,7 @@ class TextMessageHandler(BaseMessageHandler):
                 processed_file, _ = file_context
                 # Get working directory for saving images (from project)
                 working_dir = await self._get_project_working_dir(user_id)
-                enriched_prompt = self.file_processor_service.format_for_prompt(
+                enriched_prompt = await self.file_processor_service.format_for_prompt(
                     processed_file, message.text, working_dir=working_dir
                 )
                 task_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text

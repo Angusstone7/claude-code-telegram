@@ -685,7 +685,7 @@ class CommandHandlers:
             # Check if reply message has a cached file
             if reply.message_id in self.message_handlers._file_cache:
                 processed_file = self.message_handlers._file_cache.pop(reply.message_id)
-                prompt = self.message_handlers.file_processor_service.format_for_prompt(
+                prompt = await self.message_handlers.file_processor_service.format_for_prompt(
                     processed_file, prompt
                 )
                 file_info = f"\n📎 Файл: {processed_file.filename}"
@@ -698,7 +698,7 @@ reply, message.bot
                 )
                 if file_context:
                     processed_file, _ = file_context
-                    prompt = self.message_handlers.file_processor_service.format_for_prompt(
+                    prompt = await self.message_handlers.file_processor_service.format_for_prompt(
                         processed_file, prompt
                     )
                     file_info = f"\n📎 Файл: {processed_file.filename}"

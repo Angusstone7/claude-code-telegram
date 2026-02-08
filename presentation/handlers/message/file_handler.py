@@ -142,7 +142,7 @@ class FileMessageHandler(BaseMessageHandler):
 
             prompt = f"run {skill_command}"
             working_dir = await self.get_project_working_dir(user_id)
-            enriched_prompt = self.file_processor_service.format_for_prompt(
+            enriched_prompt = await self.file_processor_service.format_for_prompt(
                 processed, prompt, working_dir=working_dir
             )
 
@@ -159,7 +159,7 @@ class FileMessageHandler(BaseMessageHandler):
         else:
             # Regular task with file
             working_dir = await self.get_project_working_dir(user_id)
-            enriched_prompt = self.file_processor_service.format_for_prompt(
+            enriched_prompt = await self.file_processor_service.format_for_prompt(
                 processed, caption, working_dir=working_dir
             )
             file_info = f"{processed.filename} ({processed.size_bytes // 1024} KB)"
@@ -432,7 +432,7 @@ class FileMessageHandler(BaseMessageHandler):
         user_id = message.from_user.id
 
         # Format prompt with all files
-        enriched_prompt = self.file_processor_service.format_multiple_files_for_prompt(
+        enriched_prompt = await self.file_processor_service.format_multiple_files_for_prompt(
             files, caption, working_dir=working_dir
         )
 
