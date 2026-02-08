@@ -14,8 +14,8 @@ aiosqlite>=0.19.0
 # SSH
 asyncssh==2.17.0
 
-# Async file I/O
-aiofiles>=24.1.0
+# Async file I/O (provided by aiogram, pinned to ~=23.2.1)
+# aiofiles — no explicit version needed, aiogram manages it
 
 # System Monitoring
 psutil>=6.0.0
