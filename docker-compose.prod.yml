@@ -41,7 +41,7 @@ services:
       # - ./claude_config.json:/root/.config/claude/config.json:ro
     ports:
       # Prometheus metrics endpoint
-      - "${METRICS_PORT:-9090}:9090"
+      - "${METRICS_PORT:-9093}:9090"
     extra_hosts:
       # Allows container to connect to host machine via SSH
       - "host.docker.internal:host-gateway"
