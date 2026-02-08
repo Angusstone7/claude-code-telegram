@@ -1,9 +1,12 @@
 """
-Claude Agent SDK Service
+Claude Agent SDK Service — CANONICAL implementation.
 
 Provides a proper programmatic interface to Claude Code using the official
 Agent SDK instead of CLI subprocess. This enables true HITL (Human-in-the-Loop)
 support with proper async waiting for user approval/answers.
+
+NOTE: sdk_service_safe.py was removed (2025-02-08) as an orphaned duplicate.
+This file is the single source of truth for SDK service functionality.
 
 Key features:
 - can_use_tool callback for permission handling (pauses until user responds)
@@ -550,11 +553,21 @@ class ClaudeAgentSDKService:
             True if response was accepted
         """
         event = self._plan_events.get(user_id)
-        if event and self._task_status.get(user_id) == TaskStatus.WAITING_PERMISSION:
+        current_status = self._task_status.get(user_id)
+
+        # Accept response if event exists AND task is waiting for permission
+        # Also accept if event exists and is not yet set (plan was shown, waiting for response)
+        if event and (current_status == TaskStatus.WAITING_PERMISSION or not event.is_set()):
             self._plan_responses[user_id] = response
             event.set()
             logger.info(f"[{user_id}] Plan response: {response}")
             return True
+
+        logger.warning(
+            f"[{user_id}] respond_to_plan failed: "
+            f"event={event is not None}, status={current_status}, "
+            f"response={response}"
+        )
         return False
 
     async def cancel_task(self, user_id: int) -> bool:

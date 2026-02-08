@@ -1,4 +1,5 @@
 stages:
+  - test
   - build
   - deploy
 
@@ -17,8 +18,45 @@ variables:
   # Нестандартные порты (чтобы не конфликтовать с другими сервисами)
   HOST_SSH_PORT: "2222"
 
+# ============================================================
+# Test stage — runs unit tests, blocks build on failure
+# ============================================================
+test:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - pip install --no-cache-dir -r requirements.txt
+  script:
+    - python -m pytest tests/ -v --tb=short -x
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+    - if: $CI_MERGE_REQUEST_ID
+
+# ============================================================
+# Lint stage — runs code quality checks (soft-fail for now)
+# ============================================================
+lint:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - pip install --no-cache-dir -r requirements.txt
+  script:
+    - echo "=== mypy type checking ==="
+    - python -m mypy main.py shared/ domain/ application/ --ignore-missing-imports || true
+    - echo "=== black formatting check ==="
+    - python -m black --check --diff . || echo "WARN — black formatting issues found (non-blocking)"
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+    - if: $CI_MERGE_REQUEST_ID
+
+# ============================================================
+# Build stage — builds Docker image and sends to server
+# ============================================================
 build-image:
   stage: build
+  needs:
+    - job: test
   before_script:
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - |

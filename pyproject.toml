@@ -1,0 +1,19 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:pydantic.*:",
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_configs = true
+# Lenient initially — tighten gradually
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]

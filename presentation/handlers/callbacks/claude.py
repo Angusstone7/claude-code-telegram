@@ -251,17 +251,24 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
             return
 
         try:
-            original_text = callback.message.text or ""
-            text = await self._truncate_and_append(
-                original_text,
-                "\n\n✅ **План одобрен** — начинаю выполнение!"
-            )
-            await callback.message.edit_text(text, parse_mode=None)
-
+            # CRITICAL: Deliver response to SDK FIRST, before editing message.
+            # Editing the message takes time (network I/O to Telegram API),
+            # during which the task status could change from WAITING_PERMISSION.
+            success = False
             if hasattr(self.message_handlers, 'handle_plan_response'):
-                await self.message_handlers.handle_plan_response(user_id, "approve")
+                success = await self.message_handlers.handle_plan_response(user_id, "approve")
 
-            await callback.answer("✅ План одобрен!")
+            if success:
+                original_text = callback.message.text or ""
+                text = await self._truncate_and_append(
+                    original_text,
+                    "\n\n✅ **План одобрен** — начинаю выполнение!"
+                )
+                await callback.message.edit_text(text, parse_mode=None)
+                await callback.answer("✅ План одобрен!")
+            else:
+                logger.warning(f"[{user_id}] Plan approve failed - response not accepted")
+                await callback.answer("⚠️ Не удалось подтвердить. Задача могла завершиться.", show_alert=True)
 
         except Exception as e:
             logger.error(f"Error handling plan approve: {e}")
@@ -276,13 +283,13 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
             return
 
         try:
+            success = False
+            if hasattr(self.message_handlers, 'handle_plan_response'):
+                success = await self.message_handlers.handle_plan_response(user_id, "reject")
+
             original_text = callback.message.text or ""
             text = await self._truncate_and_append(original_text, "\n\n❌ **План отклонён**")
             await callback.message.edit_text(text, parse_mode=None)
-
-            if hasattr(self.message_handlers, 'handle_plan_response'):
-                await self.message_handlers.handle_plan_response(user_id, "reject")
-
             await callback.answer("❌ План отклонён")
 
         except Exception as e:
@@ -323,8 +330,11 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
             return
 
         try:
-            await callback.message.edit_text("🛑 **Задача отменена**", parse_mode=None)
+            # Send plan cancel response FIRST
+            if hasattr(self.message_handlers, 'handle_plan_response'):
+                await self.message_handlers.handle_plan_response(user_id, "cancel")
 
+            # Then cancel the task itself
             cancelled = False
             if self.sdk_service:
                 cancelled = await self.sdk_service.cancel_task(user_id)
@@ -332,9 +342,7 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
             if not cancelled and self.claude_proxy:
                 cancelled = await self.claude_proxy.cancel_task(user_id)
 
-            if hasattr(self.message_handlers, 'handle_plan_response'):
-                await self.message_handlers.handle_plan_response(user_id, "cancel")
-
+            await callback.message.edit_text("🛑 **Задача отменена**", parse_mode=None)
             await callback.answer("🛑 Задача отменена")
 
         except Exception as e:

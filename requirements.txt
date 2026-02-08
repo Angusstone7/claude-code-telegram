@@ -28,6 +28,10 @@ prometheus-client>=0.21.0
 # Structured logging
 python-json-logger>=2.0.0
 
+# REST API
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+
 # Development
 pytest>=7.4.0
 pytest-asyncio>=0.21.0

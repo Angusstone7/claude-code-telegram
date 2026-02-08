@@ -59,6 +59,7 @@ class Application:
         self.bot: Bot = None
         self.dp: Dispatcher = None
         self._shutdown_event = asyncio.Event()
+        self._api_server = None  # uvicorn server for REST API
 
     async def setup(self):
         """Initialize application components"""
@@ -226,6 +227,33 @@ class Application:
             except Exception as e:
                 logger.warning(f"⚠ Failed to notify admin {admin_id}: {e}")
 
+    async def _start_rest_api(self):
+        """Start FastAPI REST API server alongside the bot."""
+        api_port = int(os.getenv("API_PORT", "8000"))
+
+        try:
+            import uvicorn
+            from presentation.api.app import create_app
+
+            api_app = create_app(self.container)
+            config = uvicorn.Config(
+                api_app,
+                host="0.0.0.0",
+                port=api_port,
+                log_level="warning",  # Reduce uvicorn noise
+                access_log=False,
+            )
+            self._api_server = uvicorn.Server(config)
+
+            # Run uvicorn in background — it yields control back to event loop
+            asyncio.create_task(self._api_server.serve())
+            logger.info(f"✓ REST API started on port {api_port} (Swagger at http://0.0.0.0:{api_port}/docs)")
+
+        except ImportError:
+            logger.warning("⚠ FastAPI/uvicorn not installed — REST API disabled")
+        except Exception as e:
+            logger.error(f"⚠ Failed to start REST API: {e}")
+
     async def start(self):
         """Start the bot"""
         await self.setup()
@@ -244,6 +272,9 @@ class Application:
             # Background task: update system metrics every 15s
             monitor = self.container.system_monitor()
             asyncio.create_task(update_system_metrics(monitor))
+
+        # Start REST API server (FastAPI + uvicorn)
+        await self._start_rest_api()
 
         # Notify admins that bot started
         await self._notify_admins_startup(info)
@@ -267,6 +298,11 @@ class Application:
 
         logger.info("Shutting down...")
         self._shutdown_event.set()
+
+        # Stop REST API server
+        if self._api_server:
+            self._api_server.should_exit = True
+            logger.info("REST API server stopping...")
 
         # Stop polling
         if self.dp:
