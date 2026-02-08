@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from shared.container import Container
 from shared.logging.correlation import set_correlation_id, generate_correlation_id
 from presentation.api.dependencies import set_container
-from presentation.api.routes import health, projects, sessions, claude, system
+from presentation.api.routes import health, projects, sessions, claude, system, config
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ def create_app(container: Container) -> FastAPI:
     app.include_router(sessions.router, prefix=api_prefix)
     app.include_router(claude.router, prefix=api_prefix)
     app.include_router(system.router, prefix=api_prefix)
+    app.include_router(config.router, prefix=api_prefix)
 
     logger.info(
         f"REST API configured: {len(app.routes)} routes, "

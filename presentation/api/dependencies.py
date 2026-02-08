@@ -48,3 +48,8 @@ def get_claude_proxy():
 def get_system_monitor():
     """Get SystemMonitor from container."""
     return get_container().system_monitor()
+
+
+def get_runtime_config():
+    """Get RuntimeConfigService from container."""
+    return get_container().runtime_config()

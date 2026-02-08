@@ -140,6 +140,14 @@ class Container:
             self._cache["proxy_repository"] = SQLiteProxyRepository()
         return self._cache["proxy_repository"]
 
+    def config_repository(self):
+        """Get or create RuntimeConfigRepository"""
+        if "config_repository" not in self._cache:
+            from infrastructure.persistence.sqlite_config_repository import SQLiteConfigRepository
+            db_path = self.config.database_url.replace("sqlite:///", "")
+            self._cache["config_repository"] = SQLiteConfigRepository(db_path)
+        return self._cache["config_repository"]
+
     # === Service Layer ===
 
     def bot_service(self):
@@ -153,6 +161,13 @@ class Container:
                 system_monitor=self.system_monitor(),
             )
         return self._cache["bot_service"]
+
+    def runtime_config(self):
+        """Get or create RuntimeConfigService"""
+        if "runtime_config" not in self._cache:
+            from application.services.runtime_config_service import RuntimeConfigService
+            self._cache["runtime_config"] = RuntimeConfigService(self.config_repository())
+        return self._cache["runtime_config"]
 
     def proxy_service(self):
         """Get or create ProxyService"""
