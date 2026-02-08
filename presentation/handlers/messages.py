@@ -291,43 +291,11 @@ class MessageHandlers:
 
     # === CD Command Detection (utility) ===
 
-    def _detect_cd_command(self, command: str, current_dir: str) -> Optional[str]:
-        """
-        Detect if a bash command changes directory and return the new path.
-
-        Handles patterns like:
-        - cd /path/to/dir
-        - cd subdir
-        - mkdir -p dir && cd dir
-        - cd ~
-        - cd ..
-        """
-        cd_patterns = [
-            r'(?:^|&&|;)\s*cd\s+([^\s;&|]+)',
-            r'(?:^|&&|;)\s*cd\s+"([^"]+)"',
-            r"(?:^|&&|;)\s*cd\s+'([^']+)'",
-        ]
-
-        new_dir = None
-        for pattern in cd_patterns:
-            matches = re.findall(pattern, command)
-            if matches:
-                new_dir = matches[-1]
-                break
-
-        if not new_dir:
-            return None
-
-        if new_dir.startswith('/'):
-            return new_dir
-        elif new_dir == '~':
-            return '/root'
-        elif new_dir == '-':
-            return None
-        elif new_dir == '..':
-            return os.path.dirname(current_dir)
-        else:
-            return os.path.join(current_dir, new_dir)
+    @staticmethod
+    def _detect_cd_command(command: str, current_dir: str) -> Optional[str]:
+        """Detect if a bash command changes directory. Delegates to shared utility."""
+        from shared.bash_utils import detect_cd_command
+        return detect_cd_command(command, current_dir)
 
     # === File Handlers (Unified) ===
 
@@ -1037,12 +1005,8 @@ class MessageHandlers:
         if session:
             session.set_waiting_approval(request_id, tool_name, details)
 
-        text = f"<b>Запрос разрешения</b>\n\n"
-        text += f"<b>Инструмент:</b> <code>{html.escape(tool_name)}</code>\n"
-        if details:
-            display_details = details if len(details) < 500 else details[:500] + "..."
-            # Escape HTML entities to prevent parse errors (e.g., <<'EOF' -> &lt;&lt;'EOF')
-            text += f"<b>Детали:</b>\n<pre><code>{html.escape(display_details)}</code></pre>"
+        from shared.message_formatters import format_permission_request
+        text = format_permission_request(tool_name, details)
 
         await message.answer(
             text,
@@ -1177,12 +1141,8 @@ class MessageHandlers:
         if session:
             session.set_waiting_approval(request_id, tool_name, details)
 
-        text = f"<b>Запрос разрешения</b>\n\n"
-        text += f"<b>Инструмент:</b> <code>{html.escape(tool_name)}</code>\n"
-        if details:
-            display_details = details if len(details) < 500 else details[:500] + "..."
-            # Escape HTML entities to prevent parse errors (e.g., <<'EOF' -> &lt;&lt;'EOF')
-            text += f"<b>Детали:</b>\n<pre><code>{html.escape(display_details)}</code></pre>"
+        from shared.message_formatters import format_permission_request
+        text = format_permission_request(tool_name, details)
 
         perm_msg = await message.answer(
             text,
