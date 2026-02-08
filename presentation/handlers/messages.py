@@ -17,7 +17,10 @@ import html
 import logging
 import os
 import re
+import time
 import uuid
+
+import aiofiles
 from typing import Optional, TYPE_CHECKING
 
 from aiogram import Router, F, Bot
@@ -1244,34 +1247,33 @@ class MessageHandlers:
         if not plan_content and plan_file:
             try:
                 # Try absolute path first
-                if os.path.isabs(plan_file) and os.path.exists(plan_file):
-                    with open(plan_file, 'r', encoding='utf-8') as f:
-                        plan_content = f.read()
+                if os.path.isabs(plan_file) and await asyncio.to_thread(os.path.exists, plan_file):
+                    async with aiofiles.open(plan_file, 'r', encoding='utf-8') as f:
+                        plan_content = await f.read()
                 else:
                     # Try relative to working dir
                     working_dir = self.get_working_dir(user_id)
                     plan_path = os.path.join(working_dir, plan_file)
-                    if os.path.exists(plan_path):
-                        with open(plan_path, 'r', encoding='utf-8') as f:
-                            plan_content = f.read()
+                    if await asyncio.to_thread(os.path.exists, plan_path):
+                        async with aiofiles.open(plan_path, 'r', encoding='utf-8') as f:
+                            plan_content = await f.read()
             except Exception as e:
                 logger.error(f"[{user_id}] Error reading plan file '{plan_file}': {e}")
 
         # 3. Fallback: try common plan file names in working dir (PLAN.md, plan.md)
         if not plan_content:
             try:
-                import time
                 working_dir = self.get_working_dir(user_id)
                 common_plan_names = ["PLAN.md", "plan.md", "Plan.md"]
                 for name in common_plan_names:
                     candidate = os.path.join(working_dir, name)
-                    if os.path.exists(candidate):
-                        mtime = os.path.getmtime(candidate)
+                    if await asyncio.to_thread(os.path.exists, candidate):
+                        mtime = await asyncio.to_thread(os.path.getmtime, candidate)
                         # Only use if modified within last 5 minutes
                         if (time.time() - mtime) < 300:
                             logger.info(f"[{user_id}] Found plan in working dir: {candidate}")
-                            with open(candidate, 'r', encoding='utf-8') as f:
-                                plan_content = f.read()
+                            async with aiofiles.open(candidate, 'r', encoding='utf-8') as f:
+                                plan_content = await f.read()
                             break
             except Exception as e:
                 logger.error(f"[{user_id}] Error checking common plan files: {e}")
@@ -1279,7 +1281,6 @@ class MessageHandlers:
         # 4. Fallback: find the most recent plan file in .claude/plans/
         if not plan_content:
             try:
-                import time
                 working_dir = self.get_working_dir(user_id)
                 plans_dirs = [
                     os.path.join(working_dir, ".claude", "plans"),
@@ -1288,19 +1289,20 @@ class MessageHandlers:
                 latest_plan = None
                 latest_mtime = 0
                 for plans_dir in plans_dirs:
-                    if os.path.isdir(plans_dir):
-                        for fname in os.listdir(plans_dir):
+                    if await asyncio.to_thread(os.path.isdir, plans_dir):
+                        entries = await asyncio.to_thread(os.listdir, plans_dir)
+                        for fname in entries:
                             if fname.endswith(".md"):
                                 fpath = os.path.join(plans_dir, fname)
-                                mtime = os.path.getmtime(fpath)
+                                mtime = await asyncio.to_thread(os.path.getmtime, fpath)
                                 if mtime > latest_mtime:
                                     latest_mtime = mtime
                                     latest_plan = fpath
                 # Only use if modified within last 5 minutes (likely current plan)
                 if latest_plan and (time.time() - latest_mtime) < 300:
                     logger.info(f"[{user_id}] Found recent plan file: {latest_plan}")
-                    with open(latest_plan, 'r', encoding='utf-8') as f:
-                        plan_content = f.read()
+                    async with aiofiles.open(latest_plan, 'r', encoding='utf-8') as f:
+                        plan_content = await f.read()
             except Exception as e:
                 logger.error(f"[{user_id}] Error scanning for plan files: {e}")
 

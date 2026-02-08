@@ -5,6 +5,7 @@ File Processor Service
 Поддерживает текстовые файлы, изображения, PDF и ZIP-архивы.
 """
 
+import asyncio
 import base64
 import logging
 import os
@@ -13,6 +14,8 @@ from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
 from typing import Optional, Tuple, List
+
+import aiofiles
 
 logger = logging.getLogger(__name__)
 
@@ -451,19 +454,19 @@ class FileProcessorService:
         try:
             # Создаём папку .uploads для временных файлов
             uploads_dir = os.path.join(working_dir, ".uploads")
-            os.makedirs(uploads_dir, exist_ok=True)
+            await asyncio.to_thread(os.makedirs, uploads_dir, exist_ok=True)
 
             file_path = os.path.join(uploads_dir, processed_file.filename)
 
             if processed_file.file_type == FileType.IMAGE:
                 # Декодируем base64 и сохраняем
                 image_data = base64.b64decode(processed_file.content)
-                with open(file_path, "wb") as f:
-                    f.write(image_data)
+                async with aiofiles.open(file_path, "wb") as f:
+                    await f.write(image_data)
             else:
                 # Текстовые файлы сохраняем как есть
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(processed_file.content)
+                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                    await f.write(processed_file.content)
 
             processed_file.saved_path = file_path
             logger.info(f"File saved to {file_path}")

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from aiogram import Router, F, types
@@ -324,7 +325,7 @@ class CommandHandlers:
             # List some common project directories
             projects = []
             for dir_path in ["/root", "/home", "/var/www", "/opt"]:
-                if os.path.exists(dir_path):
+                if await asyncio.to_thread(os.path.exists, dir_path):
                     projects.append({"name": os.path.basename(dir_path) or dir_path, "path": dir_path})
 
             await message.answer(
@@ -535,11 +536,11 @@ class CommandHandlers:
             target_path = current_dir
 
         # Ensure directory exists
-        if not os.path.isdir(target_path):
+        if not await asyncio.to_thread(os.path.isdir, target_path):
             # Try creating if it's a subdir of root
             if self.file_browser_service.is_within_root(target_path):
                 try:
-                    os.makedirs(target_path, exist_ok=True)
+                    await asyncio.to_thread(os.makedirs, target_path, exist_ok=True)
                 except OSError:
                     target_path = self.file_browser_service.ROOT_PATH
             else:
