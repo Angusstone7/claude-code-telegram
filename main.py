@@ -38,16 +38,10 @@ from infrastructure.claude_code.diagnostics import run_and_log_diagnostics
 from presentation.middleware.auth import AuthMiddleware, CallbackAuthMiddleware
 from presentation.handlers.state.update_coordinator import init_coordinator
 
-# Configure logging
+# Configure structured JSON logging
 Path("logs").mkdir(exist_ok=True)
-logging.basicConfig(
-    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("logs/bot.log")
-    ]
-)
+from shared.logging.config import setup_logging
+setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 
 logger = logging.getLogger(__name__)
 
