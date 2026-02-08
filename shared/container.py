@@ -203,6 +203,13 @@ class Container:
             self._cache["file_processor_service"] = FileProcessorService()
         return self._cache["file_processor_service"]
 
+    def system_monitor(self):
+        """Get or create SystemMonitor"""
+        if "system_monitor" not in self._cache:
+            from infrastructure.monitoring.system_monitor import SystemMonitor
+            self._cache["system_monitor"] = SystemMonitor()
+        return self._cache["system_monitor"]
+
     # === Infrastructure Layer ===
 
     def claude_proxy(self):
