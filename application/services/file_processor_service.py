@@ -436,7 +436,7 @@ class FileProcessorService:
             logger.error(f"ZIP extraction error: {e}")
             return f"[ZIP: ошибка обработки — {str(e)}]"
 
-    def save_to_working_dir(
+    async def save_to_working_dir(
         self,
         processed_file: ProcessedFile,
         working_dir: str
@@ -511,7 +511,7 @@ class FileProcessorService:
         elif processed_file.file_type == FileType.IMAGE:
             # Для изображений - сохраняем в рабочую директорию и указываем путь
             if working_dir:
-                saved_path = self.save_to_working_dir(processed_file, working_dir)
+                saved_path = await self.save_to_working_dir(processed_file, working_dir)
                 if saved_path:
                     image_instruction = (
                         f"📎 **Изображение сохранено:** `{saved_path}`\n\n"
@@ -602,7 +602,7 @@ class FileProcessorService:
 
             elif pf.file_type == FileType.IMAGE:
                 if working_dir:
-                    saved_path = self.save_to_working_dir(pf, working_dir)
+                    saved_path = await self.save_to_working_dir(pf, working_dir)
                     if saved_path:
                         block = (
                             f"📎 **Изображение {i}: {pf.filename}** сохранено в `{saved_path}`\n"
