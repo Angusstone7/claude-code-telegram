@@ -1257,9 +1257,29 @@ class MessageHandlers:
             except Exception as e:
                 logger.error(f"[{user_id}] Error reading plan file '{plan_file}': {e}")
 
-        # 3. Fallback: find the most recent plan file in .claude/plans/
+        # 3. Fallback: try common plan file names in working dir (PLAN.md, plan.md)
         if not plan_content:
             try:
+                import time
+                working_dir = self.get_working_dir(user_id)
+                common_plan_names = ["PLAN.md", "plan.md", "Plan.md"]
+                for name in common_plan_names:
+                    candidate = os.path.join(working_dir, name)
+                    if os.path.exists(candidate):
+                        mtime = os.path.getmtime(candidate)
+                        # Only use if modified within last 5 minutes
+                        if (time.time() - mtime) < 300:
+                            logger.info(f"[{user_id}] Found plan in working dir: {candidate}")
+                            with open(candidate, 'r', encoding='utf-8') as f:
+                                plan_content = f.read()
+                            break
+            except Exception as e:
+                logger.error(f"[{user_id}] Error checking common plan files: {e}")
+
+        # 4. Fallback: find the most recent plan file in .claude/plans/
+        if not plan_content:
+            try:
+                import time
                 working_dir = self.get_working_dir(user_id)
                 plans_dirs = [
                     os.path.join(working_dir, ".claude", "plans"),
@@ -1277,7 +1297,6 @@ class MessageHandlers:
                                     latest_mtime = mtime
                                     latest_plan = fpath
                 # Only use if modified within last 5 minutes (likely current plan)
-                import time
                 if latest_plan and (time.time() - latest_mtime) < 300:
                     logger.info(f"[{user_id}] Found recent plan file: {latest_plan}")
                     with open(latest_plan, 'r', encoding='utf-8') as f:

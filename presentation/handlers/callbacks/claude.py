@@ -234,8 +234,11 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
 
     # ============== Plan Approval Callbacks (ExitPlanMode) ==============
 
-    async def _get_plan_user_id(self, callback: CallbackQuery) -> int:
-        """Extract user_id from plan callback data."""
+    def _get_plan_user_id(self, callback: CallbackQuery) -> int:
+        """Extract user_id from plan callback data.
+
+        Callback data format: plan:{action}:{user_id}:{request_id}
+        """
         parts = callback.data.split(":")
         return int(parts[2]) if len(parts) > 2 else 0
 
