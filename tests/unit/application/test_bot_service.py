@@ -15,6 +15,14 @@ from domain.value_objects.role import Role
 from domain.services.command_execution_service import CommandExecutionResult
 
 
+@pytest.fixture(autouse=True)
+def mock_bot_service_settings():
+    """Mock settings for all BotService tests."""
+    with patch("application.services.bot_service.settings") as mock_settings:
+        mock_settings.telegram.allowed_user_ids = [123456789, 999999, 111111, 123456]
+        yield mock_settings
+
+
 class TestBotServiceUserManagement:
     """Tests for BotService user management methods."""
 
