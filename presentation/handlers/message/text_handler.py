@@ -393,17 +393,26 @@ class TextMessageHandler(BaseMessageHandler):
                 )
                 await self.ai_request_handler._handle_result(user_id, cli_result, message)
             else:
+                # CLI backend
+                is_yolo = self.user_state.is_yolo_mode(user_id)
+                logger.info(f"[{user_id}] CLI backend: yolo={is_yolo}, working_dir={working_dir}")
                 result = await self.claude_proxy.run_task(
                     user_id=user_id,
                     prompt=enriched_prompt,
                     working_dir=working_dir,
                     session_id=session_id,
+                    yolo_mode=is_yolo,
                     on_text=lambda text: self.ai_request_handler._on_text(user_id, text),
                     on_tool_use=lambda tool, inp: self.ai_request_handler._on_tool_use(user_id, tool, inp, message),
                     on_tool_result=lambda tid, out: self.ai_request_handler._on_tool_result(user_id, tid, out),
                     on_permission=lambda tool, details: self.ai_request_handler._on_permission(user_id, tool, details, message),
                     on_question=lambda q, opts: self.ai_request_handler._on_question(user_id, q, opts, message),
                     on_error=lambda err: self.ai_request_handler._on_error(user_id, err),
+                )
+                logger.info(
+                    f"[{user_id}] CLI result: success={result.success}, "
+                    f"output_len={len(result.output)}, error={result.error}, "
+                    f"session_id={result.session_id}"
                 )
                 await self.ai_request_handler._handle_result(user_id, result, message)
 

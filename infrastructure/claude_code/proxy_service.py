@@ -113,6 +113,7 @@ class ClaudeCodeProxyService:
         prompt: str,
         working_dir: Optional[str] = None,
         session_id: Optional[str] = None,
+        yolo_mode: bool = False,
         on_text: Optional[Callable[[str], Awaitable[None]]] = None,
         on_tool_use: Optional[Callable[[str, dict], Awaitable[None]]] = None,
         on_tool_result: Optional[Callable[[str, str], Awaitable[None]]] = None,
@@ -128,6 +129,7 @@ class ClaudeCodeProxyService:
             prompt: The task prompt to send to Claude Code
             working_dir: Working directory for the task
             session_id: Optional session ID to resume
+            yolo_mode: If True, pass --dangerously-skip-permissions to auto-approve all tools
             on_text: Callback for text output (streaming)
             on_tool_use: Callback when a tool is being used
             on_tool_result: Callback when tool execution completes
@@ -154,7 +156,12 @@ class ClaudeCodeProxyService:
             "-p", prompt,
             "--output-format", "stream-json",  # JSON events for streaming
             "--verbose",  # More detailed output
+            "--max-turns", str(self.max_turns),
         ]
+
+        # YOLO mode → skip all permission prompts (auto-approve everything)
+        if yolo_mode:
+            cmd.append("--dangerously-skip-permissions")
 
         if session_id:
             cmd.extend(["--resume", session_id])
@@ -218,25 +225,39 @@ class ClaudeCodeProxyService:
                     # Try to parse as JSON event
                     event = self._parse_event(line_str)
                     if event:
-                        logger.info(f"[{user_id}] Event: {event.type.value}")
+                        # Log event details for debugging
+                        extra = ""
+                        if event.type == EventType.TOOL_USE:
+                            extra = f" tool={event.tool_name}"
+                        elif event.type == EventType.ASSISTANT_MESSAGE:
+                            extra = f" len={len(event.content)}"
+                        elif event.type == EventType.RESULT:
+                            extra = f" len={len(event.content)} sid={event.session_id}"
+                        logger.info(f"[{user_id}] Event: {event.type.value}{extra}")
 
                         # Handle the event
-                        await self._handle_event(
-                            user_id, event,
-                            on_text, on_tool_use, on_tool_result,
-                            on_permission, on_question, on_error,
-                            output_buffer
-                        )
+                        try:
+                            await self._handle_event(
+                                user_id, event,
+                                on_text, on_tool_use, on_tool_result,
+                                on_permission, on_question, on_error,
+                                output_buffer
+                            )
+                        except Exception as e:
+                            logger.error(f"[{user_id}] Error handling event {event.type.value}: {e}", exc_info=True)
 
-                        # Extract session_id from result
-                        if event.type == EventType.RESULT and event.session_id:
+                        # Extract session_id from result or assistant events
+                        if event.session_id:
                             result_session_id = event.session_id
                     else:
                         # Non-JSON line - might be plain text output
                         logger.info(f"[{user_id}] Non-JSON: {line_str[:100]}")
                         if on_text and line_str:
                             output_buffer.append(line_str)
-                            await on_text(line_str + "\n")
+                            try:
+                                await on_text(line_str + "\n")
+                            except Exception as e:
+                                logger.error(f"[{user_id}] Error in on_text callback: {e}")
 
             # Read stderr in background
             async def read_stderr():
@@ -268,7 +289,10 @@ class ClaudeCodeProxyService:
                 )
 
             await process.wait()
-            logger.info(f"[{user_id}] Process finished, returncode={process.returncode}")
+            logger.info(
+                f"[{user_id}] Process finished, returncode={process.returncode}, "
+                f"output_lines={len(output_buffer)}, session_id={result_session_id}"
+            )
 
             # Check if cancelled
             if self._cancel_events[user_id].is_set():
@@ -279,11 +303,23 @@ class ClaudeCodeProxyService:
                     cancelled=True
                 )
 
+            # Determine error message for non-zero return codes
+            error_msg = None
+            if process.returncode != 0:
+                if process.returncode == 143:  # SIGTERM
+                    error_msg = "Process was terminated (SIGTERM)"
+                elif process.returncode == 137:  # SIGKILL
+                    error_msg = "Process was killed (SIGKILL - possibly OOM)"
+                elif process.returncode < 0:
+                    error_msg = f"Process killed by signal {-process.returncode}"
+                else:
+                    error_msg = f"Process exited with code {process.returncode}"
+
             return TaskResult(
                 success=process.returncode == 0,
                 output="\n".join(output_buffer),
                 session_id=result_session_id,
-                error=None if process.returncode == 0 else "Process failed"
+                error=error_msg
             )
 
         except Exception as e:
@@ -303,7 +339,11 @@ class ClaudeCodeProxyService:
             self._question_responses.pop(user_id, None)
 
     def _parse_event(self, line: str) -> Optional[ClaudeCodeEvent]:
-        """Parse a JSON line from Claude Code stream output"""
+        """Parse a JSON line from Claude Code stream output.
+
+        Returns a single event. For assistant messages with multiple blocks,
+        tool_use takes priority (text is usually in a separate assistant event).
+        """
         try:
             data = json.loads(line)
 
@@ -311,26 +351,31 @@ class ClaudeCodeProxyService:
             event_type = data.get("type", "")
             logger.debug(f"Parsing event type: {event_type}, data keys: {list(data.keys())}")
 
-            # Assistant message - can contain text and tool_use blocks
+            # Assistant message - can contain text and/or tool_use blocks
             if event_type == "assistant":
                 message = data.get("message", {})
                 content_blocks = message.get("content", [])
 
                 text_content = ""
+                first_tool_use = None
                 for block in content_blocks:
                     block_type = block.get("type", "")
                     if block_type == "text":
                         text_content += block.get("text", "")
-                    elif block_type == "tool_use":
-                        # Also emit tool_use event
-                        return ClaudeCodeEvent(
-                            type=EventType.TOOL_USE,
-                            tool_name=block.get("name"),
-                            tool_input=block.get("input", {}),
-                            tool_id=block.get("id"),
-                            raw=data
-                        )
+                    elif block_type == "tool_use" and first_tool_use is None:
+                        first_tool_use = block
 
+                # If there's a tool_use block, return it (text will come in result event)
+                if first_tool_use:
+                    return ClaudeCodeEvent(
+                        type=EventType.TOOL_USE,
+                        tool_name=first_tool_use.get("name"),
+                        tool_input=first_tool_use.get("input", {}),
+                        tool_id=first_tool_use.get("id"),
+                        raw=data
+                    )
+
+                # Text-only assistant message
                 if text_content:
                     return ClaudeCodeEvent(
                         type=EventType.ASSISTANT_MESSAGE,
@@ -374,30 +419,48 @@ class ClaudeCodeProxyService:
                     raw=data
                 )
 
-            # Tool result
+            # Tool result — can come as "tool_result" or "user" type
             elif event_type == "tool_result" or event_type == "user":
-                # user type with tool_result content
-                content = data.get("content", "")
-                if isinstance(content, list):
-                    # Extract text from content blocks
+                # Format from CLI stream-json:
+                # {"type":"user","message":{"role":"user","content":[{"tool_use_id":"...","type":"tool_result","content":"...","is_error":false}]}}
+                msg = data.get("message", {})
+                content_blocks = msg.get("content", data.get("content", ""))
+                tool_id = data.get("tool_use_id") or data.get("id")
+                result_content = ""
+
+                if isinstance(content_blocks, list):
                     text_parts = []
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "tool_result":
-                            text_parts.append(str(block.get("content", "")))
-                    content = "\n".join(text_parts)
+                    for block in content_blocks:
+                        if isinstance(block, dict):
+                            if block.get("type") == "tool_result":
+                                block_content = block.get("content", "")
+                                text_parts.append(str(block_content))
+                                if not tool_id:
+                                    tool_id = block.get("tool_use_id")
+                            elif block.get("type") == "text":
+                                text_parts.append(block.get("text", ""))
+                    result_content = "\n".join(text_parts)
+                elif isinstance(content_blocks, str):
+                    result_content = content_blocks
+
+                # Also check top-level tool_use_result shorthand
+                if not result_content:
+                    result_content = str(data.get("tool_use_result", ""))
 
                 return ClaudeCodeEvent(
                     type=EventType.TOOL_RESULT,
-                    tool_id=data.get("tool_use_id") or data.get("id"),
-                    content=str(content)[:500],  # Truncate long results
+                    tool_id=tool_id,
+                    content=str(result_content)[:500],  # Truncate long results
                     raw=data
                 )
 
             # Result/completion
             elif event_type == "result" or event_type == "message_stop":
+                # 'result' field contains the final text output
+                result_text = data.get("result", "") or data.get("content", "")
                 return ClaudeCodeEvent(
                     type=EventType.RESULT,
-                    content=data.get("content", "") or data.get("result", ""),
+                    content=result_text,
                     session_id=data.get("session_id"),
                     raw=data
                 )
