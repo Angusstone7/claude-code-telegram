@@ -357,6 +357,7 @@ class Container:
                 project_service=self.project_service(),
                 context_service=self.context_service(),
                 file_processor_service=self.file_processor_service(),
+                runtime_config=self.runtime_config(),
             )
         return self._cache["message_handlers"]
 
@@ -432,5 +433,6 @@ class Container:
                 account_service=self.account_service(),
                 message_handlers=self.message_handlers(),
                 system_monitor=self.system_monitor(),
+                runtime_config=self.runtime_config(),
             )
         return self._cache["menu_handlers"]

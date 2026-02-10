@@ -40,6 +40,7 @@ class MenuHandlers:
         account_service=None,
         message_handlers=None,  # Reference to MessageHandlers for YOLO state
         system_monitor=None,  # ISystemMonitor for docker/metrics
+        runtime_config=None,  # RuntimeConfigService for dynamic settings
     ):
         self.bot_service = bot_service
         self.claude_proxy = claude_proxy
@@ -50,6 +51,7 @@ class MenuHandlers:
         self.account_service = account_service
         self.message_handlers = message_handlers
         self.system_monitor = system_monitor
+        self.runtime_config = runtime_config
         self.router = Router(name="menu")
         self._register_handlers()
 
@@ -90,6 +92,19 @@ class MenuHandlers:
         if self.message_handlers:
             return self.message_handlers.is_step_streaming_mode(user_id)
         return False
+
+    async def _get_backend_mode(self, user_id: int) -> "BackendMode":
+        """Get user's preferred backend mode."""
+        from domain.value_objects.backend_mode import BackendMode
+
+        if self.runtime_config:
+            return await self.runtime_config.get_user_backend(user_id)
+        return BackendMode.SDK if self.sdk_service else BackendMode.CLI
+
+    async def _set_backend_mode(self, user_id: int, mode: "BackendMode") -> None:
+        """Set user's preferred backend mode."""
+        if self.runtime_config:
+            await self.runtime_config.set_user_backend(user_id, mode)
 
     def _get_working_dir(self, user_id: int) -> str:
         """Get user's working directory"""
@@ -642,12 +657,17 @@ class MenuHandlers:
 
         if not action:
             # Show settings submenu
+            from domain.value_objects.backend_mode import BackendMode
+
             yolo_enabled = await self._get_yolo_enabled(user_id)
             step_streaming = self._get_step_streaming_enabled(user_id)
             auth_mode, has_creds = await self._get_auth_info(user_id)
+            backend_mode = await self._get_backend_mode(user_id)
 
+            backend_label = t(backend_mode.label_key)
             text = (
                 f"{t('settings.title')}\n\n"
+                f"⚙️ {t('settings.backend')}: <b>{backend_label}</b>\n"
                 f"{t('settings.yolo_on') if yolo_enabled else t('settings.yolo_off')}\n"
                 f"{t('settings.streaming_on') if step_streaming else t('settings.streaming_off')}\n"
                 f"👤 {'☁️ Claude Account' if auth_mode == 'claude_account' else '🌐 z.ai API'}"
@@ -655,7 +675,13 @@ class MenuHandlers:
 
             await callback.message.edit_text(
                 text,
-                reply_markup=Keyboards.menu_settings(yolo_enabled, step_streaming, auth_mode, has_creds, lang=lang),
+                reply_markup=Keyboards.menu_settings(
+                    yolo_enabled, step_streaming, auth_mode, has_creds,
+                    backend_mode=backend_mode.value,
+                    sdk_available=self.sdk_service is not None,
+                    cli_available=self.claude_proxy is not None,
+                    lang=lang,
+                ),
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -717,10 +743,17 @@ class MenuHandlers:
 
                 auth_mode, has_creds = await self._get_auth_info(user_id)
                 step_streaming = self._get_step_streaming_enabled(user_id)
+                backend_mode = await self._get_backend_mode(user_id)
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.menu_settings(new_state, step_streaming, auth_mode, has_creds, lang=lang),
+                    reply_markup=Keyboards.menu_settings(
+                        new_state, step_streaming, auth_mode, has_creds,
+                        backend_mode=backend_mode.value,
+                        sdk_available=self.sdk_service is not None,
+                        cli_available=self.claude_proxy is not None,
+                        lang=lang,
+                    ),
                     parse_mode="HTML"
                 )
                 await callback.answer(t("settings.yolo_on") if new_state else t("settings.yolo_off"))
@@ -736,13 +769,63 @@ class MenuHandlers:
 
                 auth_mode, has_creds = await self._get_auth_info(user_id)
                 yolo = await self._get_yolo_enabled(user_id)
+                backend_mode = await self._get_backend_mode(user_id)
 
                 await callback.message.edit_text(
                     text,
-                    reply_markup=Keyboards.menu_settings(yolo, new_state, auth_mode, has_creds, lang=lang),
+                    reply_markup=Keyboards.menu_settings(
+                        yolo, new_state, auth_mode, has_creds,
+                        backend_mode=backend_mode.value,
+                        sdk_available=self.sdk_service is not None,
+                        cli_available=self.claude_proxy is not None,
+                        lang=lang,
+                    ),
                     parse_mode="HTML"
                 )
                 await callback.answer(t("settings.streaming_on") if new_state else t("settings.streaming_off"))
+
+        elif action == "backend":
+            # Toggle backend mode (SDK ↔ CLI)
+            from domain.value_objects.backend_mode import BackendMode
+
+            current = await self._get_backend_mode(user_id)
+            new_mode = BackendMode.CLI if current == BackendMode.SDK else BackendMode.SDK
+
+            # Check target backend is available
+            if new_mode == BackendMode.SDK and not self.sdk_service:
+                await callback.answer(t("settings.backend_sdk_unavailable"), show_alert=True)
+                return
+            if new_mode == BackendMode.CLI and not self.claude_proxy:
+                await callback.answer(t("settings.backend_cli_unavailable"), show_alert=True)
+                return
+
+            await self._set_backend_mode(user_id, new_mode)
+
+            new_label = t(new_mode.label_key)
+            text = (
+                f"✅ {t('settings.backend_switched', mode=new_label)}\n\n"
+                f"{t(new_mode.description_key)}"
+            )
+
+            yolo = await self._get_yolo_enabled(user_id)
+            step_streaming = self._get_step_streaming_enabled(user_id)
+            auth_mode, has_creds = await self._get_auth_info(user_id)
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=Keyboards.menu_settings(
+                    yolo, step_streaming, auth_mode, has_creds,
+                    backend_mode=new_mode.value,
+                    sdk_available=self.sdk_service is not None,
+                    cli_available=self.claude_proxy is not None,
+                    lang=lang,
+                ),
+                parse_mode="HTML"
+            )
+            await callback.answer(f"{t('settings.backend')}: {new_label}")
+
+        elif action == "backend_na":
+            await callback.answer(t("settings.backend_na"), show_alert=True)
 
         elif action == "login":
             # Show login prompt

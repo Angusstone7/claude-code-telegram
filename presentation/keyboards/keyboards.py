@@ -279,6 +279,9 @@ class Keyboards:
         step_streaming: bool = False,
         auth_mode: str = "zai_api",
         has_credentials: bool = False,
+        backend_mode: str = "sdk",
+        sdk_available: bool = True,
+        cli_available: bool = True,
         lang: str = "ru"
     ) -> InlineKeyboardMarkup:
         """Settings submenu - account and preferences"""
@@ -289,11 +292,27 @@ class Keyboards:
         step_status = "✅" if step_streaming else "❌"
         auth_icon = "☁️" if auth_mode == "claude_account" else "🌐"
 
+        # Backend display
+        backend_label = t(f"settings.backend_{backend_mode}")
+
+        # Determine if toggle is possible
+        can_toggle_backend = (
+            (backend_mode == "sdk" and cli_available) or
+            (backend_mode == "cli" and sdk_available)
+        )
+
         buttons = [
             [
                 InlineKeyboardButton(
                     text=f"{t('settings.account')} ({auth_icon})",
                     callback_data="menu:settings:account"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"{t('settings.backend')}: {backend_label}",
+                    callback_data="menu:settings:backend" if can_toggle_backend
+                                 else "menu:settings:backend_na"
                 ),
             ],
             [

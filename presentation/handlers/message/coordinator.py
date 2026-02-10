@@ -49,6 +49,7 @@ class MessageCoordinator:
         default_working_dir: str = "/root",
         message_batcher=None,
         callback_handlers=None,
+        runtime_config=None,
     ):
         # Store all dependencies
         self._bot_service = bot_service
@@ -92,10 +93,11 @@ class MessageCoordinator:
             context_service=context_service,
             file_processor_service=file_processor_service,
             message_batcher=message_batcher,
-            use_sdk=True,  # Will be determined from sdk_service availability
+            use_sdk=True,  # Default; overridden per-user via runtime_config
             sdk_service=sdk_service,
             claude_proxy=claude_proxy,
             file_handler=None,  # Will be set after file_handler is created
+            runtime_config=runtime_config,
         )
 
         # Create file handler (pass text_handler for task execution)

@@ -48,6 +48,7 @@ class TextMessageHandler(BaseMessageHandler):
         sdk_service=None,
         claude_proxy=None,
         file_handler=None,
+        runtime_config=None,
     ):
         super().__init__(
             bot_service=bot_service,
@@ -67,6 +68,19 @@ class TextMessageHandler(BaseMessageHandler):
         self.sdk_service = sdk_service
         self.claude_proxy = claude_proxy
         self.file_handler = file_handler
+        self.runtime_config = runtime_config
+
+    async def _should_use_sdk(self, user_id: int) -> bool:
+        """Determine whether to use SDK backend for this user.
+
+        Checks runtime config for per-user backend preference.
+        Falls back to default (self.use_sdk) if no config available.
+        """
+        if self.runtime_config:
+            from domain.value_objects.backend_mode import BackendMode
+            mode = await self.runtime_config.get_user_backend(user_id)
+            return mode == BackendMode.SDK
+        return self.use_sdk
 
     # Copied from legacy messages.py:557-870
     async def handle_text(
@@ -301,7 +315,10 @@ class TextMessageHandler(BaseMessageHandler):
         await heartbeat.start()
 
         try:
-            if self.use_sdk and self.sdk_service:
+            # Determine backend per user (runtime config overrides default)
+            use_sdk_for_user = await self._should_use_sdk(user_id)
+
+            if use_sdk_for_user and self.sdk_service:
                 result = await self.sdk_service.run_task(
                     user_id=user_id,
                     prompt=enriched_prompt,

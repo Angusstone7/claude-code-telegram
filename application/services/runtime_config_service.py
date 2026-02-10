@@ -129,3 +129,29 @@ class RuntimeConfigService:
     async def set_monitoring_threshold(self, metric: str, value: float) -> None:
         """Set a monitoring threshold."""
         await self.set(f"monitoring.{metric}_threshold", value)
+
+    # === Backend Mode (SDK / CLI) ===
+
+    async def get_user_backend(self, user_id: int) -> "BackendMode":
+        """Get user's preferred Claude Code backend mode."""
+        from domain.value_objects.backend_mode import BackendMode
+
+        raw = await self.get_str(f"user.{user_id}.backend", BackendMode.SDK.value)
+        try:
+            return BackendMode(raw)
+        except ValueError:
+            return BackendMode.SDK
+
+    async def set_user_backend(self, user_id: int, mode: "BackendMode") -> None:
+        """Set user's preferred backend mode.
+
+        Args:
+            user_id: Telegram user ID.
+            mode: BackendMode enum value.
+        """
+        from domain.value_objects.backend_mode import BackendMode
+
+        if not isinstance(mode, BackendMode):
+            mode = BackendMode(mode)  # raises ValueError if invalid
+        await self.set(f"user.{user_id}.backend", mode.value)
+        logger.info(f"User {user_id} switched backend to: {mode.value}")

@@ -45,6 +45,7 @@ class MessageHandlersFacade:
         file_context_manager: Optional["FileContextManager"] = None,
         variable_manager: Optional["VariableInputManager"] = None,
         plan_manager: Optional["PlanApprovalManager"] = None,
+        runtime_config=None,
         **kwargs  # Catch any other legacy parameters
     ):
         """
@@ -96,6 +97,7 @@ class MessageHandlersFacade:
             default_working_dir=default_working_dir,
             message_batcher=message_batcher,
             callback_handlers=None,  # Will be set by container
+            runtime_config=runtime_config,
         )
 
         # Store references for compatibility (legacy code might access these)
