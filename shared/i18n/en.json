@@ -397,5 +397,21 @@
   "fresh.done": "🔄 New session started",
   "cancel.confirm": "❌ Cancel current task?",
   "cancel.done": "❌ Task cancelled",
-  "cancel.no_task": "No active task to cancel"
+  "cancel.no_task": "No active task to cancel",
+
+  "tg_api.title": "📡 <b>Telegram API Proxy</b>",
+  "tg_api.button": "📡 TG API Proxy",
+  "tg_api.current": "Current: <b>{url}</b>",
+  "tg_api.direct": "Direct connection (api.telegram.org)",
+  "tg_api.description": "Route bot traffic through a custom Telegram Bot API server.\n\nUseful for bypassing network restrictions.",
+  "tg_api.setup": "🔧 Configure API server",
+  "tg_api.change": "✏️ Change",
+  "tg_api.test": "🧪 Test",
+  "tg_api.disable": "❌ Disable (direct connection)",
+  "tg_api.disabled": "✅ Switched to direct connection (api.telegram.org)",
+  "tg_api.enter_url": "📡 <b>Enter Telegram API server URL</b>\n\nFormat: <code>http://host:port/path</code>\nExample: <code>http://85.192.63.133:8089/telegram</code>",
+  "tg_api.invalid_url": "❌ Invalid URL. Expected format: http://host:port/path",
+  "tg_api.saved": "✅ Telegram API proxy configured!\n\nServer: <b>{url}</b>\n\nChanges applied immediately.",
+  "tg_api.test_success": "✅ Connection successful!\n\nBot: @{username}",
+  "tg_api.test_failed": "❌ Connection failed: {error}"
 }

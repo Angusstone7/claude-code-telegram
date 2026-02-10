@@ -155,3 +155,38 @@ class RuntimeConfigService:
             mode = BackendMode(mode)  # raises ValueError if invalid
         await self.set(f"user.{user_id}.backend", mode.value)
         logger.info(f"User {user_id} switched backend to: {mode.value}")
+
+    # === Telegram API Server ===
+
+    _TG_API_KEY = "telegram.api_server_url"
+
+    async def get_telegram_api_url(self) -> Optional[str]:
+        """Get custom Telegram API server URL.
+
+        Returns:
+            URL string if configured, None for direct connection.
+        """
+        url = await self.get_str(self._TG_API_KEY, "")
+        return url if url else None
+
+    async def set_telegram_api_url(self, url: str) -> None:
+        """Set custom Telegram API server URL.
+
+        Validates the URL via TelegramApiConfig before saving.
+
+        Args:
+            url: Full URL, e.g. http://85.192.63.133:8089/telegram
+
+        Raises:
+            ValueError: If URL is invalid.
+        """
+        from domain.value_objects.telegram_api_config import TelegramApiConfig
+
+        config = TelegramApiConfig.from_url(url)  # validates
+        await self.set(self._TG_API_KEY, config.server_url)
+        logger.info(f"Telegram API server set to: {config.server_url}")
+
+    async def clear_telegram_api_url(self) -> None:
+        """Remove custom Telegram API server (revert to direct connection)."""
+        await self.delete(self._TG_API_KEY)
+        logger.info("Telegram API server cleared (using direct connection)")

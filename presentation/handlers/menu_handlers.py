@@ -7,16 +7,28 @@ This replaces individual commands with a unified menu interface.
 
 import logging
 import os
-from typing import Optional
+from typing import Optional, Set
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, BaseFilter
 from aiogram.fsm.context import FSMContext
 
 from presentation.keyboards.keyboards import Keyboards
 
 logger = logging.getLogger(__name__)
+
+# Module-level state for Telegram API URL input mode
+_tg_api_input_users: Set[int] = set()
+
+
+class TgApiInputFilter(BaseFilter):
+    """Filter to intercept text messages from users in TG API URL input mode."""
+
+    async def __call__(self, message: Message) -> bool:
+        if not message.text:
+            return False
+        return message.from_user.id in _tg_api_input_users
 
 
 class MenuHandlers:
@@ -827,6 +839,9 @@ class MenuHandlers:
         elif action == "backend_na":
             await callback.answer(t("settings.backend_na"), show_alert=True)
 
+        elif action == "telegram_api":
+            await self._handle_telegram_api(callback, param, state)
+
         elif action == "login":
             # Show login prompt
             if self.account_service:
@@ -868,6 +883,124 @@ class MenuHandlers:
         elif action == "language":
             # Show language selection
             await self._show_language_selection(callback)
+
+    # ============== Telegram API Proxy ==============
+
+    async def _handle_telegram_api(
+        self, callback: CallbackQuery, param: str, state: FSMContext
+    ):
+        """Handle Telegram API proxy submenu."""
+        user_id = callback.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
+        if not param:
+            # Show current TG API proxy settings
+            current_url = None
+            if self.runtime_config:
+                current_url = await self.runtime_config.get_telegram_api_url()
+
+            is_active = bool(current_url)
+            if is_active:
+                from domain.value_objects.telegram_api_config import TelegramApiConfig
+                config = TelegramApiConfig.from_url(current_url)
+                display = config.display_url
+            else:
+                display = t("tg_api.direct")
+
+            text = (
+                f"{t('tg_api.title')}\n\n"
+                f"{t('tg_api.current', url=display)}\n\n"
+                f"{t('tg_api.description')}"
+            )
+
+            keyboard = Keyboards.telegram_api_settings(is_active, display, lang=lang)
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+        elif param == "set":
+            # Prompt user for URL input
+            _tg_api_input_users.add(user_id)
+            text = t("tg_api.enter_url")
+            await callback.message.edit_text(text, parse_mode="HTML")
+            await callback.answer()
+
+        elif param == "disable":
+            # Clear URL and reset bot session to direct
+            if self.runtime_config:
+                await self.runtime_config.clear_telegram_api_url()
+
+            # Reset bot session to official Telegram API
+            try:
+                from aiogram.client.telegram import PRODUCTION
+                callback.bot.session.api = PRODUCTION
+            except Exception as e:
+                logger.warning(f"Could not reset bot session API: {e}")
+
+            text = t("tg_api.disabled")
+            await callback.message.edit_text(
+                text,
+                reply_markup=Keyboards.menu_back_only("menu:settings"),
+                parse_mode="HTML"
+            )
+            await callback.answer()
+
+        elif param == "test":
+            # Test connection through current API server
+            await callback.answer(t("status.loading"))
+            try:
+                me = await callback.bot.get_me()
+                text = t("tg_api.test_success", username=me.username)
+            except Exception as e:
+                text = t("tg_api.test_failed", error=str(e)[:200])
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=Keyboards.menu_back_only("menu:settings:telegram_api"),
+                parse_mode="HTML"
+            )
+
+    async def handle_telegram_api_url_input(self, message: Message):
+        """Handle user text input for Telegram API server URL."""
+        user_id = message.from_user.id
+        lang = await self._get_user_lang(user_id)
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
+        # Remove user from input mode
+        _tg_api_input_users.discard(user_id)
+
+        url = message.text.strip()
+        try:
+            from domain.value_objects.telegram_api_config import TelegramApiConfig
+            config = TelegramApiConfig.from_url(url)
+
+            # Save to DB
+            if self.runtime_config:
+                await self.runtime_config.set_telegram_api_url(config.server_url)
+
+            # Apply to running bot session immediately
+            from aiogram.client.telegram import TelegramAPIServer
+            api_server = TelegramAPIServer.from_base(config.server_url)
+            message.bot.session.api = api_server
+
+            text = t("tg_api.saved", url=config.server_url)
+            await message.answer(
+                text,
+                reply_markup=Keyboards.menu_back_only("menu:settings:telegram_api"),
+                parse_mode="HTML"
+            )
+        except ValueError as e:
+            logger.warning(f"[{user_id}] Invalid TG API URL: {url} — {e}")
+            text = t("tg_api.invalid_url")
+            await message.answer(text, parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"[{user_id}] Error setting TG API URL: {e}", exc_info=True)
+            text = t("tg_api.test_failed", error=str(e)[:200])
+            await message.answer(text, parse_mode="HTML")
+
+    # ============== Language Selection ==============
 
     async def _show_language_selection(self, callback: CallbackQuery):
         """Show language selection menu"""
@@ -1359,4 +1492,9 @@ YOLO = You Only Live Once (авто-подтверждение)
 
 def register_menu_handlers(dp, menu_handlers: MenuHandlers):
     """Register menu handlers with dispatcher"""
+    # TG API URL input filter — must be before router to intercept text messages
+    dp.message.register(
+        menu_handlers.handle_telegram_api_url_input,
+        TgApiInputFilter()
+    )
     dp.include_router(menu_handlers.router)

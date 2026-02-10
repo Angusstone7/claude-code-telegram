@@ -97,9 +97,27 @@ class Application:
             else:
                 logger.warning(f"⚠ SDK: {sdk_msg}")
 
+        # Load Telegram API proxy if configured
+        session = None
+        try:
+            runtime_config = self.container.runtime_config()
+            tg_api_url = await runtime_config.get_telegram_api_url()
+            if tg_api_url:
+                from aiogram.client.session.aiohttp import AiohttpSession
+                from aiogram.client.telegram import TelegramAPIServer
+                api_server = TelegramAPIServer.from_base(tg_api_url)
+                session = AiohttpSession()
+                session.api = api_server
+                logger.info(f"✓ Telegram API proxy: {tg_api_url}")
+            else:
+                logger.info("✓ Telegram API: direct (api.telegram.org)")
+        except Exception as e:
+            logger.warning(f"⚠ Failed to load TG API proxy config: {e}")
+
         # Initialize bot
         self.bot = Bot(
             token=settings.telegram.token,
+            session=session,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         self.dp = Dispatcher()
@@ -267,7 +285,23 @@ class Application:
         await self.setup()
 
         logger.info("Starting bot polling...")
-        info = await self.bot.get_me()
+        try:
+            info = await self.bot.get_me()
+        except Exception as e:
+            # If custom TG API server fails, fallback to direct connection
+            logger.warning(f"⚠ bot.get_me() failed: {e}")
+            try:
+                runtime_config = self.container.runtime_config()
+                tg_api_url = await runtime_config.get_telegram_api_url()
+                if tg_api_url:
+                    logger.warning(f"⚠ Falling back to direct Telegram API (was: {tg_api_url})")
+                    from aiogram.client.telegram import PRODUCTION
+                    self.bot.session.api = PRODUCTION
+                    info = await self.bot.get_me()
+                else:
+                    raise
+            except Exception:
+                raise
         logger.info(f"Bot: @{info.username} (ID: {info.id})")
 
         # Start Prometheus metrics server if monitoring is enabled

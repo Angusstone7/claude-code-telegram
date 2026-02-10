@@ -353,6 +353,12 @@ class Keyboards:
             ],
             [
                 InlineKeyboardButton(
+                    text=t("tg_api.button"),
+                    callback_data="menu:settings:telegram_api"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text=t("settings.language"),
                     callback_data="menu:settings:language"
                 ),
@@ -361,6 +367,55 @@ class Keyboards:
                 InlineKeyboardButton(text=t("menu.back"), callback_data="menu:main"),
             ]
         ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def telegram_api_settings(
+        is_active: bool,
+        display_url: str,
+        lang: str = "ru",
+    ) -> InlineKeyboardMarkup:
+        """Telegram API proxy settings submenu."""
+        from shared.i18n import get_translator
+        t = get_translator(lang)
+
+        buttons = []
+
+        if is_active:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"📡 {display_url}",
+                    callback_data="menu:settings:telegram_api"
+                )
+            ])
+            buttons.append([
+                InlineKeyboardButton(
+                    text=t("tg_api.change"),
+                    callback_data="menu:settings:telegram_api:set"
+                ),
+                InlineKeyboardButton(
+                    text=t("tg_api.test"),
+                    callback_data="menu:settings:telegram_api:test"
+                ),
+            ])
+            buttons.append([
+                InlineKeyboardButton(
+                    text=t("tg_api.disable"),
+                    callback_data="menu:settings:telegram_api:disable"
+                )
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=t("tg_api.setup"),
+                    callback_data="menu:settings:telegram_api:set"
+                )
+            ])
+
+        buttons.append([
+            InlineKeyboardButton(text=t("menu.back"), callback_data="menu:settings")
+        ])
+
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @staticmethod

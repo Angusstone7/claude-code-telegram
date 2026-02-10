@@ -397,5 +397,21 @@
   "fresh.done": "🔄 新会话已开始",
   "cancel.confirm": "❌ 取消当前任务？",
   "cancel.done": "❌ 任务已取消",
-  "cancel.no_task": "没有活动任务可取消"
+  "cancel.no_task": "没有活动任务可取消",
+
+  "tg_api.title": "📡 <b>Telegram API 代理</b>",
+  "tg_api.button": "📡 TG API 代理",
+  "tg_api.current": "当前：<b>{url}</b>",
+  "tg_api.direct": "直连（api.telegram.org）",
+  "tg_api.description": "通过自定义 Telegram Bot API 服务器路由机器人流量。\n\n适用于绕过网络限制。",
+  "tg_api.setup": "🔧 配置 API 服务器",
+  "tg_api.change": "✏️ 更改",
+  "tg_api.test": "🧪 测试",
+  "tg_api.disable": "❌ 禁用（直连）",
+  "tg_api.disabled": "✅ 已切换到直连（api.telegram.org）",
+  "tg_api.enter_url": "📡 <b>输入 Telegram API 服务器 URL</b>\n\n格式：<code>http://host:port/path</code>\n示例：<code>http://85.192.63.133:8089/telegram</code>",
+  "tg_api.invalid_url": "❌ 无效 URL。预期格式：http://host:port/path",
+  "tg_api.saved": "✅ Telegram API 代理已配置！\n\n服务器：<b>{url}</b>\n\n更改已立即生效。",
+  "tg_api.test_success": "✅ 连接成功！\n\n机器人：@{username}",
+  "tg_api.test_failed": "❌ 连接失败：{error}"
 }
