@@ -81,6 +81,8 @@ class UserStateManager:
         self._streaming_handlers: Dict[int, StreamingHandler] = {}
         self._heartbeat_trackers: Dict[int, HeartbeatTracker] = {}
         self._account_repo = account_repo
+        # CLI-specific session IDs (separate from SDK sessions to avoid lock conflicts)
+        self._cli_session_ids: Dict[int, str] = {}
 
     def _get_account_repo(self):
         """Get account repository (injected via DI or lazy fallback)"""
@@ -147,6 +149,27 @@ class UserStateManager:
                 continue_session_id=None
             )
             logger.debug(f"[{user_id}] Session cache cleared")
+
+    # === CLI Session IDs (separate from SDK sessions) ===
+
+    def get_cli_session_id(self, user_id: int) -> Optional[str]:
+        """Get CLI-specific session ID for resume.
+
+        CLI sessions are separate from SDK sessions because:
+        - SDK uses a bundled claude binary with its own session storage
+        - CLI uses the system claude binary
+        - Resuming an SDK session from CLI causes a lock conflict (hang)
+        """
+        return self._cli_session_ids.get(user_id)
+
+    def set_cli_session_id(self, user_id: int, session_id: str) -> None:
+        """Set CLI-specific session ID for future resumes."""
+        self._cli_session_ids[user_id] = session_id
+        logger.debug(f"[{user_id}] CLI session ID set: {session_id[:16]}...")
+
+    def clear_cli_session_id(self, user_id: int) -> None:
+        """Clear CLI session ID."""
+        self._cli_session_ids.pop(user_id, None)
 
     # === Claude Code Session ===
 

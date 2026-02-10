@@ -395,12 +395,20 @@ class TextMessageHandler(BaseMessageHandler):
             else:
                 # CLI backend
                 is_yolo = self.user_state.is_yolo_mode(user_id)
-                logger.info(f"[{user_id}] CLI backend: yolo={is_yolo}, working_dir={working_dir}")
+                # CLI uses its own session management — don't pass SDK session_id
+                # SDK sessions are created by the bundled claude binary and can't be
+                # resumed by the system claude CLI (session file lock conflict).
+                # CLI will get its own session_id from the result event.
+                cli_session_id = self.user_state.get_cli_session_id(user_id)
+                logger.info(
+                    f"[{user_id}] CLI backend: yolo={is_yolo}, "
+                    f"working_dir={working_dir}, cli_session={cli_session_id}"
+                )
                 result = await self.claude_proxy.run_task(
                     user_id=user_id,
                     prompt=enriched_prompt,
                     working_dir=working_dir,
-                    session_id=session_id,
+                    session_id=cli_session_id,
                     yolo_mode=is_yolo,
                     on_text=lambda text: self.ai_request_handler._on_text(user_id, text),
                     on_tool_use=lambda tool, inp: self.ai_request_handler._on_tool_use(user_id, tool, inp, message),
@@ -414,6 +422,9 @@ class TextMessageHandler(BaseMessageHandler):
                     f"output_len={len(result.output)}, error={result.error}, "
                     f"session_id={result.session_id}"
                 )
+                # Save CLI-specific session_id for future CLI resumes
+                if result.session_id:
+                    self.user_state.set_cli_session_id(user_id, result.session_id)
                 await self.ai_request_handler._handle_result(user_id, result, message)
 
         except Exception as e:
