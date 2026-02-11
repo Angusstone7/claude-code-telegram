@@ -101,19 +101,23 @@ def create_app(container: Container) -> FastAPI:
     static_dir = os.path.normpath(static_dir)
 
     if os.path.isdir(static_dir):
-        # SPA catch-all: serve index.html for any /admin/* route not matched by static files.
-        # This MUST be registered BEFORE the StaticFiles mount so that FastAPI
-        # tries the explicit route first for paths that don't match a static file.
+        # SPA catch-all: serve static files if they exist, otherwise index.html
+        # for client-side routing. This explicit route takes priority over the
+        # StaticFiles mount below, so we must handle both cases here.
         @app.get("/admin/{full_path:path}")
         async def admin_spa_fallback(full_path: str):
-            """Serve index.html for client-side routing in the React SPA."""
+            """Serve static file if it exists, otherwise index.html for SPA routing."""
+            # Try to serve the actual static file first (JS, CSS, images, etc.)
+            file_path = os.path.join(static_dir, full_path)
+            if os.path.isfile(file_path):
+                return FileResponse(file_path)
+            # Fall back to index.html for SPA client-side routes
             index_path = os.path.join(static_dir, "index.html")
             if os.path.isfile(index_path):
                 return FileResponse(index_path)
             return Response(content="Admin panel not found", status_code=404)
 
-        # Mount static files for the admin SPA (serves JS, CSS, images, etc.)
-        # html=True means it will serve index.html for directory requests (e.g., /admin/)
+        # StaticFiles mount handles /admin/ root (html=True serves index.html)
         app.mount("/admin", StaticFiles(directory=static_dir, html=True), name="admin-spa")
         logger.info(f"Admin SPA mounted at /admin from {static_dir}")
     else:
