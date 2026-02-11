@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next'
 import {
   Plus,
   MessageSquare,
-  Check,
   Trash2,
   Eraser,
   Play,

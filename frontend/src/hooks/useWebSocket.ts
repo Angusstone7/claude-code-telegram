@@ -105,9 +105,7 @@ export function useWebSocket(
       })
     }, 500)
 
-    // Track transitions via WebSocket events by overriding after connect
-    const originalOpen = manager['ws']
-    // We connect, then start tracking.
+    // Connect, then start tracking.
     manager.connect(sessionId, accessToken)
 
     // After the first open event, set connected. We do this with a short

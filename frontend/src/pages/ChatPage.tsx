@@ -27,7 +27,6 @@ import { HITLCard } from '@/components/chat/HITLCard'
 import { QuestionCard } from '@/components/chat/QuestionCard'
 import { PlanCard } from '@/components/chat/PlanCard'
 import type {
-  ProjectResponse,
   ProjectListResponse,
   ContextResponse,
   ContextListResponse,
