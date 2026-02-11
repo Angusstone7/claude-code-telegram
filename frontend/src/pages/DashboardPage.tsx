@@ -56,10 +56,10 @@ function useSystemInfo() {
 }
 
 function useProjects() {
-  return useQuery<{ items: ProjectResponse[]; total: number }>({
+  return useQuery<{ projects: ProjectResponse[]; total: number }>({
     queryKey: ['projects'],
     queryFn: async () =>
-      (await api.get<{ items: ProjectResponse[]; total: number }>('/projects'))
+      (await api.get<{ projects: ProjectResponse[]; total: number }>('/projects'))
         .data,
   })
 }
@@ -235,9 +235,9 @@ export function DashboardPage() {
         <h2 className="mb-3 text-lg font-semibold text-foreground">
           {t('dashboard.currentProject')}
         </h2>
-        {projects && projects.items.length > 0 ? (
+        {projects && projects.projects.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.items.slice(0, 6).map((p) => (
+            {projects.projects.slice(0, 6).map((p) => (
               <div
                 key={p.id}
                 className="flex items-start gap-3 rounded-lg border border-border bg-card p-4"
