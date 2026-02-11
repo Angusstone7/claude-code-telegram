@@ -60,7 +60,7 @@ export interface ProjectResponse {
 }
 
 export interface ProjectListResponse {
-  items: ProjectResponse[]
+  projects: ProjectResponse[]
   total: number
 }
 
@@ -137,14 +137,158 @@ export interface MkdirRequest {
 
 // ── Settings ──────────────────────────────────────────────────────────────
 
+// ── Settings: Nested Config Types ────────────────────────────────────────
+
+export interface ProviderConfig {
+  mode: string        // "anthropic" | "zai" | "local"
+  api_key_set: boolean
+  base_url: string | null
+  custom_models: string[]
+}
+
+export interface ProviderConfigUpdate {
+  mode?: string
+  api_key?: string
+  base_url?: string
+}
+
+export interface ProxyConfig {
+  enabled: boolean
+  type: string        // "http" | "https" | "socks5"
+  host: string
+  port: number
+  username: string
+  password_set: boolean
+  no_proxy: string
+}
+
+export interface ProxyConfigUpdate {
+  enabled?: boolean
+  type?: string
+  host?: string
+  port?: number
+  username?: string
+  password?: string
+  no_proxy?: string
+}
+
+export interface RuntimeConfig {
+  max_turns: number
+  timeout: number
+  step_streaming: boolean
+  permission_mode: string
+  yolo_mode: boolean
+  backend: string
+}
+
+export interface RuntimeConfigUpdate {
+  max_turns?: number
+  timeout?: number
+  step_streaming?: boolean
+  permission_mode?: string
+  yolo_mode?: boolean
+  backend?: string
+}
+
+export interface ClaudeAccountInfo {
+  active: boolean
+  credentials_exist: boolean
+  subscription_type: string | null
+  rate_limit_tier: string | null
+  expires_at: string | null
+  scopes: string[]
+}
+
+export interface InfraConfig {
+  ssh_host: string
+  ssh_port: number
+  ssh_user: string
+  gitlab_url: string
+  gitlab_token_set: boolean
+  alert_cpu: number
+  alert_memory: number
+  alert_disk: number
+  debug: boolean
+  log_level: string
+}
+
+export interface InfraConfigUpdate {
+  ssh_host?: string
+  ssh_port?: number
+  ssh_user?: string
+  gitlab_url?: string
+  gitlab_token?: string
+  alert_cpu?: number
+  alert_memory?: number
+  alert_disk?: number
+  debug?: boolean
+  log_level?: string
+}
+
+export interface ProviderValidateRequest {
+  provider: string
+  api_key: string
+  base_url?: string
+}
+
+export interface ProviderValidateResponse {
+  valid: boolean
+  models: string[]
+  message: string
+}
+
+export interface CustomModelRequest {
+  provider: string
+  model_id: string
+}
+
+export interface CustomModelResponse {
+  provider: string
+  models: string[]
+  custom_models: string[]
+}
+
+export interface CredentialsUploadRequest {
+  credentials_json: string
+}
+
+export interface CredentialsUploadResponse {
+  success: boolean
+  subscription_type: string | null
+  rate_limit_tier: string | null
+  message: string
+}
+
+export interface ProxyTestRequest {
+  type: string
+  host: string
+  port: number
+  username?: string
+  password?: string
+}
+
+export interface ProxyTestResponse {
+  success: boolean
+  message: string
+  latency_ms: number | null
+}
+
 export interface SettingsResponse {
+  // Existing top-level fields (backward-compatible aliases)
   yolo_mode: boolean
   step_streaming: boolean
   backend: string
   model: string
+  provider: string
   available_models: string[]
   permission_mode: string
   language: string
+  // New nested config objects
+  provider_config?: ProviderConfig
+  proxy?: ProxyConfig
+  runtime?: RuntimeConfig
+  claude_account?: ClaudeAccountInfo
+  infra?: InfraConfig
 }
 
 export interface UpdateSettingsRequest {
@@ -152,8 +296,14 @@ export interface UpdateSettingsRequest {
   step_streaming?: boolean
   backend?: string
   model?: string
+  provider?: string  // "anthropic" | "zai" | "local"
   permission_mode?: string
   language?: string
+  // Nested config updates
+  provider_config?: ProviderConfigUpdate
+  proxy?: ProxyConfigUpdate
+  runtime?: RuntimeConfigUpdate
+  infra?: InfraConfigUpdate
 }
 
 // ── Docker Containers ─────────────────────────────────────────────────────

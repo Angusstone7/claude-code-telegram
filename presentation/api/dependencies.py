@@ -58,3 +58,8 @@ def get_context_service():
 def get_runtime_config():
     """Get RuntimeConfigService from container."""
     return get_container().runtime_config()
+
+
+def get_account_service():
+    """Get AccountService from container."""
+    return get_container().account_service()
