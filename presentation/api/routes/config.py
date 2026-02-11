@@ -11,7 +11,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from presentation.api.security import require_api_key
+from presentation.api.security import hybrid_auth
 from presentation.api.dependencies import get_runtime_config
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/config",
     tags=["configuration"],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(hybrid_auth)],
 )
 
 
