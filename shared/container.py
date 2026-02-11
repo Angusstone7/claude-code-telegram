@@ -148,6 +148,14 @@ class Container:
             self._cache["config_repository"] = SQLiteConfigRepository(db_path)
         return self._cache["config_repository"]
 
+    def web_user_repository(self):
+        """Get or create SQLiteWebUserRepository (web auth: users, tokens, attempts)"""
+        if "web_user_repository" not in self._cache:
+            from infrastructure.persistence.sqlite_web_user_repository import SQLiteWebUserRepository
+            db_path = self.config.database_url.replace("sqlite:///", "")
+            self._cache["web_user_repository"] = SQLiteWebUserRepository(db_path)
+        return self._cache["web_user_repository"]
+
     def command_executor(self):
         """Get or create CommandExecutor (SSH)"""
         if "command_executor" not in self._cache:
@@ -227,12 +235,35 @@ class Container:
             self._cache["file_processor_service"] = FileProcessorService()
         return self._cache["file_processor_service"]
 
+    def auth_service(self):
+        """Get or create AuthService (JWT auth, user management)"""
+        if "auth_service" not in self._cache:
+            from application.services.auth_service import AuthService
+            self._cache["auth_service"] = AuthService(
+                repository=self.web_user_repository()
+            )
+        return self._cache["auth_service"]
+
     def system_monitor(self):
         """Get or create SystemMonitor"""
         if "system_monitor" not in self._cache:
             from infrastructure.monitoring.system_monitor import SystemMonitor
             self._cache["system_monitor"] = SystemMonitor()
         return self._cache["system_monitor"]
+
+    def event_bus(self):
+        """Get or create EventBus (async pub/sub for HITL broadcast)"""
+        if "event_bus" not in self._cache:
+            from infrastructure.websocket.event_bus import EventBus
+            self._cache["event_bus"] = EventBus()
+        return self._cache["event_bus"]
+
+    def connection_manager(self):
+        """Get or create ConnectionManager (WebSocket per-user per-session)"""
+        if "connection_manager" not in self._cache:
+            from infrastructure.websocket.connection_manager import ConnectionManager
+            self._cache["connection_manager"] = ConnectionManager()
+        return self._cache["connection_manager"]
 
     # === Infrastructure Layer ===
 
@@ -287,6 +318,9 @@ class Container:
         await self.account_repository().initialize()
         await self.project_repository().initialize()
         await self.context_repository().initialize()
+
+        # Initialize web auth (tables + initial admin)
+        await self.auth_service().init()
 
         logger.info("Container initialized successfully")
 

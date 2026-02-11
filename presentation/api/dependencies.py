@@ -50,6 +50,11 @@ def get_system_monitor():
     return get_container().system_monitor()
 
 
+def get_context_service():
+    """Get ContextService from container."""
+    return get_container().context_service()
+
+
 def get_runtime_config():
     """Get RuntimeConfigService from container."""
     return get_container().runtime_config()

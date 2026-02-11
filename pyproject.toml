@@ -8,11 +8,22 @@ filterwarnings = [
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-warn_return_any = false
+warn_return_any = true
 warn_unused_configs = true
 # Lenient initially — tighten gradually
 disallow_untyped_defs = false
-check_untyped_defs = false
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "telegram_mcp.*"
+ignore_errors = true
 
 [tool.black]
 line-length = 120

@@ -1,0 +1,53 @@
+# Git
+.git/
+.gitignore
+
+# Node modules (built separately in multi-stage)
+frontend/node_modules/
+telegram-mcp/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and data (mounted as volumes)
+logs/
+data/
+projects/
+claude_sessions/
+
+# Build artifacts
+frontend/dist/
+static/admin/
+*.tar.gz
+
+# Documentation
+docs/
+specs/
+.specify/
+.ralph-loop/
+.archive/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# SSH keys
+bot_key
+bot_key.pub
+*.pem
+id_rsa*

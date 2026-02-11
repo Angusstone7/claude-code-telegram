@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends
 
 from presentation.api.dependencies import get_container, get_system_monitor
 from presentation.api.schemas.system import MetricsResponse, SystemInfoResponse
-from presentation.api.security import verify_api_key
+from presentation.api.security import hybrid_auth
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/system", tags=["System"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(prefix="/system", tags=["System"])
 
 
 @router.get(
@@ -20,7 +20,9 @@ router = APIRouter(prefix="/system", tags=["System"], dependencies=[Depends(veri
     summary="System information",
     description="Returns bot and system information.",
 )
-async def system_info() -> SystemInfoResponse:
+async def system_info(
+    user: dict = Depends(hybrid_auth),
+) -> SystemInfoResponse:
     """Get system information."""
     container = get_container()
 
@@ -57,7 +59,9 @@ async def system_info() -> SystemInfoResponse:
     description="Returns system metrics in JSON format. "
     "For Prometheus format, use the /metrics endpoint on port 9090.",
 )
-async def system_metrics() -> MetricsResponse:
+async def system_metrics(
+    user: dict = Depends(hybrid_auth),
+) -> MetricsResponse:
     """Get system metrics in JSON format."""
     try:
         monitor = get_system_monitor()

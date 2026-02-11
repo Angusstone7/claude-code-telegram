@@ -50,6 +50,7 @@ class AIRequestHandler(BaseMessageHandler):
         project_service=None,
         context_service=None,
         default_working_dir: str = "/root",
+        event_bus=None,
     ):
         super().__init__(
             bot_service=bot_service,
@@ -64,6 +65,7 @@ class AIRequestHandler(BaseMessageHandler):
         self.project_service = project_service
         self.context_service = context_service
         self.default_working_dir = default_working_dir
+        self.event_bus = event_bus
         self._step_handlers = {}
 
     # Copied from legacy messages.py:280-287
@@ -400,6 +402,19 @@ class AIRequestHandler(BaseMessageHandler):
         )
         self.hitl_manager.set_permission_context(user_id, request_id, tool_name, details, perm_msg)
 
+        # Publish to EventBus for WebSocket clients
+        if self.event_bus:
+            try:
+                await self.event_bus.publish(f"hitl:{user_id}", {
+                    "type": "hitl_request",
+                    "request_id": request_id,
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                    "description": details,
+                })
+            except Exception as e:
+                logger.debug(f"EventBus publish failed (non-critical): {e}")
+
     # Copied from legacy messages.py:1191-1220
     async def _on_question_sdk(
         self,
@@ -430,6 +445,18 @@ class AIRequestHandler(BaseMessageHandler):
             self.hitl_manager.set_expecting_answer(user_id, True)
             q_msg = await message.answer(f"<b>Вопрос</b>\n\n{html.escape(question)}\n\nВведите ваш ответ:", parse_mode="HTML")
             self.hitl_manager.set_question_context(user_id, request_id, question, options, q_msg)
+
+        # Publish to EventBus for WebSocket clients
+        if self.event_bus:
+            try:
+                await self.event_bus.publish(f"question:{user_id}", {
+                    "type": "question",
+                    "request_id": request_id,
+                    "question": question,
+                    "options": options if options else None,
+                })
+            except Exception as e:
+                logger.debug(f"EventBus publish failed (non-critical): {e}")
 
     # Copied from legacy messages.py:1221-1268
     async def _on_plan_request(

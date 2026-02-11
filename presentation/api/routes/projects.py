@@ -11,11 +11,11 @@ from presentation.api.schemas.projects import (
     ProjectListResponse,
     ProjectResponse,
 )
-from presentation.api.security import verify_api_key
+from presentation.api.security import hybrid_auth
 from domain.value_objects.user_id import UserId
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/projects", tags=["Projects"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 def _get_default_user_id() -> int:
@@ -25,6 +25,22 @@ def _get_default_user_id() -> int:
     return admin_ids[0] if admin_ids else 0
 
 
+def _resolve_user_id(user: dict, query_user_id: Optional[int] = None) -> int:
+    """
+    Resolve the effective user ID.
+
+    For JWT auth, prefer user_id from claims.
+    For API Key auth, use query parameter or fallback to default admin.
+    """
+    if user.get("auth_method") == "jwt":
+        try:
+            return int(user["user_id"])
+        except (ValueError, TypeError):
+            pass
+    # API Key or dev-mode: use query param or default
+    return query_user_id or _get_default_user_id()
+
+
 @router.get(
     "",
     response_model=ProjectListResponse,
@@ -32,10 +48,11 @@ def _get_default_user_id() -> int:
     description="Returns all projects for the authenticated user.",
 )
 async def list_projects(
-    user_id: Optional[int] = Query(None, description="User ID (defaults to admin)"),
+    user: dict = Depends(hybrid_auth),
+    user_id: Optional[int] = Query(None, description="User ID (defaults to admin, used with API Key auth)"),
 ) -> ProjectListResponse:
     """List all projects."""
-    uid = UserId(user_id or _get_default_user_id())
+    uid = UserId(_resolve_user_id(user, user_id))
     service = get_project_service()
 
     projects = await service.list_projects(uid)
@@ -67,10 +84,11 @@ async def list_projects(
 )
 async def create_project(
     request: CreateProjectRequest,
-    user_id: Optional[int] = Query(None, description="User ID (defaults to admin)"),
+    user: dict = Depends(hybrid_auth),
+    user_id: Optional[int] = Query(None, description="User ID (defaults to admin, used with API Key auth)"),
 ) -> ProjectResponse:
     """Create a new project."""
-    uid = UserId(user_id or _get_default_user_id())
+    uid = UserId(_resolve_user_id(user, user_id))
     service = get_project_service()
 
     path = request.path or f"/root/projects/{request.name}"
@@ -97,10 +115,11 @@ async def create_project(
 )
 async def get_project(
     project_id: str,
-    user_id: Optional[int] = Query(None, description="User ID (defaults to admin)"),
+    user: dict = Depends(hybrid_auth),
+    user_id: Optional[int] = Query(None, description="User ID (defaults to admin, used with API Key auth)"),
 ) -> ProjectResponse:
     """Get a specific project by ID."""
-    uid = UserId(user_id or _get_default_user_id())
+    uid = UserId(_resolve_user_id(user, user_id))
     service = get_project_service()
 
     project = await service.get_by_id(project_id)

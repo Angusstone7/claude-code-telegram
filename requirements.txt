@@ -31,6 +31,11 @@ python-json-logger>=2.0.0
 # REST API
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0
+python-multipart>=0.0.9
+
+# Web Admin Panel Auth
+PyJWT>=2.8.0
+argon2-cffi>=23.1.0
 
 # Development
 pytest>=7.4.0

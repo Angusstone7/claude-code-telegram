@@ -1,3 +1,12 @@
+# Stage 1: Build React frontend SPA
+FROM node:20-slim AS frontend-build
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# Stage 2: Main application
 FROM python:3.11-slim
 
 # Install system dependencies including Docker CLI
@@ -49,6 +58,9 @@ WORKDIR /app/telegram-mcp
 RUN npm install && npm run build
 
 WORKDIR /app
+
+# Copy built frontend SPA from build stage
+COPY --from=frontend-build /frontend/dist ./static/admin/
 
 # Create directories for logs and data
 RUN mkdir -p logs data

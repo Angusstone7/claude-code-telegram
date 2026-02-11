@@ -74,5 +74,10 @@ claude_sessions/
 .claude/settings.local.json
 *.local.json
 
-# Node modules (telegram-mcp)
+# Node modules
 telegram-mcp/node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Built SPA (production)
+static/admin/

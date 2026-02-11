@@ -578,3 +578,10 @@ cd telegram-mcp && npm run build
 
 - **Application logs**: `./logs/bot.log` (or `/app/logs/bot.log` in container)
 - **Claude Code logs**: Check `~/.claude/logs` or environment-specific log path
+
+## Active Technologies
+- Python 3.11 (backend), TypeScript 5.x (frontend) + FastAPI, PyJWT, argon2-cffi, Vite, React 18, shadcn/ui, Zustand, TanStack Query, react-markdown, react-router-dom v6, react-i18next, react-hook-form, zod (001-react-admin-panel)
+- SQLite (существующая — расширение схемы: web_users, refresh_tokens, login_attempts) (001-react-admin-panel)
+
+## Recent Changes
+- 001-react-admin-panel: Added Python 3.11 (backend), TypeScript 5.x (frontend) + FastAPI, PyJWT, argon2-cffi, Vite, React 18, shadcn/ui, Zustand, TanStack Query, react-markdown, react-router-dom v6, react-i18next, react-hook-form, zod

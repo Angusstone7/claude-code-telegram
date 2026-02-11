@@ -21,6 +21,47 @@ logger = logging.getLogger(__name__)
 class ClaudeCallbackHandler(BaseCallbackHandler):
     """Handles Claude Code HITL callbacks."""
 
+    async def _notify_hitl_resolved(self, user_id: int, approved: bool) -> None:
+        """Notify EventBus that HITL was resolved by Telegram."""
+        if not self.event_bus:
+            return
+        try:
+            # Get pending request_id from HITL manager
+            hitl = getattr(self.message_handlers, '_hitl', None)
+            request_id = None
+            if hitl:
+                ctx = hitl.get_permission_context(user_id)
+                if ctx:
+                    request_id = ctx.request_id
+            if request_id:
+                await self.event_bus.respond(
+                    request_id,
+                    {"approved": approved},
+                    "telegram",
+                )
+        except Exception as e:
+            logger.debug(f"EventBus notify failed (non-critical): {e}")
+
+    async def _notify_question_resolved(self, user_id: int, answer: str) -> None:
+        """Notify EventBus that question was resolved by Telegram."""
+        if not self.event_bus:
+            return
+        try:
+            hitl = getattr(self.message_handlers, '_hitl', None)
+            request_id = None
+            if hitl:
+                ctx = hitl.get_question_context(user_id)
+                if ctx:
+                    request_id = ctx.request_id
+            if request_id:
+                await self.event_bus.respond(
+                    request_id,
+                    {"answer": answer},
+                    "telegram",
+                )
+        except Exception as e:
+            logger.debug(f"EventBus notify failed (non-critical): {e}")
+
     async def _get_user_id_from_callback(self, callback: CallbackQuery) -> int:
         """Extract user_id from callback data."""
         data = CallbackData.parse_claude_callback(callback.data)
@@ -61,6 +102,9 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
             if hasattr(self.message_handlers, 'handle_permission_response'):
                 await self.message_handlers.handle_permission_response(user_id, True)
 
+            # Notify WebSocket via EventBus
+            await self._notify_hitl_resolved(user_id, True)
+
             await callback.answer("✅ Одобрено")
 
         except Exception as e:
@@ -85,6 +129,9 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
 
             if hasattr(self.message_handlers, 'handle_permission_response'):
                 await self.message_handlers.handle_permission_response(user_id, False)
+
+            # Notify WebSocket via EventBus
+            await self._notify_hitl_resolved(user_id, False)
 
             await callback.answer("❌ Отклонено")
 
@@ -149,6 +196,9 @@ class ClaudeCallbackHandler(BaseCallbackHandler):
 
             if hasattr(self.message_handlers, 'handle_question_response'):
                 await self.message_handlers.handle_question_response(user_id, answer)
+
+            # Notify WebSocket via EventBus
+            await self._notify_question_resolved(user_id, answer)
 
             await callback.answer(f"Ответ: {answer[:20]}...")
 
