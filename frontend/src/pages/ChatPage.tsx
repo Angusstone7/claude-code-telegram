@@ -59,7 +59,7 @@ function ConnectionBadge({
 
   if (isTaskRunning) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
         <Loader2 className="h-3 w-3 animate-spin" />
         {t('chat.streaming')}
       </span>
@@ -68,7 +68,7 @@ function ConnectionBadge({
 
   if (isConnected) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-400">
         <Wifi className="h-3 w-3" />
         {t('chat.connected')}
       </span>
@@ -76,7 +76,7 @@ function ConnectionBadge({
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-400">
       <WifiOff className="h-3 w-3" />
       {t('chat.disconnected')}
     </span>
@@ -279,7 +279,7 @@ function ChatInputBar({
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+            className="inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors"
           >
             <StopCircle className="h-4 w-4" />
             {t('chat.cancelTask')}
@@ -308,9 +308,9 @@ function ChatInputBar({
             rows={1}
             disabled={disabled || !isConnected}
             className={cn(
-              'flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground',
+              'flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground',
               'placeholder:text-muted-foreground',
-              'focus:outline-none focus:ring-2 focus:ring-ring',
+              'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
               'disabled:cursor-not-allowed disabled:opacity-50',
               'max-h-[200px]',
             )}
@@ -323,8 +323,8 @@ function ChatInputBar({
             className={cn(
               'shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-white transition-colors',
               input.trim() && isConnected && !disabled
-                ? 'bg-blue-600 hover:bg-blue-700'
-                : 'bg-blue-600/50 cursor-not-allowed',
+                ? 'bg-primary hover:bg-primary/90'
+                : 'bg-primary/50 cursor-not-allowed',
             )}
             title={t('chat.sendMessage')}
           >

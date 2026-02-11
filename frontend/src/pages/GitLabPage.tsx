@@ -42,50 +42,50 @@ const STATUS_CONFIG: Record<
   { color: string; bg: string; icon: React.ComponentType<{ className?: string }>; label: string }
 > = {
   success: {
-    color: 'text-green-700 dark:text-green-400',
-    bg: 'bg-green-100 dark:bg-green-900/40',
+    color: 'text-green-400',
+    bg: 'bg-green-500/15',
     icon: CheckCircle2,
     label: 'gitlab.success',
   },
   failed: {
-    color: 'text-red-700 dark:text-red-400',
-    bg: 'bg-red-100 dark:bg-red-900/40',
+    color: 'text-red-400',
+    bg: 'bg-red-500/15',
     icon: XCircle,
     label: 'gitlab.failed',
   },
   running: {
-    color: 'text-yellow-700 dark:text-yellow-400',
-    bg: 'bg-yellow-100 dark:bg-yellow-900/40',
+    color: 'text-yellow-400',
+    bg: 'bg-yellow-500/15',
     icon: Loader2,
     label: 'gitlab.running',
   },
   pending: {
-    color: 'text-gray-600 dark:text-gray-400',
-    bg: 'bg-gray-100 dark:bg-gray-800',
+    color: 'text-muted-foreground',
+    bg: 'bg-secondary',
     icon: Clock,
     label: 'gitlab.pending',
   },
   created: {
-    color: 'text-gray-600 dark:text-gray-400',
-    bg: 'bg-gray-100 dark:bg-gray-800',
+    color: 'text-muted-foreground',
+    bg: 'bg-secondary',
     icon: Clock,
     label: 'gitlab.pending',
   },
   skipped: {
-    color: 'text-slate-500 dark:text-slate-400',
-    bg: 'bg-slate-100 dark:bg-slate-800',
+    color: 'text-slate-400',
+    bg: 'bg-slate-500/15',
     icon: SkipForward,
     label: 'gitlab.skipped',
   },
   manual: {
-    color: 'text-blue-600 dark:text-blue-400',
-    bg: 'bg-blue-100 dark:bg-blue-900/40',
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/15',
     icon: Hand,
     label: 'gitlab.manual',
   },
   canceled: {
-    color: 'text-gray-500 dark:text-gray-400',
-    bg: 'bg-gray-100 dark:bg-gray-800',
+    color: 'text-muted-foreground',
+    bg: 'bg-secondary',
     icon: XCircle,
     label: 'gitlab.failed',
   },
@@ -94,8 +94,8 @@ const STATUS_CONFIG: Record<
 function getStatusConfig(status: PipelineStatus) {
   return (
     STATUS_CONFIG[status] ?? {
-      color: 'text-gray-500 dark:text-gray-400',
-      bg: 'bg-gray-100 dark:bg-gray-800',
+      color: 'text-muted-foreground',
+      bg: 'bg-secondary',
       icon: CircleDot,
       label: 'common.status',
     }
@@ -138,7 +138,7 @@ function StageDot({ stage }: { stage: PipelineStageResponse }) {
       <div
         className={cn(
           'pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap',
-          'rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg',
+          'rounded bg-popover text-popover-foreground px-2 py-1 text-xs shadow-lg',
           'opacity-0 transition-opacity group-hover:opacity-100',
         )}
       >
@@ -241,7 +241,7 @@ function PipelineRow({ pipeline, projectId }: { pipeline: PipelineResponse; proj
           )}
 
           {stagesQuery.isError && (
-            <div className="flex items-center gap-2 py-2 text-sm text-red-600 dark:text-red-400">
+            <div className="flex items-center gap-2 py-2 text-sm text-destructive">
               <AlertTriangle className="h-4 w-4" />
               {t('gitlab.loadError')}
             </div>
@@ -291,7 +291,7 @@ function ProjectItem({
       className={cn(
         'flex w-full flex-col gap-1 rounded-lg px-3 py-2.5 text-left transition-colors',
         isSelected
-          ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:ring-blue-800'
+          ? 'bg-primary/10 ring-1 ring-primary/30'
           : 'hover:bg-muted/50',
       )}
     >
@@ -365,7 +365,7 @@ export function GitLabPage() {
           {projectsQuery.isError && (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <AlertTriangle className="h-8 w-8 text-red-500" />
-              <p className="text-sm text-red-600 dark:text-red-400">{t('gitlab.loadError')}</p>
+              <p className="text-sm text-destructive">{t('gitlab.loadError')}</p>
               <p className="text-xs text-muted-foreground">
                 {(projectsQuery.error as Error)?.message ?? ''}
               </p>
@@ -404,8 +404,8 @@ export function GitLabPage() {
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/40">
-                    <GitlabIcon className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/20">
+                    <GitlabIcon className="h-5 w-5 text-orange-400" />
                   </div>
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-semibold text-card-foreground">
@@ -447,7 +447,7 @@ export function GitLabPage() {
                   {pipelinesQuery.data?.pipelines?.some(
                     (p) => p.status === 'running' || p.status === 'pending',
                   ) && (
-                    <span className="ml-auto flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+                    <span className="ml-auto flex items-center gap-1 text-xs text-yellow-400">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       Auto-refresh
                     </span>
@@ -462,7 +462,7 @@ export function GitLabPage() {
               {pipelinesQuery.isError && (
                 <div className="flex flex-col items-center gap-2 py-12 text-center">
                   <AlertTriangle className="h-8 w-8 text-red-500" />
-                  <p className="text-sm text-red-600 dark:text-red-400">{t('gitlab.loadError')}</p>
+                  <p className="text-sm text-destructive">{t('gitlab.loadError')}</p>
                 </div>
               )}
 
@@ -495,8 +495,8 @@ export function GitLabPage() {
               'rounded-xl border border-dashed border-border bg-card/50 p-12 text-center',
             )}
           >
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-              <GitlabIcon className="h-8 w-8 text-gray-400" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+              <GitlabIcon className="h-8 w-8 text-muted-foreground" />
             </div>
             <h3 className="mt-4 text-base font-semibold text-card-foreground">
               {t('gitlab.selectProject')}

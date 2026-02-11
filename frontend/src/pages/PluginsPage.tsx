@@ -51,7 +51,7 @@ function PluginCard({ plugin }: { plugin: Plugin }) {
   const hasCommands = plugin.commands.length > 0
 
   return (
-    <div className="rounded-lg border border-border bg-card transition-shadow hover:shadow-sm">
+    <div className="rounded-lg border border-border bg-card transition-shadow hover:shadow-sm hover:border-primary/50 transition-colors duration-150">
       {/* Header */}
       <div
         className={`flex items-start gap-3 p-4 ${hasCommands ? 'cursor-pointer' : ''}`}
@@ -61,15 +61,15 @@ function PluginCard({ plugin }: { plugin: Plugin }) {
         <div
           className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
             plugin.enabled
-              ? 'bg-blue-100 dark:bg-blue-900/30'
-              : 'bg-gray-100 dark:bg-gray-800'
+              ? 'bg-primary/20'
+              : 'bg-secondary'
           }`}
         >
           <Puzzle
             className={`h-5 w-5 ${
               plugin.enabled
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-gray-400'
+                ? 'text-primary'
+                : 'text-muted-foreground'
             }`}
           />
         </div>
@@ -83,13 +83,13 @@ function PluginCard({ plugin }: { plugin: Plugin }) {
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                 plugin.enabled
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                  : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                  ? 'bg-green-500/15 text-green-400'
+                  : 'bg-secondary text-muted-foreground'
               }`}
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  plugin.enabled ? 'bg-green-500' : 'bg-gray-400'
+                  plugin.enabled ? 'bg-green-500' : 'bg-muted-foreground'
                 }`}
               />
               {plugin.enabled ? t('plugins.enabled') : t('plugins.disabled')}
@@ -170,7 +170,7 @@ export function PluginsPage() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">{t('plugins.title')}</h1>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           {t('common.error')}: {(error as Error).message}
         </div>
       </div>

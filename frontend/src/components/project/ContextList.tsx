@@ -88,7 +88,7 @@ export function ContextList({ projectId, className }: ContextListProps) {
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           <Plus className="h-3.5 w-3.5" />
           {t('projects.createContext')}
@@ -105,13 +105,13 @@ export function ContextList({ projectId, className }: ContextListProps) {
               onChange={(e) => setNewName(e.target.value)}
               placeholder={t('common.name')}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
             />
             <button
               type="button"
               onClick={handleCreate}
               disabled={createContext.isPending || !newName.trim()}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {t('common.create')}
             </button>
@@ -142,7 +142,7 @@ export function ContextList({ projectId, className }: ContextListProps) {
             <div
               key={ctx.id}
               className={cn(
-                'rounded-lg border p-3 transition-colors',
+                'rounded-lg border p-3 hover:border-primary/30 transition-colors duration-150',
                 ctx.updated_at === ctx.created_at
                   ? 'border-border bg-card'
                   : 'border-border bg-card',
@@ -200,7 +200,7 @@ export function ContextList({ projectId, className }: ContextListProps) {
                       type="button"
                       onClick={() => setConfirmDeleteId(ctx.id)}
                       title={t('common.delete')}
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive transition-colors"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

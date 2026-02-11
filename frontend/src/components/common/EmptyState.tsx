@@ -29,14 +29,14 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
-        <Icon className="h-7 w-7 text-gray-400" />
+      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-secondary">
+        <Icon className="h-7 w-7 text-muted-foreground" />
       </div>
 
       <div className="space-y-1">
-        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
         {description && (
-          <p className="max-w-sm text-sm text-gray-500">{description}</p>
+          <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
         )}
       </div>
 

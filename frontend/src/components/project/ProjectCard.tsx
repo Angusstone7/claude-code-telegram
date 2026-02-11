@@ -28,10 +28,10 @@ export function ProjectCard({
       type="button"
       onClick={() => onClick(project)}
       className={cn(
-        'w-full rounded-lg border p-4 text-left transition-colors',
+        'w-full rounded-lg border p-4 text-left backdrop-blur-[14px] transition-colors duration-150',
         isActive
-          ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/30'
-          : 'border-border bg-card hover:border-blue-300 hover:bg-accent dark:hover:border-blue-600',
+          ? 'border-primary/50 bg-accent'
+          : 'border-border bg-card hover:border-primary/50',
         className,
       )}
     >
@@ -41,7 +41,7 @@ export function ProjectCard({
             className={cn(
               'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md',
               isActive
-                ? 'bg-blue-100 dark:bg-blue-900/50'
+                ? 'bg-primary/20'
                 : 'bg-muted',
             )}
           >
@@ -49,7 +49,7 @@ export function ProjectCard({
               className={cn(
                 'h-5 w-5',
                 isActive
-                  ? 'text-blue-600 dark:text-blue-400'
+                  ? 'text-primary'
                   : 'text-muted-foreground',
               )}
             />
@@ -71,7 +71,7 @@ export function ProjectCard({
         </div>
 
         {isActive && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
             <Check className="h-3 w-3" />
             {t('projects.activeProject')}
           </span>

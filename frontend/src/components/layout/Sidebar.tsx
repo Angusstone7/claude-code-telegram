@@ -31,9 +31,9 @@ export function Sidebar() {
   const { t } = useTranslation()
 
   return (
-    <aside className="flex h-full w-60 flex-col border-r border-sidebar-border bg-sidebar-background">
+    <aside className="flex h-full w-60 flex-col border-r border-sidebar-border bg-sidebar-background backdrop-blur-[14px] backdrop-saturate-[140%]">
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-        <span className="text-lg font-semibold text-sidebar-foreground">
+        <span className="text-lg font-bold text-primary">
           Admin Panel
         </span>
       </div>
@@ -45,10 +45,10 @@ export function Sidebar() {
             end={item.to === '/'}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-all duration-150',
                 isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
+                  ? 'border-l-2 border-primary bg-accent text-primary font-medium'
+                  : 'text-sidebar-foreground/70 hover:bg-secondary hover:text-sidebar-foreground',
               )
             }
           >

@@ -56,7 +56,7 @@ export function PlanCard({
       {/* Header */}
       <div className="flex items-center gap-2">
         <div className="rounded-md bg-purple-500/20 p-1.5">
-          <FileText className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+          <FileText className="h-4 w-4 text-purple-400" />
         </div>
         <h3 className="text-sm font-semibold text-card-foreground">
           {t('chat.plan.title')}
@@ -109,7 +109,7 @@ export function PlanCard({
               onChange={(e) => setFeedback(e.target.value)}
               placeholder={t('chat.plan.feedback')}
               rows={3}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
             />
           )}
 
@@ -117,7 +117,7 @@ export function PlanCard({
             <button
               type="button"
               onClick={handleApprove}
-              className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
             >
               <Check className="h-4 w-4" />
               {t('chat.plan.approve')}
@@ -125,7 +125,7 @@ export function PlanCard({
             <button
               type="button"
               onClick={handleReject}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
             >
               <X className="h-4 w-4" />
               {t('chat.plan.reject')}
@@ -147,8 +147,8 @@ export function PlanCard({
             className={cn(
               'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
               responded === 'approved'
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                ? 'bg-green-500/15 text-green-400'
+                : 'bg-red-500/15 text-red-400',
             )}
           >
             {responded === 'approved' ? (

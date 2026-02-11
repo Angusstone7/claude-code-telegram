@@ -83,7 +83,7 @@ export function ProjectList({ className }: ProjectListProps) {
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           <Plus className="h-4 w-4" />
           {t('projects.createProject')}
@@ -110,7 +110,7 @@ export function ProjectList({ className }: ProjectListProps) {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="my-project"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
             <div>
@@ -126,7 +126,7 @@ export function ProjectList({ className }: ProjectListProps) {
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
                 placeholder="/root/projects/my-project"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
             <div>
@@ -142,7 +142,7 @@ export function ProjectList({ className }: ProjectListProps) {
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 placeholder={t('common.description')}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -150,14 +150,14 @@ export function ProjectList({ className }: ProjectListProps) {
                 type="button"
                 onClick={handleCreate}
                 disabled={createProject.isPending || !newName.trim() || !newPath.trim()}
-                className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {t('common.create')}
               </button>
               <button
                 type="button"
                 onClick={handleCancelCreate}
-                className="inline-flex items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-card-foreground hover:bg-accent transition-colors"
+                className="inline-flex items-center rounded-xl border border-border px-3 py-2 text-sm font-medium text-card-foreground hover:bg-accent transition-colors"
               >
                 {t('common.cancel')}
               </button>

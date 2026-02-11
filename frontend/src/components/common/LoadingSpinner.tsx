@@ -24,14 +24,14 @@ export function LoadingSpinner({
     <div className={cn('flex flex-col items-center justify-center gap-3', className)}>
       <div
         className={cn(
-          'animate-spin rounded-full border-solid border-gray-300 border-t-blue-600',
+          'animate-spin rounded-full border-solid border-muted-foreground/30 border-t-primary',
           sizeMap[size],
         )}
         role="status"
         aria-label="Loading"
       />
       {message && (
-        <p className="text-sm text-gray-500">{message}</p>
+        <p className="text-sm text-muted-foreground">{message}</p>
       )}
     </div>
   )

@@ -30,8 +30,8 @@ export function ProjectsPage() {
             {/* Project header */}
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50">
-                  <FolderOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20">
+                  <FolderOpen className="h-5 w-5 text-primary" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="truncate text-lg font-semibold text-card-foreground">
@@ -66,8 +66,8 @@ export function ProjectsPage() {
               'rounded-xl border border-dashed border-border bg-card/50 p-12 text-center',
             )}
           >
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-              <FolderOpen className="h-8 w-8 text-gray-400" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+              <FolderOpen className="h-8 w-8 text-muted-foreground" />
             </div>
             <h3 className="mt-4 text-base font-semibold text-card-foreground">
               {t('projects.selectProjectTitle')}

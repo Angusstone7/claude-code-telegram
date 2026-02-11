@@ -103,19 +103,19 @@ function StatusBadge({ status }: { status: string }) {
       running: {
         label: t('docker.running'),
         classes:
-          'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+          'bg-green-500/15 text-green-400',
         dot: 'bg-green-500',
       },
       exited: {
         label: t('docker.exited'),
         classes:
-          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+          'bg-red-500/15 text-red-400',
         dot: 'bg-red-500',
       },
       restarting: {
         label: t('docker.restarting'),
         classes:
-          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+          'bg-yellow-500/15 text-yellow-400',
         dot: 'bg-yellow-500',
       },
     }
@@ -123,7 +123,7 @@ function StatusBadge({ status }: { status: string }) {
   const cfg = config[normalized] ?? {
     label: status,
     classes:
-      'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+      'bg-secondary text-muted-foreground',
     dot: 'bg-gray-500',
   }
 
@@ -159,7 +159,7 @@ function MetricBar({
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-center gap-3">
         <div className={cn('rounded-md p-2', color)}>
-          <Icon className="h-5 w-5 text-white" />
+          <Icon className="h-5 w-5" />
         </div>
         <div className="flex-1">
           <p className="text-sm text-muted-foreground">{label}</p>
@@ -306,7 +306,7 @@ function ContainerRow({
                 action.mutate({ name: container.name, action: 'start' })
               }
               disabled={action.isPending}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100 dark:text-green-400 dark:hover:bg-green-900/30 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-400 hover:bg-green-500/15 disabled:opacity-50"
               title={t('docker.start')}
             >
               <Play className="h-3.5 w-3.5" />
@@ -319,7 +319,7 @@ function ContainerRow({
                 action.mutate({ name: container.name, action: 'stop' })
               }
               disabled={action.isPending}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/30 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/15 disabled:opacity-50"
               title={t('docker.stop')}
             >
               <Square className="h-3.5 w-3.5" />
@@ -331,7 +331,7 @@ function ContainerRow({
               action.mutate({ name: container.name, action: 'restart' })
             }
             disabled={action.isPending}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-100 dark:text-orange-400 dark:hover:bg-orange-900/30 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-orange-400 hover:bg-orange-500/15 disabled:opacity-50"
             title={t('docker.restart')}
           >
             <RotateCw className="h-3.5 w-3.5" />
@@ -339,7 +339,7 @@ function ContainerRow({
           </button>
           <button
             onClick={() => onViewLogs(container.name)}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/30"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/15"
             title={t('docker.logs')}
           >
             <ScrollText className="h-3.5 w-3.5" />
@@ -381,7 +381,7 @@ export function DockerPage() {
                 : `${(metrics?.cpu_percent ?? 0).toFixed(1)}%`
             }
             percent={metrics?.cpu_percent ?? 0}
-            color="bg-blue-600"
+            color="bg-blue-500/20 text-blue-400"
           />
           <MetricBar
             icon={MemoryStick}
@@ -392,7 +392,7 @@ export function DockerPage() {
                 : `${(metrics?.memory_used_gb ?? 0).toFixed(1)} GB (${(metrics?.memory_percent ?? 0).toFixed(0)}%)`
             }
             percent={metrics?.memory_percent ?? 0}
-            color="bg-purple-600"
+            color="bg-purple-500/20 text-purple-400"
           />
           <MetricBar
             icon={HardDrive}
@@ -403,7 +403,7 @@ export function DockerPage() {
                 : `${(metrics?.disk_percent ?? 0).toFixed(1)}%`
             }
             percent={metrics?.disk_percent ?? 0}
-            color="bg-orange-600"
+            color="bg-orange-500/20 text-orange-400"
           />
         </div>
       </section>

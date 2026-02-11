@@ -71,14 +71,19 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 shadow-sm">
+    <div
+      className="flex min-h-screen items-center justify-center"
+      style={{
+        background: 'radial-gradient(ellipse at 20% 50%, rgba(124,58,237,0.12) 0%, transparent 50%), radial-gradient(ellipse at 80% 50%, rgba(6,182,212,0.10) 0%, transparent 50%), #0B0F17',
+      }}
+    >
+      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 shadow-sm backdrop-blur-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         <h1 className="mb-6 text-center text-2xl font-bold text-card-foreground">
           {t('auth.loginTitle')}
         </h1>
 
         {apiError && (
-          <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {apiError}
           </div>
         )}
@@ -98,7 +103,7 @@ export function LoginPage() {
               autoComplete="username"
               autoFocus
               {...register('username')}
-              className={`w-full rounded-md border px-3 py-2 text-sm outline-none transition-colors
+              className={`w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors
                 bg-background text-foreground placeholder:text-muted-foreground
                 focus:ring-2 focus:ring-primary/50 focus:border-primary
                 ${errors.username ? 'border-red-500' : 'border-border'}`}
@@ -124,7 +129,7 @@ export function LoginPage() {
               type="password"
               autoComplete="current-password"
               {...register('password')}
-              className={`w-full rounded-md border px-3 py-2 text-sm outline-none transition-colors
+              className={`w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors
                 bg-background text-foreground placeholder:text-muted-foreground
                 focus:ring-2 focus:ring-primary/50 focus:border-primary
                 ${errors.password ? 'border-red-500' : 'border-border'}`}
@@ -141,7 +146,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading && (
               <svg

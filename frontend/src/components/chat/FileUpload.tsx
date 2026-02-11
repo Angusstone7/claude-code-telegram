@@ -258,7 +258,7 @@ export function FileUpload({ onFileUploaded, compact = false, className }: FileU
               </button>
             </div>
             {error && (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-red-500">
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 {error}
               </div>
@@ -379,7 +379,7 @@ export function FileUpload({ onFileUploaded, compact = false, className }: FileU
           </div>
 
           {error && (
-            <div className="mt-3 flex items-center gap-2 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-500">
+            <div className="mt-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
@@ -412,7 +412,7 @@ export function FileUpload({ onFileUploaded, compact = false, className }: FileU
 
       {/* Error without file selected */}
       {!selectedFile && !uploading && error && (
-        <div className="mt-2 flex items-center gap-2 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-500">
+        <div className="mt-2 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>

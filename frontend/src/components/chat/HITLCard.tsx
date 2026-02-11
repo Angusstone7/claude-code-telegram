@@ -45,7 +45,7 @@ export function HITLCard({
       {/* Header */}
       <div className="flex items-center gap-2">
         <div className="rounded-md bg-yellow-500/20 p-1.5">
-          <Shield className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+          <Shield className="h-4 w-4 text-yellow-400" />
         </div>
         <h3 className="text-sm font-semibold text-card-foreground">
           {t('chat.hitl.title')}
@@ -95,7 +95,7 @@ export function HITLCard({
           <button
             type="button"
             onClick={handleApprove}
-            className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors"
           >
             <Check className="h-4 w-4" />
             {t('chat.hitl.approve')}
@@ -103,7 +103,7 @@ export function HITLCard({
           <button
             type="button"
             onClick={handleReject}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors"
           >
             <X className="h-4 w-4" />
             {t('chat.hitl.reject')}
@@ -115,8 +115,8 @@ export function HITLCard({
             className={cn(
               'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
               responded === 'approved'
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                ? 'bg-green-500/15 text-green-400'
+                : 'bg-red-500/15 text-red-400',
             )}
           >
             {responded === 'approved' ? (

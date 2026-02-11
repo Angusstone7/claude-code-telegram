@@ -96,7 +96,7 @@ export function MessageBubble({
         className={cn(
           'relative max-w-[85%] rounded-lg px-4 py-3 text-sm leading-relaxed',
           isUser
-            ? 'bg-blue-600 text-white'
+            ? 'bg-primary/20 border border-primary/30 text-card-foreground'
             : 'border border-border bg-card text-card-foreground',
         )}
       >
@@ -107,7 +107,7 @@ export function MessageBubble({
               className={cn(
                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
                 isUser
-                  ? 'bg-blue-500/60 text-blue-100'
+                  ? 'bg-primary/40 text-primary'
                   : 'bg-muted text-muted-foreground',
               )}
             >
@@ -135,7 +135,7 @@ export function MessageBubble({
         <p
           className={cn(
             'mt-1.5 text-[10px]',
-            isUser ? 'text-blue-200' : 'text-muted-foreground',
+            isUser ? 'text-primary/50' : 'text-muted-foreground',
           )}
         >
           {formatTime(timestamp instanceof Date ? timestamp : new Date(timestamp))}

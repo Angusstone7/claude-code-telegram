@@ -68,7 +68,7 @@ function OutputBlock({ entry }: { entry: SSHCommandResponse }) {
       <div className="flex items-center gap-2 text-sm">
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-green-400" />
         <span className="font-mono font-semibold text-green-400">{entry.command}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
           <Clock className="h-3 w-3" />
           {timeStr}
           <span className="tabular-nums">{entry.duration_ms}ms</span>
@@ -82,7 +82,7 @@ function OutputBlock({ entry }: { entry: SSHCommandResponse }) {
 
       {/* Output */}
       {entry.output && (
-        <pre className="mt-1 whitespace-pre-wrap break-all pl-5 text-sm leading-relaxed text-gray-300">
+        <pre className="mt-1 whitespace-pre-wrap break-all pl-5 text-sm leading-relaxed text-foreground/80">
           {entry.output}
         </pre>
       )}
@@ -122,8 +122,8 @@ function HistoryPanel({
   if (uniqueCommands.length === 0) return null
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-3">
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-gray-400">
+    <div className="rounded-lg border border-border bg-card p-3">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         <History className="h-3.5 w-3.5" />
         {t('ssh.history')}
       </p>
@@ -131,7 +131,7 @@ function HistoryPanel({
         {uniqueCommands.slice(0, 20).map((cmd, idx) => (
           <button
             key={idx}
-            className="w-full truncate rounded px-2 py-1 text-left font-mono text-xs text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+            className="w-full truncate rounded px-2 py-1 text-left font-mono text-xs text-card-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={() => onSelect(cmd)}
             title={cmd}
           >
@@ -215,7 +215,7 @@ export function SSHPage() {
           className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
             showHistory
               ? 'bg-gray-700 text-white'
-              : 'text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800'
+              : 'text-muted-foreground hover:bg-secondary'
           }`}
           onClick={() => setShowHistory(!showHistory)}
         >
@@ -226,15 +226,15 @@ export function SSHPage() {
 
       <div className="flex min-h-0 flex-1 gap-4">
         {/* Terminal area */}
-        <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-gray-700 bg-gray-900 shadow-lg">
+        <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border bg-[#0d1117] shadow-lg">
           {/* Terminal header */}
-          <div className="flex items-center gap-2 border-b border-gray-700 px-4 py-2">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2">
             <div className="flex gap-1.5">
               <span className="h-3 w-3 rounded-full bg-red-500" />
               <span className="h-3 w-3 rounded-full bg-yellow-500" />
               <span className="h-3 w-3 rounded-full bg-green-500" />
             </div>
-            <span className="ml-2 text-xs text-gray-400">SSH Terminal</span>
+            <span className="ml-2 text-xs text-muted-foreground">SSH Terminal</span>
           </div>
 
           {/* Output area */}
@@ -244,7 +244,7 @@ export function SSHPage() {
           >
             {localResults.length === 0 ? (
               <div className="flex h-full items-center justify-center">
-                <div className="text-center text-gray-500">
+                <div className="text-center text-muted-foreground">
                   <Terminal className="mx-auto mb-2 h-8 w-8" />
                   <p className="text-sm">{t('ssh.placeholder')}</p>
                 </div>
@@ -257,7 +257,7 @@ export function SSHPage() {
 
                 {/* Loading indicator */}
                 {executeMut.isPending && (
-                  <div className="flex items-center gap-2 pl-5 text-sm text-gray-400">
+                  <div className="flex items-center gap-2 pl-5 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Executing...
                   </div>
@@ -267,7 +267,7 @@ export function SSHPage() {
           </div>
 
           {/* Command input */}
-          <div className="border-t border-gray-700 p-3">
+          <div className="border-t border-border p-3">
             <div className="flex items-center gap-2">
               <span className="shrink-0 font-mono text-sm text-green-400">$</span>
               <input

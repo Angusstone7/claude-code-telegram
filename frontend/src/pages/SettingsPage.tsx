@@ -91,7 +91,7 @@ export function SettingsPage() {
 
   if (error && !settings) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-red-500">
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-destructive">
         <AlertCircle className="h-8 w-8" />
         <p className="text-sm">{error}</p>
       </div>
@@ -105,8 +105,8 @@ export function SettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50">
-            <Settings className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20">
+            <Settings className="h-5 w-5 text-primary" />
           </div>
           <h1 className="text-2xl font-bold text-card-foreground">
             {t('settings.title')}
@@ -117,8 +117,8 @@ export function SettingsPage() {
           onClick={handleSave}
           disabled={saveStatus === 'saving'}
           className={cn(
-            'inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium',
-            'bg-blue-600 text-white hover:bg-blue-700',
+            'inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium',
+            'bg-primary text-primary-foreground hover:bg-primary/90',
             'disabled:cursor-not-allowed disabled:opacity-50',
             'transition-colors',
           )}
@@ -134,13 +134,13 @@ export function SettingsPage() {
 
       {/* Success/Error notification */}
       {saveStatus === 'success' && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-200">
+        <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-400">
           <CheckCircle className="h-4 w-4" />
           {t('settings.saved')}
         </div>
       )}
       {saveStatus === 'error' && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200">
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4" />
           {error ?? t('common.error')}
         </div>
@@ -212,7 +212,7 @@ export function SettingsPage() {
                   className={cn(
                     'flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
                     formState.backend === opt
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                      ? 'border-primary bg-primary/10 text-primary'
                       : 'border-border bg-background text-muted-foreground hover:bg-accent',
                   )}
                 >
@@ -233,7 +233,7 @@ export function SettingsPage() {
               className={cn(
                 'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm',
                 'text-card-foreground',
-                'focus:outline-none focus:ring-2 focus:ring-blue-500',
+                'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
               )}
             >
               {settings?.available_models.map((model) => (
@@ -268,7 +268,7 @@ export function SettingsPage() {
                   className={cn(
                     'flex-1 rounded-lg border px-3 py-2 text-sm font-medium capitalize transition-colors',
                     formState.permission_mode === mode
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                      ? 'border-primary bg-primary/10 text-primary'
                       : 'border-border bg-background text-muted-foreground hover:bg-accent',
                   )}
                 >
@@ -288,7 +288,7 @@ export function SettingsPage() {
               className={cn(
                 'flex items-center gap-3 rounded-lg border px-4 py-2 text-sm font-medium transition-colors w-full',
                 formState.yolo_mode
-                  ? 'border-yellow-500 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                  ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400'
                   : 'border-border bg-background text-muted-foreground hover:bg-accent',
               )}
             >
@@ -299,7 +299,7 @@ export function SettingsPage() {
               <div
                 className={cn(
                   'h-6 w-11 rounded-full transition-colors',
-                  formState.yolo_mode ? 'bg-yellow-500' : 'bg-gray-300 dark:bg-gray-600',
+                  formState.yolo_mode ? 'bg-yellow-500' : 'bg-muted-foreground/30',
                 )}
               >
                 <div
@@ -334,7 +334,7 @@ export function SettingsPage() {
               className={cn(
                 'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
                 formState.language === lang.code
-                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                  ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-background text-muted-foreground hover:bg-accent',
               )}
             >

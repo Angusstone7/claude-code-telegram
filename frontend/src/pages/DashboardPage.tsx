@@ -64,6 +64,15 @@ function useProjects() {
   })
 }
 
+// ── Color mapping for metric cards ───────────────────────────────────────
+
+const colorMap: Record<string, { bg: string; text: string; bar: string }> = {
+  blue: { bg: 'bg-blue-500/20', text: 'text-blue-400', bar: 'bg-blue-500' },
+  purple: { bg: 'bg-purple-500/20', text: 'text-purple-400', bar: 'bg-purple-500' },
+  orange: { bg: 'bg-orange-500/20', text: 'text-orange-400', bar: 'bg-orange-500' },
+  emerald: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', bar: 'bg-emerald-500' },
+}
+
 // ── Metric Card ──────────────────────────────────────────────────────────
 
 function MetricCard({
@@ -79,27 +88,28 @@ function MetricCard({
   percent?: number
   color: string
 }) {
+  const c = colorMap[color] ?? colorMap.blue
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-border bg-card p-4 backdrop-blur-[14px] hover:border-primary/50 transition-colors duration-150">
       <div className="flex items-center gap-3">
-        <div className={`rounded-md p-2 ${color}`}>
-          <Icon className="h-5 w-5 text-white" />
+        <div className={`rounded-xl p-2.5 ${c.bg}`}>
+          <Icon className={`h-5 w-5 ${c.text}`} />
         </div>
         <div className="flex-1">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-xl font-semibold text-card-foreground">{value}</p>
+          <p className="text-2xl font-bold text-card-foreground">{value}</p>
         </div>
       </div>
       {percent !== undefined && (
         <div className="mt-3">
-          <div className="h-2 w-full rounded-full bg-muted">
+          <div className="h-2.5 w-full rounded-full bg-muted">
             <div
-              className={`h-2 rounded-full transition-all ${
+              className={`h-2.5 rounded-full transition-all ${
                 percent > 90
                   ? 'bg-red-500'
                   : percent > 70
                     ? 'bg-yellow-500'
-                    : 'bg-green-500'
+                    : c.bar
               }`}
               style={{ width: `${Math.min(percent, 100)}%` }}
             />
@@ -123,8 +133,8 @@ function StatusBadge({
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
         available
-          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+          ? 'bg-green-500/15 text-green-400'
+          : 'bg-red-500/15 text-red-400'
       }`}
     >
       <span
@@ -149,7 +159,7 @@ export function DashboardPage() {
 
       {/* System Metrics */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
+        <h2 className="mb-3 text-xl font-bold text-foreground">
           {t('dashboard.systemMetrics')}
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -162,7 +172,7 @@ export function DashboardPage() {
                 : `${(metrics?.cpu_percent ?? 0).toFixed(1)}%`
             }
             percent={metrics?.cpu_percent}
-            color="bg-blue-600"
+            color="blue"
           />
           <MetricCard
             icon={MemoryStick}
@@ -173,7 +183,7 @@ export function DashboardPage() {
                 : `${(metrics?.memory_used_gb ?? 0).toFixed(1)} GB`
             }
             percent={metrics?.memory_percent}
-            color="bg-purple-600"
+            color="purple"
           />
           <MetricCard
             icon={HardDrive}
@@ -184,7 +194,7 @@ export function DashboardPage() {
                 : `${(metrics?.disk_percent ?? 0).toFixed(1)}%`
             }
             percent={metrics?.disk_percent}
-            color="bg-orange-600"
+            color="orange"
           />
           <MetricCard
             icon={Activity}
@@ -194,17 +204,17 @@ export function DashboardPage() {
                 ? '...'
                 : `${metrics?.active_tasks ?? 0} active`
             }
-            color="bg-emerald-600"
+            color="emerald"
           />
         </div>
       </section>
 
       {/* Claude Status */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
+        <h2 className="mb-3 text-xl font-bold text-foreground">
           {t('dashboard.claudeStatus')}
         </h2>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-lg border border-border bg-card p-4 backdrop-blur-[14px]">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <MonitorCheck className="h-5 w-5 text-muted-foreground" />
@@ -232,7 +242,7 @@ export function DashboardPage() {
 
       {/* Projects */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
+        <h2 className="mb-3 text-xl font-bold text-foreground">
           {t('dashboard.currentProject')}
         </h2>
         {projects && projects.projects.length > 0 ? (
@@ -240,9 +250,9 @@ export function DashboardPage() {
             {projects.projects.slice(0, 6).map((p) => (
               <div
                 key={p.id}
-                className="flex items-start gap-3 rounded-lg border border-border bg-card p-4"
+                className="flex items-start gap-3 rounded-lg border border-border bg-card p-4 backdrop-blur-[14px] hover:border-primary/50 transition-all duration-150 hover:-translate-y-0.5"
               >
-                <FolderOpen className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
+                <FolderOpen className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                 <div className="min-w-0">
                   <p className="font-medium text-card-foreground truncate">
                     {p.name}

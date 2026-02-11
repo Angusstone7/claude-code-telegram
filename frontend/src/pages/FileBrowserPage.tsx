@@ -169,7 +169,7 @@ export function FileBrowserPage() {
             disabled={setWorkDirMutation.isPending}
             className={cn(
               'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium',
-              'bg-green-600 text-white hover:bg-green-700',
+              'bg-green-600 text-white hover:bg-green-500',
               'disabled:cursor-not-allowed disabled:opacity-50',
               'transition-colors',
             )}
@@ -181,7 +181,7 @@ export function FileBrowserPage() {
             onClick={() => setShowMkdir((prev) => !prev)}
             className={cn(
               'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium',
-              'bg-blue-600 text-white hover:bg-blue-700',
+              'bg-primary text-primary-foreground hover:bg-primary/90',
               'transition-colors',
             )}
           >
@@ -193,7 +193,7 @@ export function FileBrowserPage() {
 
       {/* Notification */}
       {notification && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-200">
+        <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-400">
           {notification}
         </div>
       )}
@@ -232,7 +232,7 @@ export function FileBrowserPage() {
       {showMkdir && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <FolderPlus className="h-5 w-5 text-blue-500" />
+            <FolderPlus className="h-5 w-5 text-primary" />
             <input
               type="text"
               value={newFolderName}
@@ -248,7 +248,7 @@ export function FileBrowserPage() {
               className={cn(
                 'flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm',
                 'placeholder:text-muted-foreground',
-                'focus:outline-none focus:ring-2 focus:ring-blue-500',
+                'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
               )}
               autoFocus
             />
@@ -256,8 +256,8 @@ export function FileBrowserPage() {
               onClick={handleCreateFolder}
               disabled={!newFolderName.trim() || mkdirMutation.isPending}
               className={cn(
-                'rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white',
-                'hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50',
+                'rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground',
+                'hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50',
                 'transition-colors',
               )}
             >
@@ -278,7 +278,7 @@ export function FileBrowserPage() {
             </button>
           </div>
           {mkdirMutation.isError && (
-            <p className="mt-2 text-sm text-red-500">
+            <p className="mt-2 text-sm text-destructive">
               {(mkdirMutation.error as Error)?.message ?? 'Error creating folder'}
             </p>
           )}
@@ -292,7 +292,7 @@ export function FileBrowserPage() {
             <LoadingSpinner message={t('common.loading')} />
           </div>
         ) : isError ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-2 text-red-500">
+          <div className="flex h-64 flex-col items-center justify-center gap-2 text-destructive">
             <AlertCircle className="h-8 w-8" />
             <p className="text-sm">{(error as Error)?.message ?? t('common.error')}</p>
           </div>
@@ -304,8 +304,8 @@ export function FileBrowserPage() {
                 onClick={navigateUp}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent transition-colors"
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-                  <ArrowUp className="h-4 w-4 text-gray-500" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary">
+                  <ArrowUp className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <span className="text-sm font-medium text-muted-foreground">
                   {t('files.parentDir')} ..
@@ -329,14 +329,14 @@ export function FileBrowserPage() {
                   className={cn(
                     'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
                     entry.is_directory
-                      ? 'bg-blue-100 dark:bg-blue-900/50'
-                      : 'bg-gray-100 dark:bg-gray-800',
+                      ? 'bg-primary/20'
+                      : 'bg-secondary',
                   )}
                 >
                   {entry.is_directory ? (
-                    <Folder className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <Folder className="h-4 w-4 text-primary" />
                   ) : (
-                    <File className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                    <File className="h-4 w-4 text-muted-foreground" />
                   )}
                 </div>
 

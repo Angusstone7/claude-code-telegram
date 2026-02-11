@@ -148,7 +148,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           <Plus className="h-3.5 w-3.5" />
           {t('projects.addVariable')}
@@ -166,7 +166,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
             className={cn(
               'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
               scopeFilter === scope
-                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                ? 'bg-accent text-primary'
                 : 'text-muted-foreground hover:bg-accent hover:text-card-foreground',
             )}
           >
@@ -185,14 +185,14 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value)}
                 placeholder={t('projects.variableKey')}
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
               <input
                 type="text"
                 value={newValue}
                 onChange={(e) => setNewValue(e.target.value)}
                 placeholder={t('projects.variableValue')}
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -201,7 +201,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                 onChange={(e) =>
                   setNewScope(e.target.value as 'global' | 'project')
                 }
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
               >
                 <option value="project">{t('projects.scope_project')}</option>
                 <option value="global">{t('projects.scope_global')}</option>
@@ -213,7 +213,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                 disabled={
                   createVariable.isPending || !newKey.trim() || !newValue.trim()
                 }
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {t('common.create')}
               </button>
@@ -245,7 +245,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
           {filteredVariables.map((variable) => (
             <div
               key={variable.id}
-              className="rounded-lg border border-border bg-card p-3"
+              className="rounded-lg border border-border bg-card p-3 hover:border-primary/30 transition-colors duration-150"
             >
               {editingId === variable.id ? (
                 /* Inline edit form */
@@ -255,13 +255,13 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                       type="text"
                       value={editKey}
                       onChange={(e) => setEditKey(e.target.value)}
-                      className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                     />
                     <input
                       type="text"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-card-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                     />
                   </div>
                   <div className="flex items-center gap-1">
@@ -269,7 +269,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                       type="button"
                       onClick={handleUpdate}
                       disabled={updateVariable.isPending}
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                     >
                       <Save className="h-3 w-3" />
                       {t('common.save')}
@@ -296,8 +296,8 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                         className={cn(
                           'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
                           variable.scope === 'global'
-                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
-                            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+                            ? 'bg-purple-500/15 text-purple-400'
+                            : 'bg-green-500/15 text-green-400',
                         )}
                       >
                         {t(`projects.scope_${variable.scope}`)}
@@ -337,7 +337,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
                         type="button"
                         onClick={() => setConfirmDeleteId(variable.id)}
                         title={t('common.delete')}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
