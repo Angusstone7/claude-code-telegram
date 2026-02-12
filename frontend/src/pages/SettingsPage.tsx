@@ -108,6 +108,14 @@ function validateRange(value: number, min: number, max: number): boolean {
   return Number.isFinite(value) && value >= min && value <= max
 }
 
+// ── Provider → default models mapping ────────────────────────────────────
+
+const PROVIDER_MODELS: Record<string, string[]> = {
+  anthropic: ['claude-opus-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
+  zai: ['claude-opus-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
+  local: [],
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
 export function SettingsPage() {
@@ -197,7 +205,7 @@ export function SettingsPage() {
   const validationErrors = useMemo(() => {
     const errors: Record<string, string> = {}
 
-    // Runtime fields
+    // Runtime fields - always validate
     if (!validateRange(runtimeMaxTurns, 1, 999)) {
       errors.maxTurns = t('settings.validationErrorRange', { min: 1, max: 999 })
     }
@@ -205,15 +213,15 @@ export function SettingsPage() {
       errors.timeout = t('settings.validationErrorRange', { min: 1, max: 99999 })
     }
 
-    // Port fields
-    if (!validateRange(proxyPort, 1, 65535)) {
+    // Proxy port - only when proxy is enabled
+    if (proxyEnabled && !validateRange(proxyPort, 1, 65535)) {
       errors.proxyPort = t('settings.validationErrorPort')
     }
+
+    // Infra fields - always compute for inline display, but don't block main save
     if (!validateRange(sshPort, 1, 65535)) {
       errors.sshPort = t('settings.validationErrorPort')
     }
-
-    // Alert thresholds
     if (!validateRange(alertCpu, 0, 100)) {
       errors.alertCpu = t('settings.validationErrorThreshold')
     }
@@ -225,9 +233,11 @@ export function SettingsPage() {
     }
 
     return errors
-  }, [runtimeMaxTurns, runtimeTimeout, proxyPort, sshPort, alertCpu, alertMemory, alertDisk, t])
+  }, [runtimeMaxTurns, runtimeTimeout, proxyPort, proxyEnabled, sshPort, alertCpu, alertMemory, alertDisk, t])
 
-  const hasValidationErrors = Object.keys(validationErrors).length > 0
+  const infraErrorKeys = ['sshPort', 'alertCpu', 'alertMemory', 'alertDisk']
+  const hasMainValidationErrors = Object.keys(validationErrors).some(k => !infraErrorKeys.includes(k))
+  const hasInfraValidationErrors = Object.keys(validationErrors).some(k => infraErrorKeys.includes(k))
 
   // Load settings on mount
   useEffect(() => {
@@ -308,7 +318,7 @@ export function SettingsPage() {
   }, [validationStatus])
 
   const handleSave = useCallback(async () => {
-    if (hasValidationErrors) {
+    if (hasMainValidationErrors) {
       addToast(t('settings.hasValidationErrors'), 'error')
       return
     }
@@ -321,7 +331,7 @@ export function SettingsPage() {
       setSaveStatus('error')
       addToast(t('settings.saveFailed'), 'error')
     }
-  }, [formState, updateSettings, hasValidationErrors, addToast, t])
+  }, [formState, updateSettings, hasMainValidationErrors, addToast, t])
 
   const updateField = useCallback(
     <K extends keyof UpdateSettingsRequest>(key: K, value: UpdateSettingsRequest[K]) => {
@@ -526,7 +536,7 @@ export function SettingsPage() {
 
   // T025 — Save infrastructure settings
   const handleSaveInfra = useCallback(async () => {
-    if (validationErrors.sshPort || validationErrors.alertCpu || validationErrors.alertMemory || validationErrors.alertDisk) {
+    if (hasInfraValidationErrors) {
       addToast(t('settings.hasValidationErrors'), 'error')
       return
     }
@@ -551,7 +561,7 @@ export function SettingsPage() {
       setSaveStatus('error')
       addToast(t('settings.saveFailed'), 'error')
     }
-  }, [sshHost, sshPort, sshUser, gitlabUrl, gitlabToken, alertCpu, alertMemory, alertDisk, debugMode, logLevel, updateSettings, validationErrors, addToast, t])
+  }, [sshHost, sshPort, sshUser, gitlabUrl, gitlabToken, alertCpu, alertMemory, alertDisk, debugMode, logLevel, updateSettings, hasInfraValidationErrors, addToast, t])
 
   // Derived state
   const currentProvider = formState.provider ?? settings?.provider ?? 'anthropic'
@@ -559,6 +569,10 @@ export function SettingsPage() {
   const customModels = providerConfig?.custom_models ?? []
   const isMaxModels = customModels.length >= 20
   const showBaseUrl = currentProvider === 'zai' || currentProvider === 'local'
+
+  // Models based on currently selected provider (not saved provider)
+  const displayModels = PROVIDER_MODELS[currentProvider] ?? []
+  const allDisplayModels = [...new Set([...displayModels, ...customModels])]
 
   // ── Loading state ────────────────────────────────────────────────────────
 
@@ -722,7 +736,7 @@ export function SettingsPage() {
               <span className="flex items-center gap-1.5">
                 <Key className="h-3.5 w-3.5" />
                 {t('settings.apiKey')}
-                {providerConfig && (
+                {providerConfig && currentProvider === settings?.provider && (
                   <span
                     className={cn(
                       'ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
@@ -886,7 +900,7 @@ export function SettingsPage() {
                 'focus:outline-none focus:ring-2 focus:ring-[#7C6CFF]/30 focus:border-[#7C6CFF]',
               )}
             >
-              {settings?.available_models.map((model) => (
+              {allDisplayModels.map((model) => (
                 <option key={model} value={model}>
                   {model}
                 </option>

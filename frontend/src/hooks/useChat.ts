@@ -24,13 +24,13 @@ interface ApiChatMessage {
 
 export const chatKeys = {
   all: ['chat'] as const,
-  messages: (projectId: string, contextId: number) =>
+  messages: (projectId: string, contextId: string) =>
     [...chatKeys.all, 'messages', projectId, contextId] as const,
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useChat(projectId: string | null, contextId: number | null) {
+export function useChat(projectId: string | null, contextId: string | null) {
   // ── Store selectors ──────────────────────────────────────────────────────
 
   const messages = useChatStore((s) => s.messages)
@@ -194,7 +194,7 @@ export function useChat(projectId: string | null, contextId: number | null) {
   // ── Load message history via REST ────────────────────────────────────────
 
   const historyQuery = useQuery({
-    queryKey: chatKeys.messages(projectId ?? '', contextId ?? 0),
+    queryKey: chatKeys.messages(projectId ?? '', contextId ?? ''),
     queryFn: async () => {
       const { data } = await api.get<ApiChatMessage[]>(
         `/projects/${projectId}/contexts/${contextId}/messages`,

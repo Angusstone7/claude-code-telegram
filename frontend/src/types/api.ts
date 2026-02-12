@@ -82,7 +82,7 @@ export interface ContextResponse {
 }
 
 export interface ContextListResponse {
-  items: ContextResponse[]
+  contexts: ContextResponse[]
   total: number
 }
 

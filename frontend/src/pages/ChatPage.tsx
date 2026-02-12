@@ -375,7 +375,7 @@ export function ChatPage() {
     enabled: activeProjectId !== null,
   })
 
-  const contexts = contextsData?.items ?? []
+  const contexts = contextsData?.contexts ?? []
 
   // Auto-select first context when contexts load
   useEffect(() => {
@@ -418,16 +418,8 @@ export function ChatPage() {
     })
   }, [activeProjectId, createContextMutation])
 
-  // ── Derive context id (numeric) from context.id ───────────────────────
-  // The useChat hook expects a numeric contextId. Context IDs from the API
-  // are strings — we parse them to numbers. If parsing fails we use the
-  // hash-based fallback.
-  const numericContextId =
-    activeContext
-      ? Number.isFinite(Number(activeContext.id))
-        ? Number(activeContext.id)
-        : 0
-      : null
+  // ── Derive context id from active context ────────────────────────────
+  const contextIdStr = activeContext?.id ?? null
 
   // ── Chat hook ─────────────────────────────────────────────────────────
   const {
@@ -444,7 +436,7 @@ export function ChatPage() {
     approvePlan,
     rejectPlan,
     cancelTask,
-  } = useChat(activeProjectId, numericContextId)
+  } = useChat(activeProjectId, contextIdStr)
 
   // ── Find active project for display ───────────────────────────────────
   const activeProject = projects.find((p: { id: string }) => p.id === activeProjectId) ?? null
