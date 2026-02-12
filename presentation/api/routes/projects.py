@@ -107,6 +107,34 @@ async def create_project(
     )
 
 
+@router.post(
+    "/{project_id}/activate",
+    response_model=ProjectResponse,
+    summary="Activate project",
+    description="Set a project as the current/active project.",
+)
+async def activate_project(
+    project_id: str,
+    user: dict = Depends(hybrid_auth),
+    user_id: Optional[int] = Query(None, description="User ID"),
+) -> ProjectResponse:
+    """Activate (switch to) a project."""
+    uid = UserId(_resolve_user_id(user, user_id))
+    service = get_project_service()
+
+    project = await service.switch_project(uid, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        path=str(project.path) if hasattr(project, "path") else "",
+        is_current=True,
+        created_at=getattr(project, "created_at", None),
+    )
+
+
 @router.get(
     "/{project_id}",
     response_model=ProjectResponse,

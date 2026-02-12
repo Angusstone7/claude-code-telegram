@@ -20,6 +20,11 @@ interface ApiChatMessage {
   timestamp: string
 }
 
+interface MessageListResponse {
+  messages: ApiChatMessage[]
+  total: number
+}
+
 // ── Query keys ───────────────────────────────────────────────────────────────
 
 export const chatKeys = {
@@ -196,7 +201,7 @@ export function useChat(projectId: string | null, contextId: string | null) {
   const historyQuery = useQuery({
     queryKey: chatKeys.messages(projectId ?? '', contextId ?? ''),
     queryFn: async () => {
-      const { data } = await api.get<ApiChatMessage[]>(
+      const { data } = await api.get<MessageListResponse>(
         `/projects/${projectId}/contexts/${contextId}/messages`,
       )
       return data
@@ -208,7 +213,7 @@ export function useChat(projectId: string | null, contextId: string | null) {
   // Seed chat store when history loads
   useEffect(() => {
     if (historyQuery.data) {
-      const mapped: ChatMessage[] = historyQuery.data.map((m) => ({
+      const mapped: ChatMessage[] = (historyQuery.data.messages ?? []).map((m) => ({
         id: m.id,
         role: m.role,
         content: m.content,
