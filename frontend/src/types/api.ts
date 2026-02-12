@@ -104,7 +104,7 @@ export interface VariableResponse {
 }
 
 export interface VariableListResponse {
-  items: VariableResponse[]
+  variables: VariableResponse[]
   total: number
 }
 

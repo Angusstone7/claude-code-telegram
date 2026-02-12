@@ -57,7 +57,7 @@ export function VariableManager({ projectId, className }: VariableManagerProps) 
   const [editKey, setEditKey] = useState('')
   const [editValue, setEditValue] = useState('')
 
-  const variables = data?.items ?? []
+  const variables = data?.variables ?? []
 
   const filteredVariables =
     scopeFilter === 'all'

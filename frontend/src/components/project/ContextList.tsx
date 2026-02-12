@@ -40,7 +40,7 @@ export function ContextList({ projectId, className }: ContextListProps) {
   const [newName, setNewName] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const contexts = data?.items ?? []
+  const contexts = data?.contexts ?? []
 
   const handleCreate = () => {
     if (!newName.trim()) return
