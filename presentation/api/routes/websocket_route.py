@@ -35,12 +35,13 @@ router = APIRouter(tags=["WebSocket"])
 
 
 def _surrogate_user_id(user_id_str: str) -> int:
-    """Derive a stable negative integer ID from a web user's string UUID.
+    """Derive a stable positive integer ID from a web user's string UUID.
 
-    The SDK service uses positive Telegram user IDs. To avoid collisions
-    with real Telegram users, we produce a negative value from the hash.
+    The SDK service uses positive Telegram user IDs (typically 6-10 digits).
+    To avoid collisions we use the 2_000_000_000+ range which is above
+    typical Telegram IDs.
     """
-    return -(abs(hash(user_id_str)) % (10**9))
+    return 2_000_000_000 + (abs(hash(user_id_str)) % (10**9))
 
 
 async def _resolve_sdk_user_id(auth_service, user_id_str: str) -> int:
