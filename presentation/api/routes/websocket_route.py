@@ -44,12 +44,16 @@ def _surrogate_user_id(user_id_str: str) -> int:
     return 2_000_000_000 + (abs(hash(user_id_str)) % (10**9))
 
 
-async def _resolve_sdk_user_id(auth_service, user_id_str: str) -> int:
+async def _resolve_sdk_user_id(auth_service, user_id_str: str, container=None) -> int:
     """Return the integer user ID the SDK service should use.
 
-    If the web user has a linked ``telegram_id``, use it directly so that
-    the SDK session is shared with the Telegram interface.  Otherwise fall
-    back to a deterministic negative surrogate.
+    Resolution order:
+    1. If the web user has a linked ``telegram_id``, use it directly so that
+       the SDK session is shared with the Telegram interface.
+    2. Fall back to the first admin Telegram ID from config so that the admin
+       panel shares account settings (auth mode, proxy, model) with the
+       Telegram bot.
+    3. Last resort: deterministic surrogate from the UUID.
     """
     try:
         web_user = await auth_service.get_user(user_id_str)
@@ -57,6 +61,18 @@ async def _resolve_sdk_user_id(auth_service, user_id_str: str) -> int:
             return web_user.telegram_id
     except Exception:
         logger.debug("Failed to look up web user %s for telegram_id", user_id_str)
+
+    # Fall back to the first configured admin Telegram ID so that
+    # web users inherit the same SDK settings (auth mode, proxy, etc.)
+    if container:
+        try:
+            admin_ids = container.config.admin_ids
+            if admin_ids:
+                logger.info("WS user %s: using admin Telegram ID %d for SDK", user_id_str, admin_ids[0])
+                return admin_ids[0]
+        except Exception:
+            pass
+
     return _surrogate_user_id(user_id_str)
 
 
@@ -110,7 +126,7 @@ async def websocket_chat(
     username: str = claims.username
 
     # --- 2. Resolve integer user ID for SDK ---
-    user_id_int = await _resolve_sdk_user_id(auth_service, user_id_str)
+    user_id_int = await _resolve_sdk_user_id(auth_service, user_id_str, container=container)
 
     # --- 3. Connect via ConnectionManager ---
     conn_manager = container.connection_manager()
