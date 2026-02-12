@@ -34,9 +34,10 @@ ANTHROPIC_MODELS = [
 ]
 
 ZAI_MODELS = [
-    "claude-opus-4-6",
-    "claude-sonnet-4-5-20250929",
-    "claude-haiku-4-5-20251001",
+    "glm-4.7",
+    "glm-4-plus",
+    "glm-4-air",
+    "glm-4-flash",
 ]
 
 ZAI_BASE_URL = "https://open.bigmodel.cn/api/anthropic"
@@ -82,15 +83,10 @@ async def _get_provider_config(config) -> dict:
     """
     provider = await config.get("settings.provider") or _detect_provider()
 
-    # Check if API key is set (don't expose the actual key)
-    api_key_set = False
-    stored_key = await config.get(f"settings.provider.{provider}.api_key")
-    if stored_key:
-        api_key_set = True
-    elif provider == "anthropic" and os.getenv("ANTHROPIC_API_KEY"):
-        api_key_set = True
-    elif provider == "zai" and (os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY")):
-        api_key_set = True
+    # Check if API key is set per-provider (don't expose the actual key).
+    # Only use runtime config storage, not env vars, because env vars are
+    # shared (z.ai sets ANTHROPIC_API_KEY which pollutes anthropic detection).
+    api_key_set = bool(await config.get(f"settings.provider.{provider}.api_key"))
 
     # Base URL
     base_url = await config.get(f"settings.provider.{provider}.base_url")
@@ -297,10 +293,23 @@ async def get_settings(
     claude_account = await _get_claude_account_info(account_service)
     infra = await _get_infra_config()
 
-    # Merge custom models into available_models
+    # Merge custom models into available_models, respecting removed base models
     base_models = _get_models_for_provider(provider)
     custom_models = provider_config.get("custom_models", [])
-    all_models = list(dict.fromkeys(base_models + custom_models))  # deduplicated, order preserved
+    removed_raw = await config.get(f"settings.removed_models.{provider}")
+    removed_models: list[str] = []
+    if removed_raw:
+        try:
+            removed_models = json.loads(removed_raw) if isinstance(removed_raw, str) else removed_raw
+        except (json.JSONDecodeError, TypeError):
+            removed_models = []
+    filtered_base = [m for m in base_models if m not in removed_models]
+    all_models = list(dict.fromkeys(filtered_base + custom_models))  # deduplicated, order preserved
+
+    # Build per-provider api_key_set map for UI badge display
+    provider_api_keys = {}
+    for p in ("anthropic", "zai", "local"):
+        provider_api_keys[p] = bool(await config.get(f"settings.provider.{p}.api_key"))
 
     return SettingsResponse(
         yolo_mode=defaults["yolo_mode"],
@@ -312,6 +321,7 @@ async def get_settings(
         permission_mode=defaults["permission_mode"],
         language=defaults["language"],
         provider_config=provider_config,
+        provider_api_keys=provider_api_keys,
         proxy=proxy,
         runtime=runtime,
         claude_account=claude_account,
@@ -608,19 +618,44 @@ async def delete_custom_model(
         except (json.JSONDecodeError, TypeError):
             custom_models = []
 
-    if request.model_id not in custom_models:
-        raise HTTPException(status_code=404, detail="Model not found in custom list")
+    base_models = _get_models_for_provider(request.provider)
 
-    custom_models.remove(request.model_id)
-    await config.set(key, json.dumps(custom_models))
+    if request.model_id in custom_models:
+        # Remove from custom models
+        custom_models.remove(request.model_id)
+        await config.set(key, json.dumps(custom_models))
+    elif request.model_id in base_models:
+        # Hide a base model by adding to removed list
+        removed_key = f"settings.removed_models.{request.provider}"
+        raw_removed = await config.get(removed_key)
+        removed: list[str] = []
+        if raw_removed:
+            try:
+                removed = json.loads(raw_removed) if isinstance(raw_removed, str) else raw_removed
+            except (json.JSONDecodeError, TypeError):
+                removed = []
+        if request.model_id not in removed:
+            removed.append(request.model_id)
+            await config.set(removed_key, json.dumps(removed))
+    else:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    # Rebuild all_models respecting removed base models
+    removed_key2 = f"settings.removed_models.{request.provider}"
+    raw_rm = await config.get(removed_key2)
+    all_removed: list[str] = []
+    if raw_rm:
+        try:
+            all_removed = json.loads(raw_rm) if isinstance(raw_rm, str) else raw_rm
+        except (json.JSONDecodeError, TypeError):
+            all_removed = []
+    filtered_base = [m for m in base_models if m not in all_removed]
+    all_models = list(dict.fromkeys(filtered_base + custom_models))
 
     # Check if deleted model was the currently selected model
     current_model = await config.get("settings.model")
     if not current_model:
         current_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
-
-    base_models = _get_models_for_provider(request.provider)
-    all_models = list(dict.fromkeys(base_models + custom_models))
 
     if current_model == request.model_id:
         # Reset to first available model

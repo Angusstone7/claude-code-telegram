@@ -285,6 +285,7 @@ export interface SettingsResponse {
   language: string
   // New nested config objects
   provider_config?: ProviderConfig
+  provider_api_keys?: Record<string, boolean>  // {provider: api_key_set} for all providers
   proxy?: ProxyConfig
   runtime?: RuntimeConfig
   claude_account?: ClaudeAccountInfo

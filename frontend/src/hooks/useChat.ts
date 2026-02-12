@@ -217,7 +217,7 @@ export function useChat(projectId: string | null, contextId: string | null) {
         id: m.id,
         role: m.role,
         content: m.content,
-        timestamp: new Date(m.timestamp),
+        timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
       }))
       setMessages(mapped)
     }

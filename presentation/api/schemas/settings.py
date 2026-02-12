@@ -190,6 +190,7 @@ class SettingsResponse(BaseModel):
     permission_mode: str  # "default" | "auto" | "never"
     language: str  # "ru" | "en" | "zh"
     provider_config: Optional[ProviderConfigResponse] = None
+    provider_api_keys: dict[str, bool] = {}  # {provider: api_key_set} for all providers
     proxy: Optional[ProxyConfigResponse] = None
     runtime: Optional[RuntimeConfigResponse] = None
     claude_account: Optional[ClaudeAccountResponse] = None

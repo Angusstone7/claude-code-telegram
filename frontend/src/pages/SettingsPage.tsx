@@ -114,7 +114,7 @@ function validateRange(value: number, min: number, max: number): boolean {
 
 const PROVIDER_MODELS: Record<string, string[]> = {
   anthropic: ['claude-opus-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
-  zai: ['claude-opus-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
+  zai: ['glm-4.7', 'glm-4-plus', 'glm-4-air', 'glm-4-flash'],
   local: [],
 }
 
@@ -578,9 +578,10 @@ export function SettingsPage() {
   const isMaxModels = customModels.length >= 20
   const showBaseUrl = currentProvider === 'zai' || currentProvider === 'local'
 
-  // Models based on currently selected provider (not saved provider)
-  const displayModels = PROVIDER_MODELS[currentProvider] ?? []
-  const allDisplayModels = [...new Set([...displayModels, ...customModels])]
+  // Models: use backend's available_models when viewing saved provider, else use defaults
+  const allDisplayModels = currentProvider === settings?.provider && settings?.available_models?.length
+    ? settings.available_models
+    : [...new Set([...(PROVIDER_MODELS[currentProvider] ?? []), ...customModels])]
 
   // ── Loading state ────────────────────────────────────────────────────────
 
@@ -812,16 +813,11 @@ export function SettingsPage() {
               <span className="flex items-center gap-1.5">
                 <Key className="h-3.5 w-3.5" />
                 {t('settings.apiKey')}
-                {providerConfig && currentProvider === settings?.provider && (
+                {settings?.provider_api_keys?.[currentProvider] && (
                   <span
-                    className={cn(
-                      'ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                      providerConfig.api_key_set
-                        ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                        : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30',
-                    )}
+                    className="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/30"
                   >
-                    {providerConfig.api_key_set ? t('settings.apiKeySet') : t('settings.apiKeyNotSet')}
+                    {t('settings.apiKeySet')}
                   </span>
                 )}
               </span>
@@ -962,70 +958,30 @@ export function SettingsPage() {
             </div>
           )}
 
-          {/* ── Model selector ── */}
+          {/* ── Model selector + management ── */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              {t('settings.model')}
-            </label>
-            <select
-              value={formState.model ?? ''}
-              onChange={(e) => updateField('model', e.target.value)}
-              className={cn(
-                'w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-sm',
-                'text-card-foreground',
-                'focus:outline-none focus:ring-2 focus:ring-[#7C6CFF]/30 focus:border-[#7C6CFF]',
-              )}
-            >
-              {allDisplayModels.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* ── Custom Model Editor (T013) ── */}
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-muted-foreground">
-                  {t('settings.customModels')}
-                </label>
-                {customModels.length > 0 && (
-                  <span className="inline-flex items-center rounded-full bg-[#7C6CFF]/10 border border-[#7C6CFF]/30 px-2 py-0.5 text-[10px] font-medium text-[#7C6CFF]">
-                    {customModels.length} custom
-                  </span>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t('settings.model')}
+              </label>
+              <button
+                onClick={() => !isMaxModels && setShowAddModel(!showAddModel)}
+                disabled={isMaxModels}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                  isMaxModels
+                    ? 'cursor-not-allowed border-white/5 bg-white/[0.02] text-muted-foreground/40'
+                    : 'border-[#4DE1FF]/30 bg-[#4DE1FF]/10 text-[#4DE1FF] hover:bg-[#4DE1FF]/20',
                 )}
-              </div>
-
-              {/* Add model button */}
-              <div className="relative">
-                <button
-                  onClick={() => !isMaxModels && setShowAddModel(!showAddModel)}
-                  disabled={isMaxModels}
-                  title={isMaxModels ? t('settings.maxModelsReached') : undefined}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
-                    isMaxModels
-                      ? 'cursor-not-allowed border-white/5 bg-white/[0.02] text-muted-foreground/40'
-                      : 'border-[#4DE1FF]/30 bg-[#4DE1FF]/10 text-[#4DE1FF] hover:bg-[#4DE1FF]/20',
-                  )}
-                >
-                  <Plus className="h-3 w-3" />
-                  {t('settings.addModel')}
-                </button>
-                {/* Tooltip for disabled state */}
-                {isMaxModels && (
-                  <div className="absolute -top-8 right-0 whitespace-nowrap rounded-md bg-card border border-white/10 px-2.5 py-1 text-[10px] text-muted-foreground shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">
-                    {t('settings.maxModelsReached')}
-                  </div>
-                )}
-              </div>
+              >
+                <Plus className="h-3 w-3" />
+                {t('settings.addModel')}
+              </button>
             </div>
 
             {/* Add model input row */}
             {showAddModel && (
-              <div className="mb-3 flex gap-2">
+              <div className="mb-2 flex gap-2">
                 <input
                   type="text"
                   value={newModelId}
@@ -1048,11 +1004,7 @@ export function SettingsPage() {
                     'disabled:cursor-not-allowed disabled:opacity-50',
                   )}
                 >
-                  {addingModel ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <CheckCircle className="h-3 w-3" />
-                  )}
+                  {addingModel ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
                   {t('common.confirm')}
                 </button>
                 <button
@@ -1064,39 +1016,56 @@ export function SettingsPage() {
               </div>
             )}
 
-            {/* Custom models list */}
-            {customModels.length > 0 ? (
-              <ul className="space-y-1.5">
-                {customModels.map((model) => (
-                  <li
-                    key={model}
-                    className="group flex items-center justify-between rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-sm text-card-foreground"
-                  >
-                    <span className="truncate font-mono text-xs">{model}</span>
-                    <button
-                      onClick={() => handleRemoveCustomModel(model)}
-                      disabled={removingModelId === model}
+            {/* All models list with select + delete */}
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-2 space-y-1">
+              {allDisplayModels.length > 0 ? (
+                allDisplayModels.map((model) => {
+                  const isSelected = (formState.model ?? settings?.model) === model
+                  const isCustom = customModels.includes(model)
+                  return (
+                    <div
+                      key={model}
+                      onClick={() => updateField('model', model)}
                       className={cn(
-                        'ml-2 rounded-md p-1 transition-colors',
-                        'text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10',
-                        'opacity-0 group-hover:opacity-100',
-                        removingModelId === model && 'opacity-100',
+                        'group flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm transition-colors',
+                        isSelected
+                          ? 'border border-[#7C6CFF]/40 bg-[#7C6CFF]/10 text-[#7C6CFF]'
+                          : 'border border-transparent text-card-foreground hover:bg-white/5',
                       )}
                     >
-                      {removingModelId === model ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <X className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-center text-xs text-muted-foreground/50 py-3">
-                {t('common.noData')}
-              </p>
-            )}
+                      <span className="flex items-center gap-2 truncate font-mono text-xs">
+                        {model}
+                        {isCustom && (
+                          <span className="rounded-full bg-[#7C6CFF]/10 border border-[#7C6CFF]/20 px-1.5 py-0.5 text-[9px] text-[#7C6CFF]">
+                            custom
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRemoveCustomModel(model); }}
+                        disabled={removingModelId === model}
+                        className={cn(
+                          'ml-2 rounded-md p-1 transition-colors',
+                          'text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10',
+                          'opacity-0 group-hover:opacity-100',
+                          removingModelId === model && 'opacity-100',
+                        )}
+                      >
+                        {removingModelId === model ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  )
+                })
+              ) : (
+                <p className="text-center text-xs text-muted-foreground/50 py-3">
+                  {t('common.noData')}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </section>

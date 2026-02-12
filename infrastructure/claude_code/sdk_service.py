@@ -1419,6 +1419,15 @@ class ClaudeAgentSDKService:
         except Exception as e:
             error_msg = str(e)
 
+            # Try to extract stderr/stdout from exception attributes
+            stderr_text = getattr(e, 'stderr', None) or getattr(e, 'error_output', None) or ''
+            stdout_text = getattr(e, 'stdout', None) or ''
+            exit_code = getattr(e, 'returncode', None) or getattr(e, 'exit_code', None)
+            if stderr_text:
+                error_msg = f"{error_msg}\nSTDERR: {stderr_text}"
+            if stdout_text and not output_buffer:
+                error_msg = f"{error_msg}\nSTDOUT: {stdout_text}"
+
             # Check if this was actually a cancellation (use local reference to avoid race condition)
             if cancel_event.is_set():
                 logger.info(f"[{user_id}] Task interrupted by user")
@@ -1433,7 +1442,7 @@ class ClaudeAgentSDKService:
                     usage=result_usage,
                 )
 
-            logger.error(f"[{user_id}] SDK task error: {error_msg}")
+            logger.error(f"[{user_id}] SDK task error (exit_code={exit_code}): {error_msg}")
 
             if on_error:
                 await on_error(error_msg)

@@ -446,12 +446,16 @@ async def _handle_chat_message(
             ServerTaskStatus(status="running", message="Task started"),
         )
 
+        # Extract context_id from session_id (format: "project_id:context_id").
+        # The CLI --resume flag requires a valid UUID, not "uuid:uuid".
+        sdk_session_id = session_id.split(":")[-1] if ":" in session_id else session_id
+
         try:
             result = await sdk.run_task(
                 user_id=user_id_int,
                 prompt=msg.content,
                 working_dir=working_dir,
-                session_id=session_id,
+                session_id=sdk_session_id,
                 on_text=on_text,
                 on_tool_use=on_tool_use,
                 on_tool_result=None,
