@@ -191,6 +191,7 @@ class SettingsResponse(BaseModel):
     language: str  # "ru" | "en" | "zh"
     provider_config: Optional[ProviderConfigResponse] = None
     provider_api_keys: dict[str, bool] = {}  # {provider: api_key_set} for all providers
+    provider_proxies: dict[str, dict] = {}  # {provider: ProxyConfig} for all providers
     proxy: Optional[ProxyConfigResponse] = None
     runtime: Optional[RuntimeConfigResponse] = None
     claude_account: Optional[ClaudeAccountResponse] = None

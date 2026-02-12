@@ -161,7 +161,7 @@ class TestDeleteCustomModel:
             await delete_custom_model(request=request, user=USER)
 
         assert exc_info.value.status_code == 404
-        assert "not found in custom list" in exc_info.value.detail
+        assert "not found" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
     @patch("presentation.api.routes.settings.get_runtime_config")

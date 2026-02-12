@@ -115,26 +115,40 @@ async def _get_provider_config(config) -> dict:
     }
 
 
-async def _get_proxy_config(config) -> dict:
+async def _get_proxy_config(config, provider: str | None = None) -> dict:
     """Read proxy configuration from RuntimeConfig and env vars.
+
+    When *provider* is given, reads per-provider proxy settings at
+    ``settings.provider.{provider}.proxy.*``.  Falls back to the legacy
+    global ``settings.proxy.*`` keys if no per-provider data exists.
 
     Returns dict suitable for ProxyConfigResponse.
     """
-    enabled = await config.get("settings.proxy.enabled")
+    # Determine key prefix: per-provider or legacy global
+    prefix = f"settings.provider.{provider}.proxy" if provider else "settings.proxy"
+    legacy_prefix = "settings.proxy"
+
+    async def _val(field: str, default=None):
+        """Read from per-provider keys, fall back to legacy."""
+        val = await config.get(f"{prefix}.{field}")
+        if val is None and prefix != legacy_prefix:
+            val = await config.get(f"{legacy_prefix}.{field}")
+        return val if val is not None else default
+
+    enabled = await _val("enabled")
     if enabled is None:
-        # Check if proxy env vars are set
         enabled = bool(os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY"))
     elif isinstance(enabled, str):
         enabled = enabled.lower() == "true"
 
-    proxy_type = await config.get("settings.proxy.type") or "http"
-    host = await config.get("settings.proxy.host") or ""
-    port_val = await config.get("settings.proxy.port")
+    proxy_type = await _val("type") or "http"
+    host = await _val("host") or ""
+    port_val = await _val("port")
     port = int(port_val) if port_val else 0
-    username = await config.get("settings.proxy.username") or ""
-    password_stored = await config.get("settings.proxy.password")
+    username = await _val("username") or ""
+    password_stored = await _val("password")
     password_set = bool(password_stored)
-    no_proxy = await config.get("settings.proxy.no_proxy") or os.getenv(
+    no_proxy = await _val("no_proxy") or os.getenv(
         "NO_PROXY", "localhost,127.0.0.1,192.168.0.0/16"
     )
 
@@ -288,7 +302,7 @@ async def get_settings(
 
     # Build nested config objects
     provider_config = await _get_provider_config(config)
-    proxy = await _get_proxy_config(config)
+    proxy = await _get_proxy_config(config, provider=provider)
     runtime = await _get_runtime_params(config)
     claude_account = await _get_claude_account_info(account_service)
     infra = await _get_infra_config()
@@ -311,6 +325,11 @@ async def get_settings(
     for p in ("anthropic", "zai", "local"):
         provider_api_keys[p] = bool(await config.get(f"settings.provider.{p}.api_key"))
 
+    # Build per-provider proxy configs for UI display
+    provider_proxies = {}
+    for p in ("anthropic", "zai", "local"):
+        provider_proxies[p] = await _get_proxy_config(config, provider=p)
+
     return SettingsResponse(
         yolo_mode=defaults["yolo_mode"],
         step_streaming=defaults["step_streaming"],
@@ -322,6 +341,7 @@ async def get_settings(
         language=defaults["language"],
         provider_config=provider_config,
         provider_api_keys=provider_api_keys,
+        provider_proxies=provider_proxies,
         proxy=proxy,
         runtime=runtime,
         claude_account=claude_account,
@@ -352,6 +372,28 @@ async def update_settings(
             os.environ["ANTHROPIC_BASE_URL"] = ZAI_BASE_URL
         else:
             os.environ.pop("ANTHROPIC_BASE_URL", None)
+        # Apply the new provider's proxy settings to env vars
+        new_proxy = await _get_proxy_config(config, provider=new_provider)
+        if new_proxy.get("enabled") and new_proxy.get("host") and new_proxy.get("port"):
+            ptype = new_proxy.get("type", "http")
+            host = new_proxy["host"]
+            port = new_proxy["port"]
+            username = new_proxy.get("username", "")
+            pw = await config.get(f"settings.provider.{new_provider}.proxy.password") or ""
+            no_proxy = new_proxy.get("no_proxy", "localhost,127.0.0.1,192.168.0.0/16")
+            if username and pw:
+                proxy_url = f"{ptype}://{username}:{pw}@{host}:{port}"
+            else:
+                proxy_url = f"{ptype}://{host}:{port}"
+            os.environ["HTTP_PROXY"] = proxy_url
+            os.environ["HTTPS_PROXY"] = proxy_url
+            os.environ["http_proxy"] = proxy_url
+            os.environ["https_proxy"] = proxy_url
+            os.environ["NO_PROXY"] = no_proxy
+            os.environ["no_proxy"] = no_proxy
+        elif not new_proxy.get("enabled"):
+            for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                os.environ.pop(var, None)
 
     # Handle nested provider_config updates
     if "provider_config" in update_data:
@@ -374,38 +416,46 @@ async def update_settings(
                 if pc["base_url"]:
                     os.environ["ANTHROPIC_BASE_URL"] = pc["base_url"]
 
-    # Handle nested proxy updates
+    # Handle nested proxy updates (stored per-provider)
     if "proxy" in update_data:
         px = update_data.pop("proxy")
         if px:
+            # Determine which provider's proxy we're updating
+            proxy_provider = update_data.get("provider") or await config.get("settings.provider") or _detect_provider()
+            prefix = f"settings.provider.{proxy_provider}.proxy"
+            for pk, pv in px.items():
+                await config.set(f"{prefix}.{pk}", pv)
+            # Also mirror to legacy keys for backward compat
             for pk, pv in px.items():
                 await config.set(f"settings.proxy.{pk}", pv)
-            # Apply proxy env vars
-            proxy_enabled = px.get("enabled")
-            if proxy_enabled is None:
-                proxy_enabled = await config.get("settings.proxy.enabled")
-            if proxy_enabled:
-                host = px.get("host") or await config.get("settings.proxy.host") or ""
-                port = px.get("port") or await config.get("settings.proxy.port") or 0
-                ptype = px.get("type") or await config.get("settings.proxy.type") or "http"
-                username = px.get("username") or await config.get("settings.proxy.username") or ""
-                password = px.get("password") or await config.get("settings.proxy.password") or ""
-                no_proxy = px.get("no_proxy") or await config.get("settings.proxy.no_proxy") or "localhost,127.0.0.1,192.168.0.0/16"
+            # Apply proxy env vars only if this is the currently active provider
+            active_provider = await config.get("settings.provider") or _detect_provider()
+            if proxy_provider == active_provider:
+                proxy_enabled = px.get("enabled")
+                if proxy_enabled is None:
+                    proxy_enabled = await config.get(f"{prefix}.enabled")
+                if proxy_enabled:
+                    host = px.get("host") or await config.get(f"{prefix}.host") or ""
+                    port = px.get("port") or await config.get(f"{prefix}.port") or 0
+                    ptype = px.get("type") or await config.get(f"{prefix}.type") or "http"
+                    username = px.get("username") or await config.get(f"{prefix}.username") or ""
+                    password = px.get("password") or await config.get(f"{prefix}.password") or ""
+                    no_proxy = px.get("no_proxy") or await config.get(f"{prefix}.no_proxy") or "localhost,127.0.0.1,192.168.0.0/16"
 
-                if host and port:
-                    if username and password:
-                        proxy_url = f"{ptype}://{username}:{password}@{host}:{port}"
-                    else:
-                        proxy_url = f"{ptype}://{host}:{port}"
-                    os.environ["HTTP_PROXY"] = proxy_url
-                    os.environ["HTTPS_PROXY"] = proxy_url
-                    os.environ["http_proxy"] = proxy_url
-                    os.environ["https_proxy"] = proxy_url
-                    os.environ["NO_PROXY"] = no_proxy
-                    os.environ["no_proxy"] = no_proxy
-            elif proxy_enabled is False:
-                for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-                    os.environ.pop(var, None)
+                    if host and port:
+                        if username and password:
+                            proxy_url = f"{ptype}://{username}:{password}@{host}:{port}"
+                        else:
+                            proxy_url = f"{ptype}://{host}:{port}"
+                        os.environ["HTTP_PROXY"] = proxy_url
+                        os.environ["HTTPS_PROXY"] = proxy_url
+                        os.environ["http_proxy"] = proxy_url
+                        os.environ["https_proxy"] = proxy_url
+                        os.environ["NO_PROXY"] = no_proxy
+                        os.environ["no_proxy"] = no_proxy
+                elif proxy_enabled is False:
+                    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                        os.environ.pop(var, None)
 
     # Handle nested runtime updates
     if "runtime" in update_data:

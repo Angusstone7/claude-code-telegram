@@ -268,15 +268,7 @@ export function SettingsPage() {
       if (settings.provider_config?.base_url) {
         setBaseUrlInput(settings.provider_config.base_url)
       }
-      // Sync proxy fields
-      if (settings.proxy) {
-        setProxyEnabled(settings.proxy.enabled)
-        setProxyType(settings.proxy.type)
-        setProxyHost(settings.proxy.host)
-        setProxyPort(settings.proxy.port)
-        setProxyUsername(settings.proxy.username)
-        setProxyNoProxy(settings.proxy.no_proxy)
-      }
+      // Proxy fields are synced via the currentProvider effect using provider_proxies
       // Sync runtime fields
       if (settings.runtime) {
         setRuntimeMaxTurns(settings.runtime.max_turns)
@@ -297,6 +289,31 @@ export function SettingsPage() {
       }
     }
   }, [settings])
+
+  // Sync proxy fields when provider changes (proxy is per-provider)
+  useEffect(() => {
+    if (!settings?.provider_proxies) return
+    const px = settings.provider_proxies[currentProvider]
+    if (px) {
+      setProxyEnabled(px.enabled ?? false)
+      setProxyType(px.type ?? 'http')
+      setProxyHost(px.host ?? '')
+      setProxyPort(px.port ?? 8080)
+      setProxyUsername(px.username ?? '')
+      setProxyNoProxy(px.no_proxy ?? '')
+      setProxyPassword('')  // never pre-fill password
+      setShowProxyPassword(false)
+    } else {
+      // No proxy config for this provider — reset to defaults
+      setProxyEnabled(false)
+      setProxyType('http')
+      setProxyHost('')
+      setProxyPort(8080)
+      setProxyUsername('')
+      setProxyPassword('')
+      setProxyNoProxy('')
+    }
+  }, [currentProvider, settings?.provider_proxies])
 
   // Fetch plugins on mount (T019b)
   useEffect(() => {
@@ -423,7 +440,7 @@ export function SettingsPage() {
     }
     setSaveStatus('saving')
     try {
-      await updateSettings({ proxy: proxyUpdate })
+      await updateSettings({ proxy: proxyUpdate, provider: currentProvider })
       setSaveStatus('success')
       addToast(t('settings.saved'), 'success')
     } catch {
@@ -1070,13 +1087,16 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* ── T016: Proxy Configuration Section ────────────────────────────── */}
+      {/* ── T016: Proxy Configuration Section (per-provider) ──────────── */}
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
           <Network className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-lg font-semibold text-card-foreground">
             {t('settings.proxy')}
           </h2>
+          <span className="ml-2 inline-flex items-center rounded-full border border-[#7C6CFF]/30 bg-[#7C6CFF]/10 px-2 py-0.5 text-[10px] font-medium text-[#7C6CFF]">
+            {currentProvider}
+          </span>
         </div>
 
         <div className="space-y-4">
