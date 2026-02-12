@@ -32,10 +32,12 @@ import {
   ChevronDown,
   ChevronRight,
   Trash2,
+  Pencil,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useUpdateProfile } from '@/hooks/useAuth'
 import { api } from '@/services/api'
 import type {
   UpdateSettingsRequest,
@@ -199,6 +201,12 @@ export function SettingsPage() {
   const [alertDisk, setAlertDisk] = useState<number>(90)
   const [debugMode, setDebugMode] = useState(false)
   const [logLevel, setLogLevel] = useState<string>('INFO')
+
+  // Profile editing state
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [profileDisplayName, setProfileDisplayName] = useState('')
+  const [profileTelegramId, setProfileTelegramId] = useState('')
+  const updateProfileMutation = useUpdateProfile()
 
   // ── Validation errors (computed) ───────────────────────────────────────
 
@@ -651,28 +659,63 @@ export function SettingsPage() {
 
       {/* ── Profile Section ────────────────────────────────────────────────── */}
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <User className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-lg font-semibold text-card-foreground">
-            {t('settings.profile')}
-          </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <User className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold text-card-foreground">
+              {t('settings.profile')}
+            </h2>
+          </div>
+          {!editingProfile && (
+            <button
+              onClick={() => {
+                setProfileDisplayName(user?.display_name ?? '')
+                setProfileTelegramId(user?.telegram_id != null ? String(user.telegram_id) : '')
+                setEditingProfile(true)
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-card-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {t('common.edit')}
+            </button>
+          )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               {t('settings.displayName')}
             </label>
-            <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-card-foreground">
-              {user?.display_name ?? '-'}
-            </div>
+            {editingProfile ? (
+              <input
+                type="text"
+                value={profileDisplayName}
+                onChange={(e) => setProfileDisplayName(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-sm text-card-foreground outline-none transition-colors focus:border-[#7C6CFF] focus:ring-1 focus:ring-[#7C6CFF]/30"
+              />
+            ) : (
+              <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-card-foreground">
+                {user?.display_name ?? '-'}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               {t('settings.telegramId')}
             </label>
-            <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-card-foreground">
-              {user?.telegram_id ?? '-'}
-            </div>
+            {editingProfile ? (
+              <input
+                type="text"
+                inputMode="numeric"
+                value={profileTelegramId}
+                onChange={(e) => setProfileTelegramId(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="e.g. 664382290"
+                className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-sm text-card-foreground outline-none transition-colors focus:border-[#7C6CFF] focus:ring-1 focus:ring-[#7C6CFF]/30"
+              />
+            ) : (
+              <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-card-foreground">
+                {user?.telegram_id ?? '-'}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -691,6 +734,39 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+        {editingProfile && (
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              onClick={() => setEditingProfile(false)}
+              className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              disabled={updateProfileMutation.isPending}
+              onClick={async () => {
+                try {
+                  await updateProfileMutation.mutateAsync({
+                    display_name: profileDisplayName || undefined,
+                    telegram_id: profileTelegramId ? Number(profileTelegramId) : null,
+                  })
+                  setEditingProfile(false)
+                  addToast(t('settings.profileSaved'), 'success')
+                } catch (err) {
+                  addToast(t('settings.profileSaveError'), 'error')
+                }
+              }}
+              className="flex items-center gap-2 rounded-lg bg-[#7C6CFF] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#6B5CE6] disabled:opacity-50"
+            >
+              {updateProfileMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {t('common.save')}
+            </button>
+          </div>
+        )}
       </section>
 
       {/* ── Provider & Model Section ─────────────────────────────────────── */}

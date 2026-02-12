@@ -127,6 +127,8 @@
     "profile": "Profile",
     "telegramId": "Telegram ID",
     "displayName": "Display Name",
+    "profileSaved": "Profile updated",
+    "profileSaveError": "Failed to save profile",
     "claudeBackend": "Claude Backend",
     "model": "Model",
     "permissionMode": "Permission Mode",
