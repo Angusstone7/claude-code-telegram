@@ -247,6 +247,9 @@ export function SettingsPage() {
   const hasMainValidationErrors = Object.keys(validationErrors).some(k => !infraErrorKeys.includes(k))
   const hasInfraValidationErrors = Object.keys(validationErrors).some(k => infraErrorKeys.includes(k))
 
+  // Derived state (declared early so useEffects can reference it)
+  const currentProvider = formState.provider ?? settings?.provider ?? 'anthropic'
+
   // Load settings on mount
   useEffect(() => {
     fetchSettings()
@@ -589,7 +592,6 @@ export function SettingsPage() {
   }, [sshHost, sshPort, sshUser, gitlabUrl, gitlabToken, alertCpu, alertMemory, alertDisk, debugMode, logLevel, updateSettings, hasInfraValidationErrors, addToast, t])
 
   // Derived state
-  const currentProvider = formState.provider ?? settings?.provider ?? 'anthropic'
   const providerConfig = settings?.provider_config
   const customModels = providerConfig?.custom_models ?? []
   const isMaxModels = customModels.length >= 20
