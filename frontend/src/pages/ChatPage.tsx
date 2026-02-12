@@ -354,7 +354,7 @@ export function ChatPage() {
       (await api.get<ProjectListResponse>('/projects')).data,
   })
 
-  const projects = projectsData?.items ?? []
+  const projects = projectsData?.projects ?? []
 
   // Auto-select first project if none active
   useEffect(() => {
@@ -447,7 +447,7 @@ export function ChatPage() {
   } = useChat(activeProjectId, numericContextId)
 
   // ── Find active project for display ───────────────────────────────────
-  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
+  const activeProject = projects.find((p: { id: string }) => p.id === activeProjectId) ?? null
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
@@ -477,7 +477,7 @@ export function ChatPage() {
               }}
               className="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              {projects.map((p) => (
+              {projects.map((p: { id: string; name: string }) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>

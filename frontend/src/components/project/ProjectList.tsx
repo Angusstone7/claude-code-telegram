@@ -30,7 +30,7 @@ export function ProjectList({ className }: ProjectListProps) {
   const [newPath, setNewPath] = useState('')
   const [newDescription, setNewDescription] = useState('')
 
-  const projects = data?.items ?? []
+  const projects = data?.projects ?? []
 
   const handleActivate = (project: ProjectResponse) => {
     setActiveProject(project)
